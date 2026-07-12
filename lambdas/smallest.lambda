@@ -5,7 +5,7 @@ smallest(check, return)
 Finds the smallest number in "check" and returns the first matching value in "return" (an XLOOKUP on MIN).
 
 === CODE ===
-=LAMBDA(check, return, XLOOKUP(MIN(check), check, return))
+=LAMBDA(check, return, IFNA(XLOOKUP(MIN(check), check, return), ""))
 
 === DESCRIPTION ===
 Returns the value paired with the minimum of a checked array.
@@ -15,7 +15,7 @@ Arguments:
   return - array (parallel to check) to return the matching value from.
 
 Returns:
-  The element of return aligned with the first occurrence of MIN(check).
+  The element of return aligned with the first occurrence of MIN(check), or "" if no match is found (e.g. an empty or all-text check).
 
 Example:
   smallest(scores, names)  ->  the name with the lowest score

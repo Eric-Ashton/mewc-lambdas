@@ -6,10 +6,13 @@ Two-way lookup in a labelled 2D array: finds row_label in the first column and c
 
 === CODE ===
 =LAMBDA(arr, row_label, column_label,
-   INDEX(
-      arr,
-      XMATCH(row_label, INDEX(arr, , 1), 0),
-      XMATCH(column_label, INDEX(arr, 1, ), 0)
+   IFNA(
+      INDEX(
+         arr,
+         XMATCH(row_label, INDEX(arr, , 1), 0),
+         XMATCH(column_label, INDEX(arr, 1, ), 0)
+      ),
+      ""
    )
 )
 
@@ -22,7 +25,7 @@ Arguments:
   column_label - label to match in the first row.
 
 Returns:
-  The value at the intersection of the first matching row_label and column_label.
+  The value at the intersection of the first matching row_label and column_label, or "" if either label is not found.
 
 Example:
   label_lookup(tbl, "Mon", "Cost")

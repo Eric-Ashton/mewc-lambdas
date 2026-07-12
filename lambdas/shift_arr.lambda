@@ -94,7 +94,7 @@ Shifts a 1D or 2D array by "steps" (default 1) in the dir arrow. With no fill, i
          ))
       )
    ),
-   result
+   IFNA(result, "")
 ))
 
 === DESCRIPTION ===
@@ -107,7 +107,7 @@ Arguments:
   [fill]  - value to place in vacated cells; if omitted, contents wrap around.
 
 Returns:
-  The shifted array, same shape as arr.
+  The shifted array, same shape as arr, or "" if dir is not a recognized direction.
 
 Example:
   shift_arr(grid, "→", 1)

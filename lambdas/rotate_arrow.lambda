@@ -11,7 +11,7 @@ Rotates an arrow by 45 degrees times steps. clockwise = 1 (default) rotates cloc
    i, XMATCH(arrow, arrow_list),
    s, IF(ISOMITTED(dir), steps, IF(dir = "ccw", -steps, steps)),
    n, MOD(i - 1 + s, 8) + 1,
-   MID(arrows, n, 1)
+   IFNA(MID(arrows, n, 1), "")
 ))
 
 === DESCRIPTION ===
@@ -23,7 +23,7 @@ Arguments:
   [clockwise] - 1 = clockwise (default), 0 = counter-clockwise.
 
 Returns:
-  The rotated arrow.
+  The rotated arrow, or "" if arrow is not one of ↑↗→↘↓↙←↖.
 
 Example:
   rotate_arrow("→", 1)  ->  "↘"
