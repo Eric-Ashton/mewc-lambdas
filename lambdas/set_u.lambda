@@ -1,0 +1,21 @@
+=== SIGNATURE ===
+set_u(a, b, [as_row])
+=== COMMENT ===
+Set union: all distinct values from set a and set b combined.
+=== CODE ===
+=LAMBDA(val_a, val_b, [as_row],
+   set(VSTACK(val_a, val_b), IF(ISOMITTED(as_row), 0, as_row))
+)
+=== DESCRIPTION ===
+Set union of two ranges.
+
+Arguments:
+  a        - first range/set.
+  b        - second range/set.
+  [as_row] - 1 for a horizontal result; default 0 vertical.
+
+Returns:
+  The cleaned, sorted values found in either a or b.
+
+Example:
+  set_u(A1:A5, B1:B5)

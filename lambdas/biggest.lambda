@@ -1,0 +1,18 @@
+=== SIGNATURE ===
+biggest(check, return)
+=== COMMENT ===
+Finds the biggest number in "check" and returns the first matching value in "return" (an XLOOKUP on MAX).
+=== CODE ===
+=LAMBDA(check, return, XLOOKUP(MAX(check), check, return))
+=== DESCRIPTION ===
+Returns the value paired with the maximum of a checked array.
+
+Arguments:
+  check  - array of numbers to take the maximum of.
+  return - array (parallel to check) to return the matching value from.
+
+Returns:
+  The element of return aligned with the first occurrence of MAX(check).
+
+Example:
+  biggest(scores, names)  ->  the name with the highest score

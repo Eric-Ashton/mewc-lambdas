@@ -1,0 +1,63 @@
+=== SIGNATURE ===
+count_substring(str, sub, [case_sensitive])
+=== COMMENT ===
+Counts how many times sub appears in str. case_sensitive is 0 by default. Either argument may be an array (but not both) to map the count across it.
+=== CODE ===
+=LAMBDA(input_text, sub, [case_sensitive], LET(
+   cs, IF(ISOMITTED(case_sensitive), 0, case_sensitive),
+   norm, LAMBDA(t, IF(cs = 1, t, LOWER(t))),
+   count_one, LAMBDA(txt, subtxt, LET(
+      t_norm, norm(txt),
+      s_norm, norm(subtxt),
+      IF(
+         s_norm = "",
+         0,
+         (LEN(t_norm) - LEN(SUBSTITUTE(t_norm, s_norm, ""))) / LEN(s_norm)
+      )
+   )),
+   input_is_array, ROWS(input_text) * COLUMNS(input_text) > 1,
+   sub_is_array, ROWS(sub) * COLUMNS(sub) > 1,
+   is_text_or_num, LAMBDA(v, IFERROR(ISNUMBER(v) + ISTEXT(v), 0)),
+   IF(
+      input_is_array * sub_is_array,
+      VALUE("both text args are arrays"),
+      IF(
+         input_is_array,
+         MAP(
+            input_text,
+            LAMBDA(t, IF(is_text_or_num(t), IFERROR(count_one(t, sub), 0), 0))
+         ),
+         IF(
+            sub_is_array,
+            MAP(
+               sub,
+               LAMBDA(s,
+                  IF(
+                     is_text_or_num(input_text),
+                     IFERROR(count_one(input_text, s), 0),
+                     0
+                  )
+               )
+            ),
+            IF(
+               is_text_or_num(input_text),
+               IFERROR(count_one(input_text, sub), 0),
+               0
+            )
+         )
+      )
+   )
+))
+=== DESCRIPTION ===
+Counts occurrences of one substring inside another string.
+
+Arguments:
+  str              - the text to search in.
+  sub              - the substring to count.
+  [case_sensitive] - 1 for case-sensitive, 0 to ignore case (default 0).
+
+Returns:
+  The count of non-overlapping occurrences. If str OR sub is an array (not both), returns an array of counts. Non-text cells count as 0.
+
+Example:
+  count_substring("banana", "a")  ->  3

@@ -1,0 +1,33 @@
+=== SIGNATURE ===
+z_xbyrow_ix(arr, function, first, last)
+=== COMMENT ===
+Private recursive worker for xbyrow (don't call directly). Applies function to each row, flattens the result to a row with TOROW, and VSTACKs the pieces via divide-and-conquer.
+=== CODE ===
+=LAMBDA(arr, function, first, last,
+  IF(first = last,
+     TOROW(
+       IF(COLUMNS(arr) = 1,
+          function(@CHOOSEROWS(arr, first)),
+          function(CHOOSEROWS(arr, first)))),
+     LET(
+       mid_row, INT((first + last) / 2),
+       VSTACK(
+         z_xbyrow_ix(arr, function, first, mid_row),
+         z_xbyrow_ix(arr, function, mid_row + 1, last)
+       )
+     )
+  )
+)
+=== DESCRIPTION ===
+Private recursive worker for xbyrow - do not call directly.
+
+Splits the row index range [first, last] in half, recurses on each half, and VSTACKs the pieces (divide-and-conquer). At a single row it applies function to that row (dereferencing a lone cell with @) and flattens the result to a row with TOROW.
+
+Arguments:
+  arr      - the full array (passed through unchanged).
+  function - the LAMBDA to apply to each row.
+  first    - first row index of the current window.
+  last     - last row index of the current window.
+
+Returns:
+  The stacked, one-row-per-input results for rows first..last. Called by xbyrow as z_xbyrow_ix(arr, function, 1, ROWS(arr)).

@@ -1,0 +1,52 @@
+=== SIGNATURE ===
+offset_letter(st, offset)
+=== COMMENT ===
+Shifts each letter in a string by an integer offset with wraparound (e.g. "xyz" +2 = "zab"). Preserves case and non-letter characters; works on arrays.
+=== CODE ===
+=LAMBDA(st, offset, LET(
+   r, ROWS(st),
+   c, COLUMNS(st),
+   f, LAMBDA(s, o, LET(
+      s_text, s & "",
+      n, LEN(s_text),
+      chars, IF(n = 0, "", MID(s_text, SEQUENCE(n), 1)),
+      shifted, IF(
+         n = 0,
+         "",
+         MAP(
+            chars,
+            LAMBDA(ch, LET(
+               code, CODE(ch),
+               is_u, (code >= 65) * (code <= 90),
+               is_l, (code >= 97) * (code <= 122),
+               new_u, CHAR(65 + MOD(code - 65 + o, 26)),
+               new_l, CHAR(97 + MOD(code - 97 + o, 26)),
+               IF(is_u, new_u, IF(is_l, new_l, ch))
+            ))
+         )
+      ),
+      IF(n = 0, "", TEXTJOIN("", TRUE, shifted))
+   )),
+   MAKEARRAY(
+      r,
+      c,
+      LAMBDA(i, j,
+         f(
+            INDEX(st, i, j),
+            IF(ROWS(offset) * COLUMNS(offset) = 1, offset, INDEX(offset, i, j))
+         )
+      )
+   )
+))
+=== DESCRIPTION ===
+Caesar-shifts the letters of a string by a fixed offset.
+
+Arguments:
+  st     - the text (or array of text) to shift.
+  offset - integer number of positions to advance each letter (wraps A-Z).
+
+Returns:
+  The shifted text, preserving case and leaving non-letters untouched. Works on arrays.
+
+Example:
+  offset_letter("xyz", 2)  ->  "zab"

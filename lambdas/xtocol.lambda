@@ -1,0 +1,97 @@
+=== SIGNATURE ===
+xtocol(rng, [show_addr], [clean], [dir], [snake])
+=== COMMENT ===
+Flattens a 2D range to a column. show_addr (default 1) adds an address column; clean (default 1) drops blanks/errors/""; dir sets scan order ("→↓" default); snake (default 0) zig-zags.
+=== CODE ===
+=LAMBDA(rng, [show_addr], [clean], [dir], [snake], LET(
+ _show, IF(ISOMITTED(show_addr), 1, show_addr),
+ _clean, IF(ISOMITTED(clean), 1, clean),
+ _in_dir, IF(ISOMITTED(dir), "→↓", dir),
+ _snake, IF(ISOMITTED(snake), 0, snake),
+ _len, LEN(_in_dir),
+ _d, IF(
+  _len = 2,
+  _in_dir,
+  IF(
+   _len <> 1,
+   NA(),
+   LET(
+    char_one, _in_dir,
+    is_vert, OR(char_one = "↑", char_one = "↓"),
+    is_horz, OR(char_one = "←", char_one = "→"),
+    IF(is_vert, char_one & "→", IF(is_horz, char_one & "↓", NA()))
+   )
+  )
+ ),
+ first_char, LEFT(_d, 1),
+ second_char, RIGHT(_d, 1),
+ has_vert, OR(
+  first_char = "↑",
+  first_char = "↓",
+  second_char = "↑",
+  second_char = "↓"
+ ),
+ has_horz, OR(
+  first_char = "←",
+  first_char = "→",
+  second_char = "←",
+  second_char = "→"
+ ),
+ is_valid, AND(LEN(_d) = 2, has_vert, has_horz),
+ IF(
+  NOT(is_valid),
+  NA(),
+  LET(
+   op_h, IF(OR(first_char = "←", second_char = "←"), "↔", ""),
+   op_v, IF(OR(first_char = "↑", second_char = "↑"), "↕", ""),
+   need_transpose, OR(first_char = "↑", first_char = "↓"),
+   ProcessGrid, LAMBDA(grid, LET(
+    flipped, transform_array(grid, op_h & op_v),
+    oriented, IF(need_transpose, TRANSPOSE(flipped), flipped),
+    rows_cnt, ROWS(oriented),
+    cols_cnt, COLUMNS(oriented),
+    IF(
+     _snake,
+     MAKEARRAY(
+      rows_cnt,
+      cols_cnt,
+      LAMBDA(r_idx, c_idx,
+       INDEX(
+        oriented,
+        r_idx,
+        IF(ISODD(r_idx), c_idx, cols_cnt - c_idx + 1)
+       )
+      )
+     ),
+     oriented
+    )
+   )),
+   val_grid, rng,
+   addr_grid, ADDRESS(ROW(val_grid), COLUMN(val_grid), 4),
+   flat_vals, TOCOL(ProcessGrid(val_grid)),
+   flat_addrs, TOCOL(ProcessGrid(addr_grid)),
+   base, IF(_show, HSTACK(flat_addrs, flat_vals), flat_vals),
+   mask, IF(
+    ISERROR(flat_vals),
+    FALSE,
+    (flat_vals <> "") * (NOT(ISBLANK(flat_vals)))
+   ),
+   IF(_clean, FILTER(base, mask), base)
+  )
+ )
+))
+=== DESCRIPTION ===
+Flattens a 2D range into a single column, with scan and cleaning options.
+
+Arguments:
+  rng          - the range to flatten.
+  [show_addr]  - 1 to also return a cell-address column (default 1).
+  [clean]      - 1 to drop blanks, errors, and "" (default 1).
+  [dir]        - scan order as arrows; "→↓" (default) is row-major (right, then down).
+  [snake]      - 1 to snake back and forth across rows/columns (default 0).
+
+Returns:
+  The flattened values as a column (address + value when show_addr = 1).
+
+Example:
+  xtocol(A1:B5)

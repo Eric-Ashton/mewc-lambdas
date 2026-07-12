@@ -1,0 +1,22 @@
+name: lambda-check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run authoring-rule checker on all lambdas
+        run: |
+          shopt -s nullglob
+          status=0
+          for f in lambdas/*.lambda; do
+            python tools/lambda_check.py "$f" || status=1
+          done
+          exit $status

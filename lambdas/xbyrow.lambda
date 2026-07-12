@@ -1,0 +1,22 @@
+=== SIGNATURE ===
+xbyrow(arr, function)
+=== COMMENT ===
+BYROW that allows array-returning functions: each row's result is flattened to a row (TOROW) and stacked; ragged #N/A padding is blanked (IFNA). Use for per-row transforms that expand each item into a row.
+=== CODE ===
+=LAMBDA(arr, function,
+  IFNA(z_xbyrow_ix(arr, function, 1, ROWS(arr)), "")
+)
+=== DESCRIPTION ===
+BYROW that allows the function to return an array per row.
+
+Built-in BYROW and MAP require a single scalar per row. xbyrow lifts that limit: it applies the function to each row, flattens each result to a single row with TOROW, and stacks them with VSTACK (divide-and-conquer, fast on long lists). The output is wrapped in IFNA so the #N/A padding from ragged rows shows as blank.
+
+Arguments:
+  arr      - the array to iterate over, one row at a time.
+  function - a LAMBDA applied to each row; may return a scalar or an array.
+
+Returns:
+  One output row per input row. Each result is laid out horizontally and stacked; ragged rows are padded with blanks (via IFNA).
+
+Example:
+  xbyrow(B14#, LAMBDA(x, neighbors_list(x)))

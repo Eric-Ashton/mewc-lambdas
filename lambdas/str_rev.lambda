@@ -1,0 +1,26 @@
+=== SIGNATURE ===
+str_rev(str)
+=== COMMENT ===
+Reverses a string (character by character), respecting whole multi-character symbols.
+=== CODE ===
+=LAMBDA(str,
+   IF(
+      ROWS(str) * COLUMNS(str) = 1,
+      TEXTJOIN("", , MID(str, SEQUENCE(LEN(str), , LEN(str), -1), 1)),
+      BYROW(
+         str,
+         LAMBDA(x, TEXTJOIN("", , MID(x, SEQUENCE(LEN(x), , LEN(x), -1), 1)))
+      )
+   )
+)
+=== DESCRIPTION ===
+Reverses the characters of a string.
+
+Arguments:
+  str - the text to reverse.
+
+Returns:
+  The string reversed. Works on arrays of strings.
+
+Example:
+  str_rev("abc")  ->  "cba"

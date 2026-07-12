@@ -1,0 +1,108 @@
+=== SIGNATURE ===
+str2arr(str_or_array, [as_row])
+=== COMMENT ===
+Splits a string into a vertical array (horizontal if as_row=1), keeping multi-char Unicode symbols whole. 1D input splits into the unused axis; 2D concatenates row-major first. Digits become numbers.
+=== CODE ===
+=LAMBDA(str_or_array, [as_row], LET(
+ a, str_or_array,
+ r, ROWS(a),
+ c, COLUMNS(a),
+ _as_row, IF(ISOMITTED(as_row), 0, as_row),
+ IF(
+  r * c = 1,
+  LET(
+   val, a & "",
+   IF(
+    val = "",
+    "",
+    LET(
+     extracted, REGEXEXTRACT(val, "\X", 1),
+     MAP(
+      IF(_as_row, extracted, TOCOL(extracted)),
+      LAMBDA(char, IFERROR(--char, char))
+     )
+    )
+   )
+  ),
+  IF(
+   r > 1,
+   IF(
+    c > 1,
+    MAP(
+     TOCOL(REGEXEXTRACT(CONCAT(a) & "", "\X", 1)),
+     LAMBDA(char, IFERROR(--char, char))
+    ),
+    LET(
+     max_len, MAX(
+      BYROW(
+       a,
+       LAMBDA(row,
+        IFERROR(COLUMNS(REGEXEXTRACT(row & "", "\X", 1)), 0)
+       )
+      )
+     ),
+     IF(
+      max_len = 0,
+      "",
+      MAKEARRAY(
+       r,
+       max_len,
+       LAMBDA(i, j, LET(
+        _char, IFERROR(
+         INDEX(
+          REGEXEXTRACT(INDEX(a, i, 1) & "", "\X", 1),
+          1,
+          j
+         ),
+         ""
+        ),
+        IF(_char = "", "", IFERROR(--_char, _char))
+       ))
+      )
+     )
+    )
+   ),
+   LET(
+    max_len, MAX(
+     BYCOL(
+      a,
+      LAMBDA(col,
+       IFERROR(COLUMNS(REGEXEXTRACT(col & "", "\X", 1)), 0)
+      )
+     )
+    ),
+    IF(
+     max_len = 0,
+     "",
+     MAKEARRAY(
+      max_len,
+      c,
+      LAMBDA(i, j, LET(
+       _char, IFERROR(
+        INDEX(
+         TOCOL(REGEXEXTRACT(INDEX(a, 1, j) & "", "\X", 1)),
+         i,
+         1
+        ),
+        ""
+       ),
+       IF(_char = "", "", IFERROR(--_char, _char))
+      ))
+     )
+    )
+   )
+  )
+ )
+))
+=== DESCRIPTION ===
+Explodes a string into an array of its characters.
+
+Arguments:
+  str_or_array - the string to split (or an array of strings).
+  [as_row]     - 1 for a horizontal result; default 0 vertical.
+
+Returns:
+  One character per cell, using the \X grapheme pattern so multi-character Unicode symbols stay intact. 1D array input splits into the unused axis; 2D input is concatenated row-major first. Digit characters are returned as numbers.
+
+Example:
+  str2arr("ab1")  ->  {"a";"b";1}

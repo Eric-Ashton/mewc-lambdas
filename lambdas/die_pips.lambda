@@ -1,0 +1,31 @@
+=== SIGNATURE ===
+die_pips(st)
+=== COMMENT ===
+Converts die-face pip characters (⚀-⚅) to their numbers. Handles a concatenated string of dice or an array with one die per cell (concatenate first for multiple dice per cell).
+=== CODE ===
+=LAMBDA(st, LET(
+   toVals, LAMBDA(txt, LET(
+      seq, SEQUENCE(LEN(txt)),
+      chars, MID(txt, seq, 1),
+      codes, UNICODE(chars),
+      isDie, (codes >= 9856) * (codes <= 9861),
+      vals, FILTER(codes - 9855, isDie, NA()),
+      IF(ROWS(vals) * COLUMNS(vals) = 1, INDEX(vals, 1), vals)
+   )),
+   IF(
+      ROWS(st) * COLUMNS(st) = 1,
+      toVals(st),
+      MAP(st, LAMBDA(cell, toVals(cell)))
+   )
+))
+=== DESCRIPTION ===
+Converts die-face pip glyphs to their numeric values.
+
+Arguments:
+  st - one or more die-face characters (⚀ ⚁ ⚂ ⚃ ⚄ ⚅), either concatenated in a string or as an array with one die per cell.
+
+Returns:
+  The pip value(s) as numbers. For multiple dice within a single cell, concatenate them into one string first.
+
+Example:
+  die_pips("⚄")  ->  5

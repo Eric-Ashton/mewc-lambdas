@@ -1,0 +1,19 @@
+# Excel temp / lock files
+~$*.xlsm
+~$*.xlsx
+*.tmp
+
+# workbooks: the test workbook IS tracked (upstream/dev); every other workbook is
+# ignored, including the template "MEWC Lambdas and VBA.xlsm" which lives outside the repo
+*.xlsm
+*.xlsx
+!MEWC Lambda and VBA Unit Tests.xlsm
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# os
+.DS_Store
+Thumbs.db

@@ -1,0 +1,33 @@
+=== SIGNATURE ===
+knight_moves(start_ad, end_ad)
+=== COMMENT ===
+Minimum number of chess knight moves between two cells on an unbounded board. start_ad and end_ad each accept a numeric address (1e6*row+col) or an A1 string.
+=== CODE ===
+=LAMBDA(start_ad, end_ad, LET(
+   a, num_ad(start_ad),
+   b, num_ad(end_ad),
+   row_1, INT(a / 1000000),
+   col_1, MOD(a, 1000000),
+   row_2, INT(b / 1000000),
+   col_2, MOD(b, 1000000),
+   adx, ABS(col_1 - col_2),
+   ady, ABS(row_1 - row_2),
+   dx, MAX(adx, ady),
+   dy, MIN(adx, ady),
+   base_est, MAX(QUOTIENT(dx + 1, 2), QUOTIENT(dx + dy + 2, 3)),
+   raw, IF(MOD(base_est + dx + dy, 2) = 1, base_est + 1, base_est),
+   IF(dx = 0, 0, IF(AND(dx = 1, dy = 0), 3, IF(AND(dx = 2, dy = 2), 4, raw)))
+))
+=== DESCRIPTION ===
+Minimum number of chess knight moves between two cells on an unbounded board.
+
+Arguments:
+  start_ad - starting cell as a numeric address (1e6*row+col) OR an A1 string.
+  end_ad   - target cell as a numeric address OR an A1 string.
+
+Returns:
+  The count of knight moves.
+
+Example:
+  knight_moves("A1", "B3")         -> 1
+  knight_moves(1000001, 8000008)   -> 6   (A1 -> H8)

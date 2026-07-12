@@ -1,0 +1,25 @@
+=== SIGNATURE ===
+label_lookup(arr,row_label,column_label)
+=== COMMENT ===
+Two-way lookup in a labelled 2D array: finds row_label in the first column and column_label in the first row and returns the value at their intersection.
+=== CODE ===
+=LAMBDA(arr, row_label, column_label,
+   INDEX(
+      arr,
+      XMATCH(row_label, INDEX(arr, , 1), 0),
+      XMATCH(column_label, INDEX(arr, 1, ), 0)
+   )
+)
+=== DESCRIPTION ===
+Looks up a value in a labelled 2D table by row and column headers.
+
+Arguments:
+  arr          - a 2D array whose first column and first row hold the labels.
+  row_label    - label to match in the first column.
+  column_label - label to match in the first row.
+
+Returns:
+  The value at the intersection of the first matching row_label and column_label.
+
+Example:
+  label_lookup(tbl, "Mon", "Cost")

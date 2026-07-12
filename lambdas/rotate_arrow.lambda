@@ -1,0 +1,26 @@
+=== SIGNATURE ===
+rotate_arrow(arrow, steps, [clockwise])
+=== COMMENT ===
+Rotates an arrow by 45 degrees times steps. clockwise = 1 (default) rotates clockwise; clockwise = 0 rotates counter-clockwise.
+=== CODE ===
+=LAMBDA(arrow, steps, [dir], LET(
+   arrows, "↑↗→↘↓↙←↖",
+   arrow_list, MID(arrows, SEQUENCE(8), 1),
+   i, XMATCH(arrow, arrow_list),
+   s, IF(ISOMITTED(dir), steps, IF(dir = "ccw", -steps, steps)),
+   n, MOD(i - 1 + s, 8) + 1,
+   MID(arrows, n, 1)
+))
+=== DESCRIPTION ===
+Rotates an arrow around the eight compass directions.
+
+Arguments:
+  arrow       - the arrow to rotate (↑↗→↘↓↙←↖).
+  steps       - number of 45-degree turns.
+  [clockwise] - 1 = clockwise (default), 0 = counter-clockwise.
+
+Returns:
+  The rotated arrow.
+
+Example:
+  rotate_arrow("→", 1)  ->  "↘"

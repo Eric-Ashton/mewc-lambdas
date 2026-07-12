@@ -1,0 +1,57 @@
+=== SIGNATURE ===
+textbetween(str_or_arr, prefix, suffix)
+=== COMMENT ===
+Returns the text between a prefix and a suffix. Trims the result and converts to a number when possible. Works on arrays, returning an array of the same size.
+=== CODE ===
+=LAMBDA(str_or_arr, prefix, suffix, LET(
+   extract_between, LAMBDA(item,
+      IF(
+         ISERROR(item),
+         item,
+         LET(
+            item_text, item & "",
+            lower_item, LOWER(item_text),
+            lower_prefix, LOWER(prefix & ""),
+            lower_suffix, LOWER(suffix & ""),
+            start_num, IF(
+               OR(lower_prefix = "", lower_suffix = ""),
+               0,
+               IFERROR(SEARCH(lower_prefix, lower_item), 0)
+            ),
+            after_num, start_num + LEN(lower_prefix),
+            end_num, IF(
+               start_num = 0,
+               0,
+               IFERROR(SEARCH(lower_suffix, lower_item, after_num), 0)
+            ),
+            between_text, IF(
+               OR(start_num = 0, end_num = 0),
+               "",
+               MID(item_text, after_num, end_num - after_num)
+            ),
+            cleaned_text, TRIM(between_text),
+            IF(cleaned_text = "", "", IFERROR(--cleaned_text, cleaned_text))
+         )
+      )
+   ),
+   row_count, ROWS(str_or_arr),
+   col_count, COLUMNS(str_or_arr),
+   IF(
+      row_count * col_count = 1,
+      extract_between(str_or_arr),
+      MAP(str_or_arr, extract_between)
+   )
+))
+=== DESCRIPTION ===
+Extracts the text lying between two markers.
+
+Arguments:
+  str_or_arr - the string (or array of strings) to search.
+  prefix     - the marker before the wanted text.
+  suffix     - the marker after the wanted text.
+
+Returns:
+  The trimmed text between prefix and suffix, converted to a number when possible. Arrays return an array of the same size.
+
+Example:
+  textbetween("[x]", "[", "]")  ->  "x"

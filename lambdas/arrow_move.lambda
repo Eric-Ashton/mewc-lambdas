@@ -1,0 +1,47 @@
+=== SIGNATURE ===
+arrow_move(start_ad, arrow, [steps], [board_rng], [push_mode])
+=== COMMENT ===
+Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction, bounded by board_rng (default whole sheet). Returns a NUMERIC address. Out of bounds, push_mode: 1 stop at edge (default), 0 stay, -1 'oob'.
+=== CODE ===
+=LAMBDA(start_ad, arrow, [steps], [board_rng], [push_mode],
+  LET(
+    step_n, IF(ISOMITTED(steps), 1, steps),
+    mode, IF(ISOMITTED(push_mode), 1, push_mode),
+    start_num, num_ad(start_ad),
+    start_row, INT(start_num / 1000000),
+    start_col, MOD(start_num, 1000000),
+    d_row, SWITCH(arrow, "←", 0, "↖", -1, "↗", -1, "→", 0, "↙", 1, "↓", 1, "↘", 1, "↑", -1),
+    d_col, SWITCH(arrow, "←", -1, "↖", -1, "↗", 1, "→", 1, "↙", -1, "↓", 0, "↘", 1, "↑", 0),
+    row_min, IF(ISOMITTED(board_rng), 1, MIN(ROW(board_rng))),
+    row_max, IF(ISOMITTED(board_rng), 1048576, MAX(ROW(board_rng))),
+    col_min, IF(ISOMITTED(board_rng), 1, MIN(COLUMN(board_rng))),
+    col_max, IF(ISOMITTED(board_rng), 16384, MAX(COLUMN(board_rng))),
+    try_row, start_row + d_row * step_n,
+    try_col, start_col + d_col * step_n,
+    push_row, MIN(MAX(try_row, row_min), row_max),
+    push_col, MIN(MAX(try_col, col_min), col_max),
+    oob, OR(try_row <> push_row, try_col <> push_col),
+    IF(oob,
+      SWITCH(mode,
+        1, 1000000 * push_row + push_col,
+        0, 1000000 * start_row + start_col,
+        -1, "oob",
+        1000000 * push_row + push_col),
+      1000000 * try_row + try_col)
+  )
+)
+=== DESCRIPTION ===
+Moves an address a number of steps in an arrow direction, constrained to a board. Computes in numeric-address space and RETURNS A NUMERIC address (use str_ad for the final A1 answer).
+
+Arguments:
+  start_ad    - starting cell as a numeric address or an A1 string (coerced with num_ad).
+  arrow       - direction arrow.
+  [steps]     - number of steps (default 1).
+  [board_rng] - bounding range (default whole sheet).
+  [push_mode] - out-of-bounds behavior: 1 = stop at edge (default), 0 = stay at start, -1 = return "oob".
+
+Returns:
+  The destination as a numeric address (or "oob" under push_mode -1).
+
+Example:
+  arrow_move("A1", "→", 3) -> 1000004   (str_ad -> "D1")

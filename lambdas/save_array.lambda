@@ -1,0 +1,27 @@
+=== SIGNATURE ===
+save_array(input_array,[col_delimiter],[row_delimiter])
+=== COMMENT ===
+Flattens an array into a delimited text string (inverse of load_array). Defaults match load_array: "|" between columns and ";" between rows.
+=== CODE ===
+=LAMBDA(input_array, [col_delimiter], [row_delimiter], LET(
+   cd, IF(ISOMITTED(col_delimiter), "|", col_delimiter),
+   rd, IF(ISOMITTED(row_delimiter), ";", row_delimiter),
+   TEXTJOIN(
+      rd,
+      FALSE,
+      BYROW(input_array, LAMBDA(row, TEXTJOIN(cd, FALSE, row)))
+   )
+))
+=== DESCRIPTION ===
+Serializes a 2D array into a single delimited string (inverse of load_array).
+
+Arguments:
+  input_array     - the array to serialize.
+  [col_delimiter] - column separator (default "|").
+  [row_delimiter] - row separator (default ";").
+
+Returns:
+  A text string encoding the array.
+
+Example:
+  save_array({1,2;3,4})  ->  "1|2;3|4"

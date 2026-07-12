@@ -1,0 +1,14 @@
+# Normalize line endings. Store text as LF in the repo and check out LF on all
+# platforms so the .lambda files, Python tooling, and Linux CI stay identical.
+* text=auto eol=lf
+
+# VBA modules: Excel's VBE importer expects CRLF, so keep these CRLF on checkout.
+*.bas text eol=crlf
+
+# Never normalize binaries.
+*.xlsm binary
+*.xlsx binary
+*.xltm binary
+*.png  binary
+*.gif  binary
+*.pdf  binary

@@ -1,0 +1,33 @@
+=== SIGNATURE ===
+xdec2bin(number, [places])
+=== COMMENT ===
+Like DEC2BIN but handles up to 53 binary places instead of 10 (beyond 53 the value exceeds the exact-integer range of a double).
+=== CODE ===
+=LAMBDA(number, [places], LET(
+   n, ROUND(number, 0),
+   p, IF(ISOMITTED(places), 0, places),
+   IF(
+      n >= 0,
+      BASE(n, 2, MAX(p, 1)),
+      LET(
+         bits, IF(p = 0, 64, p),
+         IF(
+            bits > 53,
+            "Error: Precision Limit",
+            BASE(POWER(2, bits) + n, 2, bits)
+         )
+      )
+   )
+))
+=== DESCRIPTION ===
+Converts a decimal integer to a binary string, extended range.
+
+Arguments:
+  number   - the decimal integer to convert.
+  [places] - minimum width, zero-padded (optional).
+
+Returns:
+  The binary representation as text, supporting up to 53 places (past 53 the value can no longer be stored exactly in a double).
+
+Example:
+  xdec2bin(5)  ->  "101"

@@ -1,0 +1,17 @@
+=== SIGNATURE ===
+rev(arr)
+=== COMMENT ===
+Cleans and reverses an array (same as xtocol(arr, 0, , "←↑")).
+=== CODE ===
+=LAMBDA(arr, xtocol(arr, 0, , arrow("L") & arrow("U")))
+=== DESCRIPTION ===
+Reverses the order of an array.
+
+Arguments:
+  arr - the array to reverse.
+
+Returns:
+  The cleaned, fully reversed array (equivalent to xtocol(arr, 0, , "←↑")).
+
+Example:
+  rev({1;2;3})  ->  {3;2;1}

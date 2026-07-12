@@ -1,0 +1,18 @@
+=== SIGNATURE ===
+smallest(check, return)
+=== COMMENT ===
+Finds the smallest number in "check" and returns the first matching value in "return" (an XLOOKUP on MIN).
+=== CODE ===
+=LAMBDA(check, return, XLOOKUP(MIN(check), check, return))
+=== DESCRIPTION ===
+Returns the value paired with the minimum of a checked array.
+
+Arguments:
+  check  - array of numbers to take the minimum of.
+  return - array (parallel to check) to return the matching value from.
+
+Returns:
+  The element of return aligned with the first occurrence of MIN(check).
+
+Example:
+  smallest(scores, names)  ->  the name with the lowest score

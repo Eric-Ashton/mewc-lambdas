@@ -1,0 +1,32 @@
+=== SIGNATURE ===
+load_array(input_string,[col_delimiter],[row_delimiter])
+=== COMMENT ===
+Rebuilds an array from a delimited string (inverse of save_array). Defaults match save_array: "|" separates columns and ";" separates rows.
+=== CODE ===
+=LAMBDA(input_string, [col_delimiter], [row_delimiter],
+   IF(
+      input_string = "",
+      "",
+      LET(
+         cd, IF(ISOMITTED(col_delimiter), "|", col_delimiter),
+         rd, IF(ISOMITTED(row_delimiter), ";", row_delimiter),
+         LET(
+            arr, TEXTSPLIT(input_string, cd, rd, FALSE),
+            MAP(arr, LAMBDA(val, IF(val = "", "", IFERROR(--val, val))))
+         )
+      )
+   )
+)
+=== DESCRIPTION ===
+Parses a delimited string back into a 2D array (inverse of save_array).
+
+Arguments:
+  input_string    - the delimited text to parse.
+  [col_delimiter] - column separator (default "|").
+  [row_delimiter] - row separator (default ";").
+
+Returns:
+  The reconstructed array.
+
+Example:
+  load_array("1|2;3|4")  ->  {1,2;3,4}

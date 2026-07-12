@@ -1,0 +1,76 @@
+=== SIGNATURE ===
+transform_array(arr, dir)
+=== COMMENT ===
+Rotates 90 degrees or flips an array, once or twice, using one or two of ↺↻↕↔. For two operations pass them concatenated, e.g. "↕↔" or "↺↺".
+=== CODE ===
+=LAMBDA(arr, dir, LET(
+   base, arr,
+   is_scalar, AND(ROWS(base) = 1, COLUMNS(base) = 1),
+   op_count, LEN(dir),
+   apply_one, LAMBDA(cur, op, LET(
+      row_count, ROWS(cur),
+      col_count, COLUMNS(cur),
+      IF(
+         op = "↻",
+         MAKEARRAY(
+            col_count,
+            row_count,
+            LAMBDA(i, j, INDEX(cur, row_count - j + 1, i))
+         ),
+         IF(
+            op = "↺",
+            MAKEARRAY(
+               col_count,
+               row_count,
+               LAMBDA(i, j, INDEX(cur, j, col_count - i + 1))
+            ),
+            IF(
+               op = "↕",
+               MAKEARRAY(
+                  row_count,
+                  col_count,
+                  LAMBDA(i, j, INDEX(cur, row_count - i + 1, j))
+               ),
+               IF(
+                  op = "↔",
+                  MAKEARRAY(
+                     row_count,
+                     col_count,
+                     LAMBDA(i, j, INDEX(cur, i, col_count - j + 1))
+                  ),
+                  NA()
+               )
+            )
+         )
+      )
+   )),
+   IF(
+      is_scalar,
+      base,
+      IF(
+         op_count = 0,
+         base,
+         IF(
+            op_count > 2,
+            NA(),
+            REDUCE(
+               base,
+               SEQUENCE(op_count),
+               LAMBDA(cur, k, apply_one(cur, MID(dir, k, 1)))
+            )
+         )
+      )
+   )
+))
+=== DESCRIPTION ===
+Rotates or flips a 2D array.
+
+Arguments:
+  arr - the array to transform.
+  dir - one or two operation arrows: ↺ (rotate CCW), ↻ (rotate CW), ↕ (flip vertical), ↔ (flip horizontal). Concatenate two for a double operation ("↕↔", "↺↺").
+
+Returns:
+  The transformed array.
+
+Example:
+  transform_array(board, "↻")

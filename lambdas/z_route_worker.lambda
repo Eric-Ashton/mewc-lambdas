@@ -1,0 +1,58 @@
+=== SIGNATURE ===
+z_route_worker(_s, _p, _f2, cost_map, _nr, _nc, _rd, _cd, _sq)
+=== COMMENT ===
+Private recursive worker for route_cost - do not call directly. Runs one Dijkstra relaxation pass over the frontier and recurses until no cell's cost improves. Extra args carry route_cost's grid, size and move deltas.
+=== CODE ===
+=LAMBDA(_s, _p, _f2, cost_map, _nr, _nc, _rd, _cd, _sq, LET(
+   _tr, TOCOL(_rd + INDEX(_f2, 0, 1)),
+   _tc, TOCOL(_cd + INDEX(_f2, 0, 2)),
+   _db, TOCOL(
+      INDEX(_p, INDEX(_f2, 0, 1), INDEX(_f2, 0, 2))
+         + SEQUENCE(, COUNTA(_rd), 0, 0)
+   ),
+   _nf, IF(
+      NOT((_tr >= 1) * (_tr <= _nr) * (_tc >= 1) * (_tc <= _nc)),
+      {0, 0, 0},
+      IF(
+         NOT(ISNUMBER(INDEX(cost_map, _tr, _tc))),
+         {0, 0, 0},
+         IF(
+            INDEX(cost_map, _tr, _tc) + _db < INDEX(_p, _tr, _tc),
+            HSTACK(_tr, _tc, _db + INDEX(cost_map, _tr, _tc)),
+            {0, 0, 0}
+         )
+      )
+   ),
+   _sn, SORT(_nf, 3, 1),
+   _ps, XMATCH(
+      UNIQUE(INDEX(_sn, 0, 1) & "|" & INDEX(_sn, 0, 2)),
+      INDEX(_sn, 0, 1) & "|" & INDEX(_sn, 0, 2)
+   ),
+   _fs, FILTER(
+      INDEX(_sn, _ps, SEQUENCE(, 3)),
+      INDEX(_sn, _ps, 1) > 0,
+      0
+   ),
+   _um, IFERROR(
+      INDEX(
+         _fs,
+         XMATCH(_sq, INDEX(_fs, 0, 1) & "|" & INDEX(_fs, 0, 2)),
+         3
+      ),
+      _p
+   ),
+   IF(SUM(_fs) = 0, _p, _s(_s, _um, _fs, cost_map, _nr, _nc, _rd, _cd, _sq))
+))
+=== DESCRIPTION ===
+Private recursive worker for route_cost - do not call directly.
+
+Performs one relaxation pass: for the current frontier cells (_f2) it checks each neighbor (via move deltas _rd/_cd), keeps the cheapest cost improvement per cell, writes them into the running cost matrix _p, and recurses on the newly-improved cells. Stops when no cell improves.
+
+Arguments:
+  _s       - self reference (for recursion).
+  _p       - current cost matrix (same shape as cost_map).
+  _f2      - frontier: rows of {row, col, cost} to expand.
+  cost_map, _nr, _nc, _rd, _cd, _sq - route_cost's grid, size, move deltas and cell keys, passed through.
+
+Returns:
+  The final cost matrix once no further improvement is possible.

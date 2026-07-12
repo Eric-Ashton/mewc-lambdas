@@ -1,0 +1,53 @@
+=== SIGNATURE ===
+neighbors_list(center_ad, [size], [boundary_rng], [diag_allowed])
+=== COMMENT ===
+Lists the A1 addresses around a center cell within size (default 1), bounded by boundary_rng (default whole sheet). center_ad accepts a numeric address or an A1 string. diag_allowed 1 = chessboard (default), 0 = Manhattan.
+=== CODE ===
+=LAMBDA(center_ad, [size], [boundary_rng], [diag_allowed], LET(
+   s, IF(ISOMITTED(size), 1, size),
+   d, IF(ISOMITTED(diag_allowed), 1, diag_allowed),
+   cen_num, num_ad(center_ad),
+   cen_row, IFERROR(INT(cen_num / 1000000), NA()),
+   cen_col, IFERROR(MOD(cen_num, 1000000), NA()),
+   rmin, IF(ISOMITTED(boundary_rng), 1, MIN(ROW(boundary_rng))),
+   rmax, IF(ISOMITTED(boundary_rng), 1048576, MAX(ROW(boundary_rng))),
+   cmin, IF(ISOMITTED(boundary_rng), 1, MIN(COLUMN(boundary_rng))),
+   cmax, IF(ISOMITTED(boundary_rng), 16384, MAX(COLUMN(boundary_rng))),
+   ok, ISNUMBER(cen_row) * ISNUMBER(cen_col),
+   IF(
+      NOT(ok),
+      NA(),
+      LET(
+         w, 2 * s + 1,
+         ro, MAKEARRAY(w, w, LAMBDA(i, j, i - s - 1)),
+         co, MAKEARRAY(w, w, LAMBDA(i, j, j - s - 1)),
+         ri, cen_row + ro,
+         ci, cen_col + co,
+         m, (ri >= rmin) * (ri <= rmax) * (ci >= cmin) * (ci <= cmax)
+            * ((ro <> 0) + (co <> 0))
+            * IF(d, 1, ABS(ro) + ABS(co) <= s),
+         dist, IF(d, MAX(ABS(ro), ABS(co)), ABS(ro) + ABS(co)),
+         ad, TOCOL(IF(m, ADDRESS(ri, ci, 4), "")),
+         di, TOCOL(IF(m, dist, "")),
+         k, ad <> "",
+         lst, FILTER(ad, k),
+         ord, FILTER(di, k),
+         IF(ROWS(lst) = 0, NA(), SORTBY(lst, ord, 1))
+      )
+   )
+))
+=== DESCRIPTION ===
+Lists the cell addresses around a center cell, ordered by distance (nearest first).
+
+Arguments:
+  center_ad      - center cell as a numeric address (1e6*row+col) OR an A1 string; coerced with num_ad.
+  [size]         - neighborhood radius (default 1).
+  [boundary_rng] - bounding range that trims off-board neighbors (default whole sheet).
+  [diag_allowed] - 1 = include diagonals / chessboard range (default), 0 = Manhattan (orthogonal) limit.
+
+Returns:
+  A column of neighboring cell addresses as A1 strings (the center itself is excluded); #N/A if the center cannot be parsed.
+
+Example:
+  neighbors_list("C5", 1, , 0)
+  neighbors_list(5000003)          ; numeric address for C5

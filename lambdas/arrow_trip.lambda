@@ -1,0 +1,54 @@
+=== SIGNATURE ===
+arrow_trip(rng, start_ad, dir, [stopper])
+=== COMMENT ===
+Walks from start_ad (numeric or A1) in a straight arrow direction across rng until the edge (or the optional stopper value). Returns a 2-column array of NUMERIC addresses and their values, including the start cell.
+=== CODE ===
+=LAMBDA(rng, start_ad, dir, [stopper],
+  LET(
+    start_num, num_ad(start_ad),
+    start_row, INT(start_num / 1000000),
+    start_col, MOD(start_num, 1000000),
+    top_row, ROW(INDEX(rng, 1, 1)),
+    left_col, COLUMN(INDEX(rng, 1, 1)),
+    height, ROWS(rng),
+    width, COLUMNS(rng),
+    bottom_row, top_row + height - 1,
+    right_col, left_col + width - 1,
+    inside, AND(start_row >= top_row, start_row <= bottom_row, start_col >= left_col, start_col <= right_col),
+    IF(NOT(inside), NA(),
+      LET(
+        arrow_list, {"↑"; "↓"; "←"; "→"; "↖"; "↗"; "↘"; "↙"},
+        row_steps, {-1; 1; 0; 0; -1; -1; 1; 1},
+        col_steps, {0; 0; -1; 1; -1; 1; 1; -1},
+        dir_index, XMATCH(dir, arrow_list),
+        row_delta, INDEX(row_steps, dir_index),
+        col_delta, INDEX(col_steps, dir_index),
+        row_limit, IF(row_delta > 0, bottom_row - start_row, IF(row_delta < 0, start_row - top_row, 1000000)),
+        col_limit, IF(col_delta > 0, right_col - start_col, IF(col_delta < 0, start_col - left_col, 1000000)),
+        max_steps, MIN(row_limit, col_limit),
+        steps, SEQUENCE(max_steps + 1, , 0),
+        trip_rows, start_row + steps * row_delta,
+        trip_cols, start_col + steps * col_delta,
+        num_list, 1000000 * trip_rows + trip_cols,
+        val_list, MAP(num_list, LAMBDA(a, LET(v, addr_lookup(rng, a), IF(OR(v = "", ISBLANK(v)), "", v)))),
+        use_stop, NOT(ISOMITTED(stopper)),
+        stop_pos, IF(use_stop, XMATCH(stopper, val_list, 0), NA()),
+        keep_rows, IF(use_stop, IF(ISERROR(stop_pos), max_steps + 1, stop_pos), max_steps + 1),
+        out_addrs, CHOOSEROWS(num_list, SEQUENCE(keep_rows)),
+        out_vals, CHOOSEROWS(val_list, SEQUENCE(keep_rows)),
+        HSTACK(out_addrs, out_vals)
+      )
+    )
+  )
+)
+=== DESCRIPTION ===
+Traces a straight path from a start cell in one arrow direction until the board edge or an optional stopping value.
+
+Arguments:
+  rng       - the board range to travel across.
+  start_ad  - starting cell as a numeric address or A1 string (coerced with num_ad).
+  dir       - direction arrow.
+  [stopper] - a value that halts the trip when encountered (inclusive).
+
+Returns:
+  A 2-column array: NUMERIC addresses in column 1 and their values in column 2, starting at the start cell. #N/A if the start is outside rng.

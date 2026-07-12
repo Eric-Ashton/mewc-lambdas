@@ -1,0 +1,38 @@
+=== SIGNATURE ===
+num_ad(arr)
+=== COMMENT ===
+Converts each valid A1 string address in arr to a numeric address (1e6*row+col). Anything that is not a string address - values already numeric, ranges, or junk - passes through unchanged. Element-wise; same shape as arr.
+=== CODE ===
+=LAMBDA(arr,
+  LET(
+    to_num, LAMBDA(one,
+      IFERROR(
+        IF(NOT(ISTEXT(one)), one,
+          LET(
+            s, UPPER(SUBSTITUTE(IFERROR(TEXTAFTER(one, "!"), one), "$", "")),
+            IF(NOT(REGEXTEST(s, "^[A-Z]{1,3}[0-9]+$")), one,
+              LET(
+                letters, REGEXEXTRACT(s, "[A-Z]+"),
+                row_num, VALUE(REGEXEXTRACT(s, "[0-9]+")),
+                nlet, LEN(letters),
+                seq, SEQUENCE(nlet),
+                col, SUM((CODE(MID(letters, seq, 1)) - 64) * 26 ^ (nlet - seq)),
+                IF(OR(col > 16384, row_num > 1048576), one, 1000000 * row_num + col)))
+          )),
+        one)),
+    IF(ROWS(arr) * COLUMNS(arr) = 1, to_num(arr), MAP(arr, to_num))
+  )
+)
+=== DESCRIPTION ===
+Converts A1 string addresses to numeric addresses (1e6 * row + col), element-wise.
+
+Only a valid A1 string address is converted; everything else - numbers (already numeric), non-address text, range strings, errors - is returned unchanged. Safe to run at a boundary to coerce mixed inputs to numeric, and idempotent.
+
+Arguments:
+  arr - a value or array. Strings are tested after stripping $ and any Sheet! prefix and upper-casing; must match ^[A-Z]{1,3}[0-9]+$ with col <= 16384 and row <= 1048576.
+
+Returns:
+  Same shape as arr, each valid string address replaced by its numeric address; all else unchanged. A single cell returns a scalar.
+
+Example:
+  num_ad("D3") -> 3000004 ; num_ad(3000004) -> 3000004 ; num_ad("hi") -> "hi"

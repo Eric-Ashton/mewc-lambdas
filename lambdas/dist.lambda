@@ -1,0 +1,47 @@
+=== SIGNATURE ===
+dist(start_ad, end_ad, [diag_allowed], [print_components])
+=== COMMENT ===
+Distance from start_ad to end_ad (each numeric or A1). diag_allowed: 1 chessboard (default), 0 taxicab, -1 pythagorean. If print_components is 1 (not default) returns the component arrows and magnitudes instead.
+=== CODE ===
+=LAMBDA(start_ad, end_ad, [diag_allowed], [print_components],
+  LET(
+    s, num_ad(start_ad),
+    e, num_ad(end_ad),
+    start_row, INT(s / 1000000),
+    start_col, MOD(s, 1000000),
+    end_row, INT(e / 1000000),
+    end_col, MOD(e, 1000000),
+    mode, IF(ISOMITTED(diag_allowed), 1, diag_allowed),
+    show_components, IF(ISOMITTED(print_components), 0, print_components),
+    row_diff, end_row - start_row,
+    col_diff, end_col - start_col,
+    abs_row, ABS(row_diff),
+    abs_col, ABS(col_diff),
+    quad, SWITCH(TRUE, AND(row_diff<0,col_diff<0),"↖", AND(row_diff<0,col_diff>0),"↗", AND(row_diff>0,col_diff<0),"↙", "↘"),
+    v_arr, IF(row_diff>0,"↓",IF(row_diff<0,"↑","")),
+    h_arr, IF(col_diff>0,"→",IF(col_diff<0,"←","")),
+    IF(mode = -1,
+      IF(show_components = 0, SQRT(row_diff^2 + col_diff^2),
+        VSTACK(v_arr, abs_row, h_arr, abs_col, IF(OR(row_diff=0,col_diff=0),"",quad), SQRT(row_diff^2+col_diff^2))),
+      IF(show_components = 0,
+        IF(mode = 0, abs_row + abs_col, MAX(abs_row, abs_col)),
+        IF(mode = 0,
+          VSTACK(v_arr, abs_row, h_arr, abs_col),
+          LET(dd, MIN(abs_row,abs_col), rr, abs_row-dd, cc, abs_col-dd,
+            VSTACK(IF(dd>0,quad,""), dd, IF(rr>0,v_arr,""), rr, IF(cc>0,h_arr,""), cc)))))
+  )
+)
+=== DESCRIPTION ===
+Distance between two cells, with selectable metric. Accepts numeric or A1 string addresses.
+
+Arguments:
+  start_ad           - first cell (numeric address or A1 string).
+  end_ad             - second cell (numeric address or A1 string).
+  [diag_allowed]     - metric: 1 = chessboard/Chebyshev (default), 0 = taxicab/Manhattan, -1 = Euclidean.
+  [print_components] - 1 to return the directional arrows and component distances instead of the scalar (default 0).
+
+Returns:
+  The distance as a number, or the component breakdown when print_components = 1.
+
+Example:
+  dist("A1", "C3", 1) -> 2

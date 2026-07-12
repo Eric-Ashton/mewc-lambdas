@@ -1,0 +1,35 @@
+=== SIGNATURE ===
+xtextsplit(str,[delim],[as_row])
+=== COMMENT ===
+Like TEXTSPLIT but trims items, returns a vertical array (horizontal if as_row=1), and converts to numbers. If delim is omitted, the first non-alphanumeric char (incl. whitespace) is used.
+=== CODE ===
+=LAMBDA(str, [delim], [as_row], LET(
+   use_delim_arg, NOT(ISOMITTED(delim)),
+   inferred_delim, IF(use_delim_arg, "", REGEXEXTRACT(str, "[^A-Za-z0-9]")),
+   can_split, IF(use_delim_arg, TRUE, NOT(ISERROR(inferred_delim))),
+   eff_delim, IF(use_delim_arg, delim, inferred_delim),
+   base_split, IF(
+      can_split,
+      IFERROR(TOCOL(TRIM(TEXTSPLIT(str, eff_delim))), str),
+      str
+   ),
+   split, base_split,
+   one_entry, COUNTA(split) = 1,
+   all_numbers, COUNTA(FILTER(split, ISNUMBER(split * 1))) = COUNTA(split),
+   as_row_val, IF(ISOMITTED(as_row), 0, as_row),
+   core_result, IF(one_entry, str, IF(all_numbers, split * 1, split)),
+   IF(AND(as_row_val = 1, NOT(one_entry)), TOROW(core_result), core_result)
+))
+=== DESCRIPTION ===
+TEXTSPLIT with trimming, reshaping, and numeric coercion.
+
+Arguments:
+  str      - the text to split.
+  [delim]  - delimiter; if omitted, the first non-alphanumeric character (including whitespace) is used.
+  [as_row] - 1 for a horizontal result; default 0 vertical.
+
+Returns:
+  The split pieces, trimmed and converted to numbers where applicable, as a vertical array by default.
+
+Example:
+  xtextsplit("a, b, c")  ->  {"a";"b";"c"}

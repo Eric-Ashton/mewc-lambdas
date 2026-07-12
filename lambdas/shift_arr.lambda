@@ -1,0 +1,110 @@
+=== SIGNATURE ===
+shift_arr(arr, dir, [steps], [fill])
+=== COMMENT ===
+Shifts a 1D or 2D array by "steps" (default 1) in the dir arrow. With no fill, items wrap around; if fill is a value, it fills the vacated cells instead.
+=== CODE ===
+=LAMBDA(arr, dir, [steps], [fill], LET(
+   s, IF(ISOMITTED(steps), 1, steps),
+   wrap_mode, IF(ISOMITTED(fill), TRUE, fill = "wrap"),
+   num_rows, ROWS(arr),
+   num_cols, COLUMNS(arr),
+   dir_list, {"U", "D", "L", "R", "UL", "UR", "DL", "DR", "↑", "↓", "←", "→", "↖", "↗", "↙", "↘", "⇑", "⇓", "⇐", "⇒", "⇖", "⇗", "⇙", "⇘"},
+   delta_r, CHOOSE(
+      XMATCH(dir, dir_list),
+      -1,
+      1,
+      0,
+      0,
+      -1,
+      -1,
+      1,
+      1,
+      -1,
+      1,
+      0,
+      0,
+      -1,
+      -1,
+      1,
+      1,
+      -1,
+      1,
+      0,
+      0,
+      -1,
+      -1,
+      1,
+      1
+   ),
+   delta_c, CHOOSE(
+      XMATCH(dir, dir_list),
+      0,
+      0,
+      -1,
+      1,
+      -1,
+      1,
+      -1,
+      1,
+      0,
+      0,
+      -1,
+      1,
+      -1,
+      1,
+      -1,
+      1,
+      0,
+      0,
+      -1,
+      1,
+      -1,
+      1,
+      -1,
+      1
+   ),
+   d_row, delta_r * s,
+   d_col, delta_c * s,
+   result, IF(
+      wrap_mode,
+      MAKEARRAY(
+         num_rows,
+         num_cols,
+         LAMBDA(i, j,
+            INDEX(
+               arr,
+               MOD(i - 1 - d_row + num_rows, num_rows) + 1,
+               MOD(j - 1 - d_col + num_cols, num_cols) + 1
+            )
+         )
+      ),
+      MAKEARRAY(
+         num_rows,
+         num_cols,
+         LAMBDA(i, j, LET(
+            src_r, i - d_row,
+            src_c, j - d_col,
+            IF(
+               AND(src_r >= 1, src_r <= num_rows, src_c >= 1, src_c <= num_cols),
+               INDEX(arr, src_r, src_c),
+               fill
+            )
+         ))
+      )
+   ),
+   result
+))
+=== DESCRIPTION ===
+Shifts the contents of an array in a direction.
+
+Arguments:
+  arr     - the array to shift (1D or 2D).
+  dir     - direction arrow.
+  [steps] - number of cells to shift (default 1).
+  [fill]  - value to place in vacated cells; if omitted, contents wrap around.
+
+Returns:
+  The shifted array, same shape as arr.
+
+Example:
+  shift_arr(grid, "→", 1)

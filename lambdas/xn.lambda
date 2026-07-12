@@ -1,0 +1,30 @@
+=== SIGNATURE ===
+xn(value_or_array)
+=== COMMENT ===
+Converts numeric strings to numbers (like N). Non-numeric strings pass through unchanged, TRUE/FALSE become 1/0, blanks become "", "" stays "". Works on arrays.
+=== CODE ===
+=LAMBDA(val_or_arr, LET(
+   fn_convert, LAMBDA(x,
+      IF(
+         x = "",
+         "",
+         IF(ISNUMBER(x), x, IF(ISLOGICAL(x), N(x), IFERROR(VALUE(x), x)))
+      )
+   ),
+   IF(
+      ROWS(val_or_arr) * COLUMNS(val_or_arr) = 1,
+      fn_convert(val_or_arr),
+      MAP(val_or_arr, fn_convert)
+   )
+))
+=== DESCRIPTION ===
+Coerces values to numbers where sensible.
+
+Arguments:
+  value_or_array - a value or array to convert.
+
+Returns:
+  Numeric strings become numbers; TRUE/FALSE become 1/0; blanks and "" become ""; non-numeric text is left unchanged. Works on arrays.
+
+Example:
+  xn("42")  ->  42

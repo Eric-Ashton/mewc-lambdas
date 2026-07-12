@@ -1,0 +1,28 @@
+=== SIGNATURE ===
+set(rng, [as_row])
+=== COMMENT ===
+Turns a range into a set: flattens, removes blanks and errors, uniques, and sorts. Returns a column by default, or a row if as_row = 1.
+=== CODE ===
+=LAMBDA(data_rng, [as_row],
+   IFERROR(
+      LET(
+         _flat, TOCOL(data_rng, 3),
+         _clean, FILTER(_flat, _flat <> ""),
+         _res, SORT(UNIQUE(_clean)),
+         IF(IF(ISOMITTED(as_row), 0, as_row), TOROW(_res), _res)
+      ),
+      ""
+   )
+)
+=== DESCRIPTION ===
+Reduces a range to a clean, sorted set of unique values.
+
+Arguments:
+  rng      - the source range.
+  [as_row] - 1 to return a horizontal row; default 0 returns a vertical column.
+
+Returns:
+  The unique, sorted values with blanks and errors removed.
+
+Example:
+  set(A1:A20)

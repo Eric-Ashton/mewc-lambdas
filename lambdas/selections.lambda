@@ -1,0 +1,92 @@
+=== SIGNATURE ===
+selections(arr, n, [order_matters], [repeats_allowed], [countdown_mode], [clean_inputs])
+=== COMMENT ===
+Permutations (order_matters=1) or combinations (=0) of size n from arr. countdown_mode stacks sizes n..1. clean_input (default 1) de-dupes/drops blanks; other flags default 0.
+=== CODE ===
+=LAMBDA(arr, n, [order_matters], [repeats_allowed], [countdown_n], [clean_input],
+ IF(
+  n < 1,
+  NA(),
+  LET(
+   ci_, IF(ISOMITTED(clean_input), 1, clean_input),
+   flat_, IF(
+    ci_ = 1,
+    LET(r_, TOCOL(arr, 3), UNIQUE(FILTER(r_, r_ <> ""))),
+    TOCOL(arr)
+   ),
+   m_, ROWS(flat_),
+   om_, IF(ISOMITTED(order_matters), 0, order_matters),
+   rep_, IF(ISOMITTED(repeats_allowed), 0, repeats_allowed),
+   cd_, IF(ISOMITTED(countdown_n), 0, countdown_n),
+   chars_, UNICHAR(SEQUENCE(, m_, 20001)),
+   one_k_, LAMBDA(k_,
+    IF(
+     k_ < 1,
+     NA(),
+     LET(
+      seq_, SEQUENCE(, k_),
+      built_, REDUCE(
+       "",
+       seq_,
+       LAMBDA(acc_, step_,
+        TOCOL(
+         IFS(
+          IF(
+           om_ = 1,
+           IF(rep_ = 1, 1, ISERR(FIND(chars_, acc_))),
+           IF(
+            rep_ = 1,
+            RIGHT(acc_) <= chars_,
+            RIGHT(acc_) < chars_
+           )
+          ),
+          acc_ & chars_
+         ),
+         3
+        )
+       )
+      ),
+      IFERROR(
+       INDEX(flat_, UNICODE(MID(built_, seq_, 1)) - 20000),
+       NA()
+      )
+     )
+    )
+   ),
+   pad_, LAMBDA(x_, EXPAND(x_, ROWS(x_), n, "")),
+   IF(
+    cd_ = 0,
+    pad_(one_k_(n)),
+    LET(
+     max_k_, IF(rep_ = 1, n, MIN(n, m_)),
+     seed_, pad_(one_k_(max_k_)),
+     IF(
+      max_k_ = 1,
+      seed_,
+      REDUCE(
+       seed_,
+       SEQUENCE(max_k_ - 1, 1, max_k_ - 1, -1),
+       LAMBDA(acc_, k_, VSTACK(acc_, pad_(one_k_(k_))))
+      )
+     )
+    )
+   )
+  )
+ )
+)
+=== DESCRIPTION ===
+Generates permutations or combinations drawn from an array.
+
+Arguments:
+  arr               - the pool of items to choose from.
+  n                 - number of items per selection.
+  [order_matters]   - 1 = permutations, 0 = combinations (default 0).
+  [repeats_allowed] - 1 to allow an item to be reused within a selection (default 0).
+  [countdown_mode]  - 1 to also include selections of size n-1, n-2, ... 1 (default 0).
+  [clean_input]     - 1 to de-duplicate and drop blanks from arr first (default 1).
+
+Returns:
+  An array of the generated selections, one per row.
+
+Example:
+  selections(A1:A4, 2)

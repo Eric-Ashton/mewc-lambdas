@@ -1,0 +1,40 @@
+=== SIGNATURE ===
+clamp(num_or_arr, [bottom], [top])
+=== COMMENT ===
+Restricts a number (or array) to be no lower than bottom and/or no higher than top; each is optional (no limit by default). Returns the same shape, blanking out text cells.
+=== CODE ===
+=LAMBDA(num_or_arr, [bottom], [top], LET(
+   clamp_one, LAMBDA(x,
+      IF(
+         ISERROR(x),
+         x,
+         IF(
+            OR(x = "", ISTEXT(x)),
+            "",
+            LET(
+               hi, IF(ISOMITTED(top), x, MIN(top, x)),
+               lo, IF(ISOMITTED(bottom), hi, MAX(bottom, hi)),
+               lo
+            )
+         )
+      )
+   ),
+   IF(
+      AND(ROWS(num_or_arr) = 1, COLUMNS(num_or_arr) = 1),
+      clamp_one(num_or_arr),
+      MAP(num_or_arr, clamp_one)
+   )
+))
+=== DESCRIPTION ===
+Constrains a number or array of numbers to a minimum and/or maximum.
+
+Arguments:
+  num_or_arr - a number or an array to clamp.
+  [bottom]   - lower bound (default: no lower limit).
+  [top]      - upper bound (default: no upper limit).
+
+Returns:
+  The clamped value, or an array of the same shape. Text cells and "" are returned as "". Errors pass through unchanged.
+
+Example:
+  clamp(vals, 0, 100)

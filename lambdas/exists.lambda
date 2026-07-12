@@ -1,0 +1,18 @@
+=== SIGNATURE ===
+exists(arr, value)
+=== COMMENT ===
+Checks whether value is present anywhere in arr; returns 1 or 0.
+=== CODE ===
+=LAMBDA(Arr, Val, IF(ISNUMBER(XMATCH(Val, TOCOL(Arr), 0)), 1, 0))
+=== DESCRIPTION ===
+Membership test: is a value present in an array.
+
+Arguments:
+  arr   - array to search (flattened before testing).
+  value - the scalar value to look for.
+
+Returns:
+  1 if value occurs in arr, otherwise 0.
+
+Example:
+  exists(list, "x")  ->  1

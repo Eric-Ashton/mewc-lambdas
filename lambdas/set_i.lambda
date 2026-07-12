@@ -1,0 +1,29 @@
+=== SIGNATURE ===
+set_i(a, b, [as_row])
+=== COMMENT ===
+Set intersection: the values present in both set a and set b.
+=== CODE ===
+=LAMBDA(val_a, val_b, [as_row],
+   IFERROR(
+      LET(
+         list_a, set(val_a),
+         list_b, set(val_b),
+         res, FILTER(list_a, ISNUMBER(XMATCH(list_a, list_b))),
+         IF(IF(ISOMITTED(as_row), 0, as_row), TOROW(res), res)
+      ),
+      ""
+   )
+)
+=== DESCRIPTION ===
+Set intersection of two ranges.
+
+Arguments:
+  a        - first range/set.
+  b        - second range/set.
+  [as_row] - 1 for a horizontal result; default 0 vertical.
+
+Returns:
+  The cleaned, sorted values common to both a and b.
+
+Example:
+  set_i(A1:A5, B1:B5)

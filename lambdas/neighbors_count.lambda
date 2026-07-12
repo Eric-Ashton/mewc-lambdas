@@ -1,0 +1,44 @@
+=== SIGNATURE ===
+neighbors_count(arr, val, dist, [diag_allowed], [self_count])
+=== COMMENT ===
+Returns an array the same size as arr where each value is the count of val within dist cells. diag_allowed and self_count are both 1 (on) by default.
+=== CODE ===
+=LAMBDA(arr, val, dist, [diag_allowed], [self_count], LET(
+   r, ROWS(arr),
+   c, COLUMNS(arr),
+   d, dist,
+   diag, IF(ISOMITTED(diag_allowed), TRUE, diag_allowed),
+   self, IF(ISOMITTED(self_count), TRUE, self_count),
+   sz, 2 * d + 1,
+   ro, MAKEARRAY(sz, sz, LAMBDA(a, b, a - (d + 1))),
+   co, MAKEARRAY(sz, sz, LAMBDA(a, b, b - (d + 1))),
+   MAKEARRAY(
+      r,
+      c,
+      LAMBDA(i, j, LET(
+         ri, i + ro,
+         cj, j + co,
+         in_bounds, (ri >= 1) * (ri <= r) * (cj >= 1) * (cj <= c),
+         diag_mask, IF(diag, 1, (ABS(ro) + ABS(co) <= d)),
+         self_mask, IF(self, 1, 1 - ((ro = 0) * (co = 0))),
+         vals, INDEX(arr, ri, cj),
+         hits, IFERROR(--(vals = val), 0),
+         SUM(hits * in_bounds * diag_mask * self_mask)
+      ))
+   )
+))
+=== DESCRIPTION ===
+For every cell, counts how many nearby cells hold a given value.
+
+Arguments:
+  arr            - the grid of values.
+  val            - the value to count around each cell.
+  dist           - neighborhood radius in cells.
+  [diag_allowed] - 1 to include diagonal neighbors (default 1).
+  [self_count]   - 1 to include the cell itself in its own count (default 1).
+
+Returns:
+  An array the same size as arr, each cell holding its neighbor count.
+
+Example:
+  neighbors_count(grid, "o", 1)

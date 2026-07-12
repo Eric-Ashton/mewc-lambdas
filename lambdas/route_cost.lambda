@@ -1,0 +1,51 @@
+=== SIGNATURE ===
+route_cost(cost_map, start_ref, [diag_allowed])
+=== COMMENT ===
+Dijkstra over cost_map (numbers = cost, text = walls): least cost to reach each cell from start_ref. start_ref may be A1 text, a numeric address, or {row,col} coords. Diagonals on by default; end cell counts, start ignored.
+=== CODE ===
+=LAMBDA(cost_map, start_ref, [diag_allowed], LET(
+   _nr, ROWS(cost_map),
+   _nc, COLUMNS(cost_map),
+   _c, IF(
+      ROWS(start_ref) * COLUMNS(start_ref) = 1,
+      LET(
+         _n, num_ad(start_ref),
+         HSTACK(
+            INT(_n / 1000000) - MIN(ROW(cost_map)) + 1,
+            MOD(_n, 1000000) - MIN(COLUMN(cost_map)) + 1
+         )
+      ),
+      start_ref
+   ),
+   _rr, INDEX(_c, 1),
+   _rc, INDEX(_c, 2),
+   IF(
+      OR(_rr < 1, _rr > _nr, _rc < 1, _rc > _nc),
+      NA(),
+      LET(
+         _dg, IF(ISOMITTED(diag_allowed), 1, diag_allowed),
+         _rd, IF(_dg, {-1, 1, 0, 0, -1, -1, 1, 1}, {-1, 1, 0, 0}),
+         _cd, IF(_dg, {0, 0, -1, 1, -1, 1, -1, 1}, {0, 0, -1, 1}),
+         _sq, (INT(SEQUENCE(_nr, _nc, 0, 1) / _nc) + 1) & "|"
+            & (MOD(SEQUENCE(_nr, _nc, 0, 1), _nc) + 1),
+         _im, IF(
+            (INT(SEQUENCE(_nr, _nc, 0, 1) / _nc) + 1) = _rr,
+            IF((MOD(SEQUENCE(_nr, _nc, 0, 1), _nc) + 1) = _rc, 0, "X"),
+            "X"
+         ),
+         z_route_worker(z_route_worker, _im, HSTACK(_rr, _rc, 0), cost_map, _nr, _nc, _rd, _cd, _sq)
+      )
+   )
+))
+=== DESCRIPTION ===
+Least-cost distance from a start cell to every reachable cell (Dijkstra).
+
+Arguments:
+  cost_map       - a grid where numbers are entry costs and text cells are impassable walls.
+  start_ref      - starting cell as A1 text, a numeric address (1e6*row+col), or a {row, col} coordinate pair (relative to the top-left of cost_map).
+  [diag_allowed] - 1 to allow diagonal moves (default 1).
+
+Returns:
+  An array the same size as cost_map giving the minimum total cost to reach each cell. The destination cell's cost is included; the start cell's cost is ignored. Unreachable cells are left blank/impassable.
+
+Note: the recursion is done by the private helper z_route_worker.

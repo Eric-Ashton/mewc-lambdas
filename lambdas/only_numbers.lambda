@@ -1,0 +1,20 @@
+=== SIGNATURE ===
+only_numbers(st)
+=== COMMENT ===
+Pulls numbers out of a string via regex "-?\d+(?:\.\d+)?". Can return several numbers from one string, so it does not map over arrays (use MAP when it is 1-to-1).
+=== CODE ===
+=LAMBDA(txt, LET(
+   matches, IFERROR(--REGEXEXTRACT(txt, "-?\d+(?:\.\d+)?", 1), ""),
+   IF(ROWS(matches) * COLUMNS(matches) = 1, INDEX(matches, 1), matches)
+))
+=== DESCRIPTION ===
+Extracts numeric values from a string.
+
+Arguments:
+  st - the text to pull numbers from.
+
+Returns:
+  The number(s) found, using the pattern -?\d+(?:\.\d+)?. A single string can yield several numbers, so this is not array-safe; wrap in MAP when applying one-to-one across an array.
+
+Example:
+  only_numbers("A12.5")  ->  12.5

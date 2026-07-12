@@ -1,0 +1,53 @@
+=== SIGNATURE ===
+addr_lookup(arr, address)
+=== COMMENT ===
+Non-volatile INDIRECT: value(s) at addr_ad within rng. addr_ad may be a numeric address, an A1 string, a range string (e.g. B2:D4), or an array of these. Out-of-bounds or no overlap returns "".
+=== CODE ===
+=LAMBDA(arr, address,
+  LET(
+    start_row, ROW(INDEX(arr, 1, 1)),
+    start_col, COLUMN(INDEX(arr, 1, 1)),
+    n_rows, ROWS(arr),
+    n_cols, COLUMNS(arr),
+    get_cell, LAMBDA(one,
+      IFERROR(
+        LET(
+          num, num_ad(one),
+          abs_row, INT(num / 1000000),
+          abs_col, MOD(num, 1000000),
+          rel_row, abs_row - start_row + 1,
+          rel_col, abs_col - start_col + 1,
+          IF(OR(rel_row < 1, rel_row > n_rows, rel_col < 1, rel_col > n_cols), "", INDEX(arr, rel_row, rel_col))
+        ), "")),
+    get_rect, LAMBDA(range_txt,
+      IFERROR(
+        LET(
+          parts, TEXTSPLIT(UPPER(SUBSTITUTE(range_txt, "$", "")), ":"),
+          first_num, num_ad(INDEX(parts, 1)),
+          last_num, num_ad(INDEX(parts, 2)),
+          f_r, INT(first_num / 1000000), f_c, MOD(first_num, 1000000),
+          l_r, INT(last_num / 1000000), l_c, MOD(last_num, 1000000),
+          i_top, MAX(start_row, MIN(f_r, l_r)),
+          i_bot, MIN(start_row + n_rows - 1, MAX(f_r, l_r)),
+          i_left, MAX(start_col, MIN(f_c, l_c)),
+          i_right, MIN(start_col + n_cols - 1, MAX(f_c, l_c)),
+          IF(OR(i_top > i_bot, i_left > i_right), "",
+            TAKE(DROP(arr, i_top - start_row, i_left - start_col), i_bot - i_top + 1, i_right - i_left + 1))
+        ), "")),
+    IF(AND(ROWS(address) = 1, COLUMNS(address) = 1),
+      IF(AND(ISTEXT(address), ISNUMBER(SEARCH(":", address))), get_rect(address), get_cell(address)),
+      MAP(address, get_cell))
+  )
+)
+=== DESCRIPTION ===
+Non-volatile alternative to INDIRECT: returns the value(s) at one or more addresses inside a range.
+
+Arguments:
+  rng     - source range to read from.
+  addr_ad - a numeric address, an A1 string ("C2"), a range string ("B2:D4"), or an array of addresses (coerced with num_ad).
+
+Returns:
+  The value at the address. A range string returns the overlapping rectangle; an array returns an array of values. "" when a cell is out of bounds or the range does not overlap.
+
+Example:
+  addr_lookup(Sheet1!B2:D4, "C2") ; addr_lookup(grid, 3000004)

@@ -1,0 +1,34 @@
+=== SIGNATURE ===
+str_ad(arr)
+=== COMMENT ===
+Converts each valid numeric address (1e6*row+col) in arr to an A1 string. Non-addresses - strings, non-integers, out-of-range numbers - pass through. WARNING: any number in address range becomes an address; only use on known addresses.
+=== CODE ===
+=LAMBDA(arr,
+  LET(
+    to_str, LAMBDA(one,
+      IFERROR(
+        IF(NOT(ISNUMBER(one)), one,
+          LET(
+            row_num, INT(one / 1000000),
+            col, MOD(one, 1000000),
+            ok, AND(one = INT(one), row_num >= 1, row_num <= 1048576, col >= 1, col <= 16384),
+            IF(ok, ADDRESS(row_num, col, 4), one))),
+        one)),
+    IF(ROWS(arr) * COLUMNS(arr) = 1, to_str(arr), MAP(arr, to_str))
+  )
+)
+=== DESCRIPTION ===
+Converts numeric addresses (1e6 * row + col) to A1 string addresses, element-wise. Inverse of num_ad.
+
+Only a valid numeric address is converted; strings, non-integers, and out-of-range numbers pass through unchanged.
+
+WARNING: str_ad cannot tell an "address number" from a data number - ANY integer in the valid range (row 1-1048576, col 1-16384) becomes an A1 string. Only apply it to arrays known to hold addresses (e.g. the final answer), never to arbitrary numeric data.
+
+Arguments:
+  arr - a value or array. A number is converted when it is an integer with INT(n/1e6) in [1,1048576] and MOD(n,1e6) in [1,16384].
+
+Returns:
+  Same shape as arr; each valid numeric address replaced by its relative A1 string. A single cell returns a scalar.
+
+Example:
+  str_ad(3000004) -> "D3" ; str_ad("D3") -> "D3" ; str_ad(2000000) -> 2000000
