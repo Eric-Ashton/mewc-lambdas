@@ -26,13 +26,31 @@ The lambda's name is the text before `(` in the signature and must match the
 filename. **The `DESCRIPTION` section is the documentation** — there is no
 separate descriptions file to keep in sync.
 
-## The one hard rule
-**Never write the `.xlsm` with Python/openpyxl.** Only Excel — via the VBA in
-`vba/` — writes the workbook. Round-tripping it through openpyxl corrupts it:
-implicit-intersection `@` signs, formula-vs-text cell confusion, dropped/`#NAME?`
-`_xleta.*` function-reference names, and orphaned phantom sheet code-modules.
-Python is fine for *reading* a workbook, for the checker, and for building
-**disposable** test artifacts — never the template.
+## The hard rules about writing workbooks
+
+**1. Never let any tool write the competition template.** The template
+(`MEWC Lambdas and VBA.xlsm`) lives **outside** the repo and only ever *reads*
+finished lambdas from a local clone via VBA. No Python, no openpyxl, no automation
+touches it — ever.
+
+**2. Never write *any* `.xlsm` with openpyxl's `save()` (a full-file rewrite).**
+A whole-workbook openpyxl save silently corrupts this workbook: it deletes the Prep
+sheet's form-control buttons (`xl/drawings/drawing1.xml`), drops the rich values
+(`xl/richData/*`) and dynamic-array metadata (`xl/metadata.xml` → implicit-intersection
+`@` signs), reorders `styles.xml`/`sharedStrings.xml`, and can leave `#NAME?` on
+`_xleta.*` names or orphaned phantom code-modules. openpyxl is fine for **reading**
+(inspecting cells, the checker) — never for saving.
+
+### Editing test cases in the test workbook — use `tools/xlsm_edit.py`
+Test *cases* live only inside `MEWC Lambda and VBA Unit Tests.xlsm` (no text form yet),
+so an AI tool that adds/edits them must write that binary. Do it **only** through
+`tools/xlsm_edit.py`, which does **surgical string edits** on the individual `<c>` cells
+you name and copies every other part byte-for-byte. That keeps Prep's buttons, the rich
+values, all styles, and the VBA project intact. The only residue: cells you edit lose
+their `cm=` dynamic-array marker (the `@` problem), which the workbook's own
+`fix_test_formulas` / `lambda_update` VBA restores when you next open it in Excel. Cells
+you don't touch keep their markers. Lambda **code** still flows text-first via
+`import_lambdas` (see below) — you don't hand-edit the Lamb sheet for that.
 
 ## Workflow (repo ↔ Excel)
 The committed `MEWC Lambda and VBA Unit Tests.xlsm` is the upstream/dev workbook; the text
@@ -42,6 +60,11 @@ workbook, commit both*:
 - **Lambdas** — edit `lambdas/*.lambda`, run `python tools/lambda_check.py
   lambdas/*.lambda`, then in the test workbook run `import_lambdas` (rebuilds the Lamb sheet
   + Name Manager). Commit the `.lambda` **and** the refreshed workbook.
+- **Test cases** — edit the test sheets in `MEWC Lambda and VBA Unit Tests.xlsm` with
+  `tools/xlsm_edit.py` (surgical cell edits; never openpyxl `save()`). Then open the
+  workbook in Excel and run `lambda_update` / `fix_test_formulas` to restore dynamic
+  arrays on the edited cells, confirm the tests pass, and save from Excel. Commit the
+  workbook.
 - **VBA** — edit `vba/*.bas`, then re-import the changed module into the test workbook
   (in the VBE: remove the old module, drag the `.bas` in — import won't overwrite). Commit both.
 - `export_lambdas` writes the Lamb sheet back to `.lambda` files if you edited a
