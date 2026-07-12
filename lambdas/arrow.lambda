@@ -2,10 +2,10 @@
 arrow(str)
 
 === COMMENT ===
-Converts a direction string to a standard arrow. Accepts letter codes ("U","DL"), compass points ("NE"), and non-standard arrows (⇧, ➶). Returns one of ↑↓←→↖↗↙↘↺↻↕↔⤡⤢.
+Converts a direction string to a standard arrow. Accepts letter codes ("U","DL"), compass points ("NE"), and non-standard arrows (⇧, ➶). Returns one of ↑↓←→↖↗↙↘↺↻↕↔⤡⤢, or "" if not recognized.
 
 === CODE ===
-=LAMBDA(str, XLOOKUP(TRUE, EXACT(str, Prep!$V$13:$ALY$13), Prep!$V$14:$ALY$14))
+=LAMBDA(str, IFNA(XLOOKUP(TRUE, EXACT(str, Prep!$V$13:$ALY$13), Prep!$V$14:$ALY$14), ""))
 
 === DESCRIPTION ===
 Converts a direction keyword or symbol into the standard arrow character.
@@ -14,7 +14,7 @@ Arguments:
   str - direction as text: a letter code ("U", "DL"), a compass point ("NE"), or a non-standard arrow glyph (⇧, 🖢, ➶).
 
 Returns:
-  The matching standard arrow, one of: ↑ ↓ ← → ↖ ↗ ↙ ↘ ↺ ↻ ↕ ↔ ⤡ ⤢.
+  The matching standard arrow, one of: ↑ ↓ ← → ↖ ↗ ↙ ↘ ↺ ↻ ↕ ↔ ⤡ ⤢. Returns "" if str is not found in the table.
 
 Notes:
-  Exact lookup against the Prep!V13:ALY14 table; used to normalise direction inputs for the other grid lambdas.
+  Exact lookup against the Prep!V13:ALY14 table; used to normalise direction inputs for the other grid lambdas. The IFNA wrapper turns an unmatched lookup into "" instead of #N/A.
