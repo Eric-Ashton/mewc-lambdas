@@ -1,7 +1,9 @@
 === SIGNATURE ===
 save_array(input_array,[col_delimiter],[row_delimiter])
+
 === COMMENT ===
 Flattens an array into a delimited text string (inverse of load_array). Defaults match load_array: "|" between columns and ";" between rows.
+
 === CODE ===
 =LAMBDA(input_array, [col_delimiter], [row_delimiter], LET(
    cd, IF(ISOMITTED(col_delimiter), "|", col_delimiter),
@@ -12,6 +14,7 @@ Flattens an array into a delimited text string (inverse of load_array). Defaults
       BYROW(input_array, LAMBDA(row, TEXTJOIN(cd, FALSE, row)))
    )
 ))
+
 === DESCRIPTION ===
 Serializes a 2D array into a single delimited string (inverse of load_array).
 

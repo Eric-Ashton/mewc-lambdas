@@ -1,11 +1,14 @@
 === SIGNATURE ===
 xbyrow(arr, function)
+
 === COMMENT ===
 BYROW that allows array-returning functions: each row's result is flattened to a row (TOROW) and stacked; ragged #N/A padding is blanked (IFNA). Use for per-row transforms that expand each item into a row.
+
 === CODE ===
 =LAMBDA(arr, function,
   IFNA(z_xbyrow_ix(arr, function, 1, ROWS(arr)), "")
 )
+
 === DESCRIPTION ===
 BYROW that allows the function to return an array per row.
 

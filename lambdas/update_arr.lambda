@@ -1,7 +1,9 @@
 === SIGNATURE ===
 update_arr( array, r, c, value)
+
 === COMMENT ===
 Returns a copy of the array with the cell at row r, column c replaced by value.
+
 === CODE ===
 =LAMBDA(array, r, c, value, LET(
    arr, array,
@@ -11,6 +13,7 @@ Returns a copy of the array with the cell at row r, column c replaced by value.
       LAMBDA(i, j, IF((i = r) * (j = c), value, INDEX(arr, i, j)))
    )
 ))
+
 === DESCRIPTION ===
 Returns an array with a single cell replaced.
 

@@ -1,7 +1,9 @@
 === SIGNATURE ===
 selections(arr, n, [order_matters], [repeats_allowed], [countdown_mode], [clean_inputs])
+
 === COMMENT ===
 Permutations (order_matters=1) or combinations (=0) of size n from arr. countdown_mode stacks sizes n..1. clean_input (default 1) de-dupes/drops blanks; other flags default 0.
+
 === CODE ===
 =LAMBDA(arr, n, [order_matters], [repeats_allowed], [countdown_n], [clean_input],
  IF(
@@ -74,6 +76,7 @@ Permutations (order_matters=1) or combinations (=0) of size n from arr. countdow
   )
  )
 )
+
 === DESCRIPTION ===
 Generates permutations or combinations drawn from an array.
 

@@ -1,7 +1,9 @@
 === SIGNATURE ===
 die_pips(st)
+
 === COMMENT ===
 Converts die-face pip characters (⚀-⚅) to their numbers. Handles a concatenated string of dice or an array with one die per cell (concatenate first for multiple dice per cell).
+
 === CODE ===
 =LAMBDA(st, LET(
    toVals, LAMBDA(txt, LET(
@@ -18,6 +20,7 @@ Converts die-face pip characters (⚀-⚅) to their numbers. Handles a concatena
       MAP(st, LAMBDA(cell, toVals(cell)))
    )
 ))
+
 === DESCRIPTION ===
 Converts die-face pip glyphs to their numeric values.
 

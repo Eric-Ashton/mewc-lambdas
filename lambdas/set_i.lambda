@@ -1,7 +1,9 @@
 === SIGNATURE ===
 set_i(a, b, [as_row])
+
 === COMMENT ===
 Set intersection: the values present in both set a and set b.
+
 === CODE ===
 =LAMBDA(val_a, val_b, [as_row],
    IFERROR(
@@ -14,6 +16,7 @@ Set intersection: the values present in both set a and set b.
       ""
    )
 )
+
 === DESCRIPTION ===
 Set intersection of two ranges.
 

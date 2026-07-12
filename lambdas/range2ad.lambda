@@ -1,7 +1,9 @@
 === SIGNATURE ===
 range2ad(range, [str])
+
 === COMMENT ===
 Expands a range string like "B4:AA43" into an array of its cell addresses, in the same shape. str=0 (default) returns numeric addresses (1e6*row+col); str=1 returns A1 strings.
+
 === CODE ===
 =LAMBDA(range, [str], LET(
    as_str, IF(ISOMITTED(str), 0, str),
@@ -20,6 +22,7 @@ Expands a range string like "B4:AA43" into an array of its cell addresses, in th
    nums, MAKEARRAY(n_rows, n_cols, LAMBDA(i, j, 1000000 * (top + i - 1) + (lft + j - 1))),
    IF(as_str, str_ad(nums), nums)
 ))
+
 === DESCRIPTION ===
 Turns a range reference string into an array of the cell addresses it covers, in the same rows-by-columns shape.
 

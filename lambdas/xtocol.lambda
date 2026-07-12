@@ -1,7 +1,9 @@
 === SIGNATURE ===
 xtocol(rng, [show_addr], [clean], [dir], [snake])
+
 === COMMENT ===
 Flattens a 2D range to a column. show_addr (default 1) adds an address column; clean (default 1) drops blanks/errors/""; dir sets scan order ("→↓" default); snake (default 0) zig-zags.
+
 === CODE ===
 =LAMBDA(rng, [show_addr], [clean], [dir], [snake], LET(
  _show, IF(ISOMITTED(show_addr), 1, show_addr),
@@ -80,6 +82,7 @@ Flattens a 2D range to a column. show_addr (default 1) adds an address column; c
   )
  )
 ))
+
 === DESCRIPTION ===
 Flattens a 2D range into a single column, with scan and cleaning options.
 

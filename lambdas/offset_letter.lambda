@@ -1,7 +1,9 @@
 === SIGNATURE ===
 offset_letter(st, offset)
+
 === COMMENT ===
 Shifts each letter in a string by an integer offset with wraparound (e.g. "xyz" +2 = "zab"). Preserves case and non-letter characters; works on arrays.
+
 === CODE ===
 =LAMBDA(st, offset, LET(
    r, ROWS(st),
@@ -38,6 +40,7 @@ Shifts each letter in a string by an integer offset with wraparound (e.g. "xyz" 
       )
    )
 ))
+
 === DESCRIPTION ===
 Caesar-shifts the letters of a string by a fixed offset.
 

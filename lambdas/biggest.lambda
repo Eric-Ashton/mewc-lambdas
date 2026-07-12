@@ -1,9 +1,12 @@
 === SIGNATURE ===
 biggest(check, return)
+
 === COMMENT ===
 Finds the biggest number in "check" and returns the first matching value in "return" (an XLOOKUP on MAX).
+
 === CODE ===
 =LAMBDA(check, return, XLOOKUP(MAX(check), check, return))
+
 === DESCRIPTION ===
 Returns the value paired with the maximum of a checked array.
 

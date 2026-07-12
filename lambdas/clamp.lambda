@@ -1,7 +1,9 @@
 === SIGNATURE ===
 clamp(num_or_arr, [bottom], [top])
+
 === COMMENT ===
 Restricts a number (or array) to be no lower than bottom and/or no higher than top; each is optional (no limit by default). Returns the same shape, blanking out text cells.
+
 === CODE ===
 =LAMBDA(num_or_arr, [bottom], [top], LET(
    clamp_one, LAMBDA(x,
@@ -25,6 +27,7 @@ Restricts a number (or array) to be no lower than bottom and/or no higher than t
       MAP(num_or_arr, clamp_one)
    )
 ))
+
 === DESCRIPTION ===
 Constrains a number or array of numbers to a minimum and/or maximum.
 

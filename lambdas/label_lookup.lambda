@@ -1,7 +1,9 @@
 === SIGNATURE ===
 label_lookup(arr,row_label,column_label)
+
 === COMMENT ===
 Two-way lookup in a labelled 2D array: finds row_label in the first column and column_label in the first row and returns the value at their intersection.
+
 === CODE ===
 =LAMBDA(arr, row_label, column_label,
    INDEX(
@@ -10,6 +12,7 @@ Two-way lookup in a labelled 2D array: finds row_label in the first column and c
       XMATCH(column_label, INDEX(arr, 1, ), 0)
    )
 )
+
 === DESCRIPTION ===
 Looks up a value in a labelled 2D table by row and column headers.
 

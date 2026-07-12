@@ -1,7 +1,9 @@
 === SIGNATURE ===
 xdec2bin(number, [places])
+
 === COMMENT ===
 Like DEC2BIN but handles up to 53 binary places instead of 10 (beyond 53 the value exceeds the exact-integer range of a double).
+
 === CODE ===
 =LAMBDA(number, [places], LET(
    n, ROUND(number, 0),
@@ -19,6 +21,7 @@ Like DEC2BIN but handles up to 53 binary places instead of 10 (beyond 53 the val
       )
    )
 ))
+
 === DESCRIPTION ===
 Converts a decimal integer to a binary string, extended range.
 

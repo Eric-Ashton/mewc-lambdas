@@ -1,7 +1,9 @@
 === SIGNATURE ===
 route_cost(cost_map, start_ref, [diag_allowed])
+
 === COMMENT ===
 Dijkstra over cost_map (numbers = cost, text = walls): least cost to reach each cell from start_ref. start_ref may be A1 text, a numeric address, or {row,col} coords. Diagonals on by default; end cell counts, start ignored.
+
 === CODE ===
 =LAMBDA(cost_map, start_ref, [diag_allowed], LET(
    _nr, ROWS(cost_map),
@@ -37,6 +39,7 @@ Dijkstra over cost_map (numbers = cost, text = walls): least cost to reach each 
       )
    )
 ))
+
 === DESCRIPTION ===
 Least-cost distance from a start cell to every reachable cell (Dijkstra).
 

@@ -1,7 +1,9 @@
 === SIGNATURE ===
 dist(start_ad, end_ad, [diag_allowed], [print_components])
+
 === COMMENT ===
 Distance from start_ad to end_ad (each numeric or A1). diag_allowed: 1 chessboard (default), 0 taxicab, -1 pythagorean. If print_components is 1 (not default) returns the component arrows and magnitudes instead.
+
 === CODE ===
 =LAMBDA(start_ad, end_ad, [diag_allowed], [print_components],
   LET(
@@ -31,6 +33,7 @@ Distance from start_ad to end_ad (each numeric or A1). diag_allowed: 1 chessboar
             VSTACK(IF(dd>0,quad,""), dd, IF(rr>0,v_arr,""), rr, IF(cc>0,h_arr,""), cc)))))
   )
 )
+
 === DESCRIPTION ===
 Distance between two cells, with selectable metric. Accepts numeric or A1 string addresses.
 

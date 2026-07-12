@@ -1,7 +1,9 @@
 === SIGNATURE ===
 count_substring(str, sub, [case_sensitive])
+
 === COMMENT ===
 Counts how many times sub appears in str. case_sensitive is 0 by default. Either argument may be an array (but not both) to map the count across it.
+
 === CODE ===
 =LAMBDA(input_text, sub, [case_sensitive], LET(
    cs, IF(ISOMITTED(case_sensitive), 0, case_sensitive),
@@ -48,6 +50,7 @@ Counts how many times sub appears in str. case_sensitive is 0 by default. Either
       )
    )
 ))
+
 === DESCRIPTION ===
 Counts occurrences of one substring inside another string.
 

@@ -1,7 +1,9 @@
 === SIGNATURE ===
 load_array(input_string,[col_delimiter],[row_delimiter])
+
 === COMMENT ===
 Rebuilds an array from a delimited string (inverse of save_array). Defaults match save_array: "|" separates columns and ";" separates rows.
+
 === CODE ===
 =LAMBDA(input_string, [col_delimiter], [row_delimiter],
    IF(
@@ -17,6 +19,7 @@ Rebuilds an array from a delimited string (inverse of save_array). Defaults matc
       )
    )
 )
+
 === DESCRIPTION ===
 Parses a delimited string back into a 2D array (inverse of save_array).
 

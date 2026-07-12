@@ -1,7 +1,9 @@
 === SIGNATURE ===
 knight_moves(start_ad, end_ad)
+
 === COMMENT ===
 Minimum number of chess knight moves between two cells on an unbounded board. start_ad and end_ad each accept a numeric address (1e6*row+col) or an A1 string.
+
 === CODE ===
 =LAMBDA(start_ad, end_ad, LET(
    a, num_ad(start_ad),
@@ -18,6 +20,7 @@ Minimum number of chess knight moves between two cells on an unbounded board. st
    raw, IF(MOD(base_est + dx + dy, 2) = 1, base_est + 1, base_est),
    IF(dx = 0, 0, IF(AND(dx = 1, dy = 0), 3, IF(AND(dx = 2, dy = 2), 4, raw)))
 ))
+
 === DESCRIPTION ===
 Minimum number of chess knight moves between two cells on an unbounded board.
 

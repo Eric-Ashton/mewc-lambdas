@@ -1,7 +1,9 @@
 === SIGNATURE ===
 arrow_trip(rng, start_ad, dir, [stopper])
+
 === COMMENT ===
 Walks from start_ad (numeric or A1) in a straight arrow direction across rng until the edge (or the optional stopper value). Returns a 2-column array of NUMERIC addresses and their values, including the start cell.
+
 === CODE ===
 =LAMBDA(rng, start_ad, dir, [stopper],
   LET(
@@ -41,6 +43,7 @@ Walks from start_ad (numeric or A1) in a straight arrow direction across rng unt
     )
   )
 )
+
 === DESCRIPTION ===
 Traces a straight path from a start cell in one arrow direction until the board edge or an optional stopping value.
 

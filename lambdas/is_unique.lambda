@@ -1,7 +1,9 @@
 === SIGNATURE ===
 is_unique(arr)
+
 === COMMENT ===
 Checks whether all values in the array are unique; returns TRUE/FALSE. Case-insensitive, so {"A","a"} is not unique. Combine with str2arr to test character by character.
+
 === CODE ===
 =LAMBDA(Arr, LET(
    flatArr, TOCOL(Arr, 1, 4),
@@ -11,6 +13,7 @@ Checks whether all values in the array are unique; returns TRUE/FALSE. Case-inse
    freq, MMULT(matchMatrix, SEQUENCE(rowCount, 1, 1, 0)),
    IF(MAX(freq) > 1, 0, 1)
 ))
+
 === DESCRIPTION ===
 Tests whether every value in an array is distinct.
 

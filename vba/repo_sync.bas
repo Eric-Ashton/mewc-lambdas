@@ -15,12 +15,18 @@ Attribute VB_Name = "repo_sync"
 '
 '     === SIGNATURE ===
 '     name(args)
+'
 '     === COMMENT ===
 '     <=255 char comment
+'
 '     === CODE ===
 '     =LAMBDA(...)
+'
 '     === DESCRIPTION ===
 '     <full description>
+'
+' (A blank line precedes every header except the first; the parser tolerates it
+'  either way, but export_lambdas writes it so files stay in this style.)
 '==============================================================================
 Option Explicit
 
@@ -173,10 +179,11 @@ Public Sub export_lambdas()
         sig = ws.Cells(r, 1).Value
         If Len(sig) > 0 Then
             Dim body As String
+            ' blank line before every header except the first (SIGNATURE)
             body = "=== SIGNATURE ===" & vbLf & sig & vbLf & _
-                   "=== COMMENT ===" & vbLf & CStr(ws.Cells(r, 2).Value) & vbLf & _
-                   "=== CODE ===" & vbLf & CStr(ws.Cells(r, 3).Value) & vbLf & _
-                   "=== DESCRIPTION ===" & vbLf & CStr(ws.Cells(r, 4).Value) & vbLf
+                   vbLf & "=== COMMENT ===" & vbLf & CStr(ws.Cells(r, 2).Value) & vbLf & _
+                   vbLf & "=== CODE ===" & vbLf & CStr(ws.Cells(r, 3).Value) & vbLf & _
+                   vbLf & "=== DESCRIPTION ===" & vbLf & CStr(ws.Cells(r, 4).Value) & vbLf
             write_file folder & "\" & name_from_sig(sig) & ".lambda", body
             cnt = cnt + 1
         End If

@@ -1,7 +1,9 @@
 === SIGNATURE ===
 set_d(a, b, [as_row])
+
 === COMMENT ===
 Set difference: the values in set a that are not in set b.
+
 === CODE ===
 =LAMBDA(val_a, val_b, [as_row],
    IFERROR(
@@ -14,6 +16,7 @@ Set difference: the values in set a that are not in set b.
       ""
    )
 )
+
 === DESCRIPTION ===
 Set difference of two ranges (a minus b).
 

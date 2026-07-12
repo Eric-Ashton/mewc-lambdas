@@ -1,7 +1,9 @@
 === SIGNATURE ===
 shift_arr(arr, dir, [steps], [fill])
+
 === COMMENT ===
 Shifts a 1D or 2D array by "steps" (default 1) in the dir arrow. With no fill, items wrap around; if fill is a value, it fills the vacated cells instead.
+
 === CODE ===
 =LAMBDA(arr, dir, [steps], [fill], LET(
    s, IF(ISOMITTED(steps), 1, steps),
@@ -94,6 +96,7 @@ Shifts a 1D or 2D array by "steps" (default 1) in the dir arrow. With no fill, i
    ),
    result
 ))
+
 === DESCRIPTION ===
 Shifts the contents of an array in a direction.
 

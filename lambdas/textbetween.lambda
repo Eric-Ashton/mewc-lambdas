@@ -1,7 +1,9 @@
 === SIGNATURE ===
 textbetween(str_or_arr, prefix, suffix)
+
 === COMMENT ===
 Returns the text between a prefix and a suffix. Trims the result and converts to a number when possible. Works on arrays, returning an array of the same size.
+
 === CODE ===
 =LAMBDA(str_or_arr, prefix, suffix, LET(
    extract_between, LAMBDA(item,
@@ -42,6 +44,7 @@ Returns the text between a prefix and a suffix. Trims the result and converts to
       MAP(str_or_arr, extract_between)
    )
 ))
+
 === DESCRIPTION ===
 Extracts the text lying between two markers.
 

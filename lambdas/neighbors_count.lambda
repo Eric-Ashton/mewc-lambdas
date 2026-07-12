@@ -1,7 +1,9 @@
 === SIGNATURE ===
 neighbors_count(arr, val, dist, [diag_allowed], [self_count])
+
 === COMMENT ===
 Returns an array the same size as arr where each value is the count of val within dist cells. diag_allowed and self_count are both 1 (on) by default.
+
 === CODE ===
 =LAMBDA(arr, val, dist, [diag_allowed], [self_count], LET(
    r, ROWS(arr),
@@ -27,6 +29,7 @@ Returns an array the same size as arr where each value is the count of val withi
       ))
    )
 ))
+
 === DESCRIPTION ===
 For every cell, counts how many nearby cells hold a given value.
 

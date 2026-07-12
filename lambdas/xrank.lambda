@@ -1,13 +1,16 @@
 === SIGNATURE ===
 xrank(value, array, [order])
+
 === COMMENT ===
 Like the built-in RANK but works on arrays.
+
 === CODE ===
 =LAMBDA(value, array, [order], LET(
    rank_style_order, IF(ISOMITTED(order), 0, order),
    sort_style_order, IF(rank_style_order = 0, -1, 1),
    XMATCH(value, SORT(TOCOL(array), 1, sort_style_order))
 ))
+
 === DESCRIPTION ===
 Rank of a value within an array.
 
