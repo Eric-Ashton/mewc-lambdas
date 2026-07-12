@@ -9,6 +9,7 @@ The latest version of the template can be found at https://tinyurl.com/EricLamba
 | `lambdas/*.lambda` | One file per lambda: signature, comment, code, description. |
 | `vba/*.bas` | VBA modules — repo sync (`repo_sync`), unit-test + lambda-management tools (`unit_test_tools`), utilities (`utils`), plus the workbook's supporting subs. |
 | `tools/lambda_check.py` | Authoring-rule checker (run before committing). |
+| `tools/xlsm_edit.py` | Surgical cell editor for the test workbook — adds/edits test cases without corrupting the binary (never openpyxl `save()`). |
 | `MEWC Lambda and VBA Unit Tests.xlsm` | The committed test workbook — all lambdas, VBA, Prep sheet, and unit-test sheets. |
 | `CONVENTIONS.md` | Authoring rules + repo/Excel workflow (single source of truth). |
 | `MEWC Lambdas Edit and Test Workflow.md` | The edit → test → review → merge loop. |

@@ -35,8 +35,13 @@ one of them.
 
 Either lane leaves the Lamb sheet and the `.lambda` file matching. Then:
 
-3. Add or edit a testing worksheet in `MEWC Lambda and VBA Unit Tests.xlsm` with enough
-   test cases to cover the new or changed behavior.
+3. Add or edit test cases on the lambda's worksheet in `MEWC Lambda and VBA Unit
+   Tests.xlsm` to cover the new or changed behavior. Claude Code can do this directly with
+   `tools/xlsm_edit.py`, which surgically rewrites only the cells it changes and leaves
+   every other part of the workbook (Prep's buttons, rich values, styles, VBA) byte-for-byte
+   intact — the one thing a plain openpyxl save would wreck. The edited cells lose their
+   dynamic-array marker (the `@` problem); the Excel-side `lambda_update` /
+   `fix_test_formulas` step below restores them. You can also add test cases by hand in Excel.
 
 ---
 
@@ -79,10 +84,12 @@ gh pr create --fill                                # CI (lambda-check) runs on t
 gh pr merge --squash --delete-branch
 ```
 
-Claude Code can drive most of this: make the `.lambda` edit, run the checker, walk you
-through `git diff`, draft the commit message, open the PR with `gh`, and `/review` the
-diff. The two steps it can't do stay with you: running `import_lambdas` and eyeballing the
-tests in Excel.
+Claude Code can drive most of this: make the `.lambda` edit, author/edit the test cases in
+the workbook via `tools/xlsm_edit.py`, run the checker, walk you through `git diff`, draft
+the commit message, open the PR with `gh`, and `/review` the diff. What stays with you is
+the Excel side: running `import_lambdas` and `lambda_update` / `fix_test_formulas` (there's
+no Excel on GitHub Actions), then eyeballing that the tests actually pass before you commit
+the workbook.
 
 ---
 

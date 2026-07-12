@@ -1,0 +1,393 @@
+#!/usr/bin/env python3
+"""Safe, surgical editing of the committed test workbook's worksheet cells.
+
+Why this exists
+---------------
+`MEWC Lambda and VBA Unit Tests.xlsm` is the upstream/dev test workbook. Its test
+*cases* live only inside that binary (there is no text form yet), so an AI tool that
+adds or edits test cases has to write the ``.xlsm``. The obvious tool, openpyxl's
+``save()``, is unsafe here: on a full save it silently
+
+  * deletes ``xl/drawings/drawing1.xml`` (the Prep sheet's form-control buttons),
+  * drops ``xl/richData/*`` (Prep's 8 rich values) and ``xl/metadata.xml``,
+  * strips every cell's ``cm=`` dynamic-array marker (the ``@`` problem), and
+  * rewrites ``styles.xml`` / ``sharedStrings.xml`` wholesale (reordered indices),
+
+so mixing openpyxl output with original parts corrupts formatting. See CONVENTIONS.md.
+
+What this does instead
+----------------------
+Pure string surgery on a copy of the ORIGINAL zip. It rewrites ONLY the individual
+``<c>`` cells you name, in place, inside the target sheet's XML, and copies every
+other part (styles, sharedStrings, Prep, drawings, richData, metadata, vbaProject.bin)
+byte-for-byte. Consequences:
+
+  * Prep's buttons + rich values, all styles, and the VBA are untouched.
+  * Cells you do NOT edit keep their ``cm=`` markers, so the ``@`` fallout is limited
+    to the cells you actually change -- your ``fix_test_formulas`` / ``lambda_update``
+    VBA cleans those up when you next open the workbook in Excel.
+
+It never uses openpyxl to *write*. openpyxl is used read-only (``read_grid``) as a
+convenience for inspecting current contents.
+
+API
+---
+    from xlsm_edit import apply_edits, read_grid, validate
+
+    edits = [
+        {"sheet": "biggest", "cell": "B7", "value": "new label"},
+        {"sheet": "biggest", "cell": "D7", "formula": "biggest(F7:F9)"},
+        {"sheet": "biggest", "cell": "H7", "value": 42},
+    ]
+    apply_edits(SRC, OUT, edits)          # writes OUT, leaves SRC alone
+
+CLI
+---
+    py tools/xlsm_edit.py apply  <src.xlsm> <out.xlsm> <edits.json>
+    py tools/xlsm_edit.py grid   <src.xlsm> <SheetName> [max_row] [max_col]
+    py tools/xlsm_edit.py validate <src.xlsm> <out.xlsm> <edits.json>
+
+``edits.json`` is a list of objects: {"sheet","cell", and one of "value"/"formula"}.
+An optional "style" (integer xf index) overrides the inherited style.
+"""
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import sys
+import zipfile
+from xml.sax.saxutils import escape
+
+
+# --------------------------------------------------------------------------- #
+# address helpers
+# --------------------------------------------------------------------------- #
+def col_to_num(letters: str) -> int:
+    n = 0
+    for ch in letters.upper():
+        n = n * 26 + (ord(ch) - ord("A") + 1)
+    return n
+
+
+def split_addr(addr: str):
+    m = re.fullmatch(r"([A-Za-z]+)(\d+)", addr.strip())
+    if not m:
+        raise ValueError(f"bad cell address: {addr!r}")
+    return m.group(1).upper(), int(m.group(2)), col_to_num(m.group(1))
+
+
+# --------------------------------------------------------------------------- #
+# reading (openpyxl, read-only -- never writes)
+# --------------------------------------------------------------------------- #
+def read_grid(path, sheet, max_row=30, max_col=20):
+    """Return a list of rows of (address, value) for quick inspection."""
+    import openpyxl
+
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=False)
+    ws = wb[sheet]
+    out = []
+    for row in ws.iter_rows(max_row=max_row, max_col=max_col):
+        cells = [(c.coordinate, c.value) for c in row if c.value is not None]
+        if cells:
+            out.append(cells)
+    wb.close()
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# zip / sheet-name plumbing
+# --------------------------------------------------------------------------- #
+def _sheet_part_map(z: zipfile.ZipFile):
+    """{sheet display name -> 'xl/worksheets/sheetN.xml'}."""
+    wb = z.read("xl/workbook.xml").decode("utf-8", "replace")
+    rels = z.read("xl/_rels/workbook.xml.rels").decode("utf-8", "replace")
+    relmap = dict(re.findall(r'<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"', rels))
+    out = {}
+    for nm, rid in re.findall(r'<sheet[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"', wb):
+        target = relmap.get(rid, "")
+        if target and not target.startswith("/"):
+            target = "xl/" + target if not target.startswith("xl/") else target
+        out[_xml_unescape(nm)] = target
+    return out
+
+
+def _xml_unescape(s: str) -> str:
+    return (s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+             .replace("&quot;", '"').replace("&apos;", "'"))
+
+
+# --------------------------------------------------------------------------- #
+# cell rendering
+# --------------------------------------------------------------------------- #
+def _render_cell(addr, col_letters, style, value=None, formula=None):
+    s_attr = f' s="{style}"' if style is not None else ""
+    if formula is not None:
+        f = formula[1:] if formula.startswith("=") else formula
+        # cached <v> is intentionally omitted; workbook is set to full-recalc on load
+        return f'<c r="{addr}"{s_attr}><f>{escape(f)}</f></c>'
+    if value is None:
+        return f'<c r="{addr}"{s_attr}/>'
+    if isinstance(value, bool):
+        return f'<c r="{addr}"{s_attr} t="b"><v>{1 if value else 0}</v></c>'
+    if isinstance(value, (int, float)):
+        return f'<c r="{addr}"{s_attr}><v>{value!r}</v></c>' if isinstance(value, float) \
+               else f'<c r="{addr}"{s_attr}><v>{value}</v></c>'
+    # string -> inline string (does not touch the shared-strings table)
+    return (f'<c r="{addr}"{s_attr} t="inlineStr"><is>'
+            f'<t xml:space="preserve">{escape(str(value))}</t></is></c>')
+
+
+_CELL_RE_CACHE = {}
+
+
+def _find_cell(row_xml, addr):
+    """Return (start, end) span of <c r="addr" .../> or <c ...>...</c>, or None."""
+    pat = _CELL_RE_CACHE.get(addr)
+    if pat is None:
+        pat = re.compile(rf'<c r="{re.escape(addr)}"(?:\s[^>]*)?(?:/>|>.*?</c>)', re.S)
+        _CELL_RE_CACHE[addr] = pat
+    m = pat.search(row_xml)
+    return (m.start(), m.end()) if m else None
+
+
+def _cell_style(cell_xml):
+    m = re.match(r'<c r="[A-Z]+\d+"(?:\s[^>]*?)?\ss="(\d+)"', cell_xml)
+    return int(m.group(1)) if m else None
+
+
+def _insert_cell_in_row(row_xml, addr, col_num, new_cell):
+    """Insert new_cell into a row's cell list, keeping column order."""
+    body_m = re.match(r'(<row\b[^>]*>)(.*)(</row>)', row_xml, re.S)
+    if not body_m:  # self-closing empty row: <row r="n" .../>
+        open_m = re.match(r'<row\b([^>]*?)/>', row_xml)
+        attrs = open_m.group(1)
+        return f'<row{attrs}>{new_cell}</row>'
+    head, body, tail = body_m.groups()
+    cells = re.findall(r'<c r="[A-Z]+\d+"(?:\s[^>]*?)?(?:/>|>.*?</c>)', body, re.S)
+    out, placed = [], False
+    for c in cells:
+        cnum = col_to_num(re.match(r'<c r="([A-Z]+)', c).group(1))
+        if not placed and col_num < cnum:
+            out.append(new_cell)
+            placed = True
+        out.append(c)
+    if not placed:
+        out.append(new_cell)
+    return head + "".join(out) + tail
+
+
+def _row_span(sheet_xml, row_num):
+    m = re.search(rf'<row r="{row_num}"(?:\s[^>]*)?(?:/>|>.*?</row>)', sheet_xml, re.S)
+    return (m.start(), m.end(), m.group(0)) if m else None
+
+
+def _apply_sheet_edits(sheet_xml, edits):
+    """edits: list of dict(cell,value?,formula?,style?) for one sheet."""
+    for e in edits:
+        addr = e["cell"].upper()
+        letters, rownum, colnum = split_addr(addr)
+        span = _row_span(sheet_xml, rownum)
+        style = e.get("style")
+
+        if span is None:
+            # need a brand-new <row>; find sheetData and insert in row order
+            style_final = style
+            new_cell = _render_cell(addr, letters, style_final,
+                                    value=e.get("value"), formula=e.get("formula"))
+            new_row = f'<row r="{rownum}">{new_cell}</row>'
+            sheet_xml = _insert_row(sheet_xml, rownum, new_row)
+            continue
+
+        rstart, rend, row_xml = span
+        cellspan = _find_cell(row_xml, addr)
+        if cellspan is not None:
+            cs, ce = cellspan
+            old_cell = row_xml[cs:ce]
+            if style is None:
+                style = _cell_style(old_cell)  # preserve existing style
+            new_cell = _render_cell(addr, letters, style,
+                                    value=e.get("value"), formula=e.get("formula"))
+            new_row = row_xml[:cs] + new_cell + row_xml[ce:]
+        else:
+            if style is None:
+                style = _inherit_style(sheet_xml, letters, rownum)
+            new_cell = _render_cell(addr, letters, style,
+                                    value=e.get("value"), formula=e.get("formula"))
+            new_row = _insert_cell_in_row(row_xml, addr, colnum, new_cell)
+        sheet_xml = sheet_xml[:rstart] + new_row + sheet_xml[rend:]
+    return sheet_xml
+
+
+def _inherit_style(sheet_xml, letters, rownum):
+    """Best-effort style for a new cell: copy the cell directly above it."""
+    for r in range(rownum - 1, 0, -1):
+        span = _row_span(sheet_xml, r)
+        if not span:
+            continue
+        cs = _find_cell(span[2], f"{letters}{r}")
+        if cs:
+            st = _cell_style(span[2][cs[0]:cs[1]])
+            if st is not None:
+                return st
+        break
+    return None
+
+
+def _insert_row(sheet_xml, rownum, new_row):
+    sd = re.search(r'(<sheetData\b[^>]*>)(.*)(</sheetData>)', sheet_xml, re.S)
+    if not sd:
+        raise ValueError("no <sheetData> in sheet")
+    head, body, tail = sd.groups()
+    rows = re.findall(r'<row\b[^>]*?(?:/>|>.*?</row>)', body, re.S)
+    out, placed = [], False
+    for row in rows:
+        rn = int(re.match(r'<row r="(\d+)"', row).group(1))
+        if not placed and rownum < rn:
+            out.append(new_row)
+            placed = True
+        out.append(row)
+    if not placed:
+        out.append(new_row)
+    new_body = head + "".join(out) + tail
+    return sheet_xml[:sd.start()] + new_body + sheet_xml[sd.end():]
+
+
+def _force_full_recalc(wb_xml):
+    """Ensure Excel recalculates on open (cached formula values were dropped)."""
+    if "<calcPr" in wb_xml:
+        def repl(m):
+            tag = m.group(0)
+            if "fullCalcOnLoad" in tag:
+                return tag
+            return tag[:-2] + ' fullCalcOnLoad="1"/>' if tag.endswith("/>") \
+                else tag[:-1] + ' fullCalcOnLoad="1">'
+        return re.sub(r'<calcPr\b[^>]*?/?>', repl, wb_xml, count=1)
+    # insert a calcPr after </sheets>
+    return wb_xml.replace("</sheets>", '</sheets><calcPr fullCalcOnLoad="1"/>', 1)
+
+
+# --------------------------------------------------------------------------- #
+# main entry point
+# --------------------------------------------------------------------------- #
+def apply_edits(src, out, edits):
+    """Write `out` = `src` with the given cell edits applied via XML surgery.
+
+    edits: iterable of dicts {sheet, cell, value?|formula?, style?}. `src` is
+    never modified. Returns the set of sheet part-names that were touched.
+    """
+    by_sheet = {}
+    for e in edits:
+        by_sheet.setdefault(e["sheet"], []).append(e)
+
+    with zipfile.ZipFile(src) as z:
+        names = z.namelist()
+        part_of = _sheet_part_map(z)
+        unknown = [s for s in by_sheet if s not in part_of]
+        if unknown:
+            raise KeyError(f"unknown sheet(s): {unknown}. known: {sorted(part_of)}")
+        touched_parts = {part_of[s] for s in by_sheet}
+        data = {n: z.read(n) for n in names}
+        infos = {n: z.getinfo(n) for n in names}
+
+    # edit each target sheet's XML
+    for sheet, sheet_edits in by_sheet.items():
+        part = part_of[sheet]
+        xml = data[part].decode("utf-8")
+        xml = _apply_sheet_edits(xml, sheet_edits)
+        data[part] = xml.encode("utf-8")
+
+    # force recalc since we dropped cached formula values
+    wbxml = data["xl/workbook.xml"].decode("utf-8")
+    data["xl/workbook.xml"] = _force_full_recalc(wbxml).encode("utf-8")
+
+    # rewrite zip, preserving order + compression; every non-edited part is byte-identical
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zo:
+        for n in names:
+            zi = zipfile.ZipInfo(n, date_time=infos[n].date_time)
+            zi.compress_type = infos[n].compress_type
+            zi.external_attr = infos[n].external_attr
+            zi.internal_attr = infos[n].internal_attr
+            zi.create_system = infos[n].create_system
+            zo.writestr(zi, data[n])
+    return touched_parts
+
+
+def validate(src, out, edits):
+    """Structural check: non-edited parts byte-identical, edits readable back."""
+    import openpyxl
+
+    by_sheet = {}
+    for e in edits:
+        by_sheet.setdefault(e["sheet"], []).append(e)
+
+    zs, zo = zipfile.ZipFile(src), zipfile.ZipFile(out)
+    part_of = _sheet_part_map(zs)
+    touched = {part_of[s] for s in by_sheet} | {"xl/workbook.xml"}
+
+    report = {"ok": True, "parts_lost": [], "parts_added": [],
+              "unexpected_changes": [], "edits_verified": 0, "edits_failed": []}
+
+    sn, on = set(zs.namelist()), set(zo.namelist())
+    report["parts_lost"] = sorted(sn - on)
+    report["parts_added"] = sorted(on - sn)
+    if report["parts_lost"] or report["parts_added"]:
+        report["ok"] = False
+
+    for n in sorted(sn & on):
+        if n in touched:
+            continue
+        if zs.read(n) != zo.read(n):
+            report["unexpected_changes"].append(n)
+            report["ok"] = False
+
+    # read edited values back
+    wb = openpyxl.load_workbook(out, data_only=False)
+    for e in edits:
+        ws = wb[e["sheet"]]
+        got = ws[e["cell"].upper()].value
+        want = ("=" + e["formula"].lstrip("=")) if "formula" in e else e.get("value")
+        ok = (str(got) == str(want)) if want is not None else (got is None)
+        if ok:
+            report["edits_verified"] += 1
+        else:
+            report["edits_failed"].append({"cell": f'{e["sheet"]}!{e["cell"]}',
+                                           "want": want, "got": got})
+            report["ok"] = False
+    wb.close()
+    return report
+
+
+# --------------------------------------------------------------------------- #
+# CLI
+# --------------------------------------------------------------------------- #
+def _main(argv):
+    if len(argv) < 2:
+        print(__doc__)
+        return 2
+    cmd = argv[1]
+    if cmd == "grid":
+        src, sheet = argv[2], argv[3]
+        mr = int(argv[4]) if len(argv) > 4 else 30
+        mc = int(argv[5]) if len(argv) > 5 else 20
+        for row in read_grid(src, sheet, mr, mc):
+            print("  ".join(f"{a}={v!r}" for a, v in row))
+        return 0
+    if cmd == "apply":
+        src, out, ef = argv[2], argv[3], argv[4]
+        edits = json.load(open(ef, encoding="utf-8"))
+        touched = apply_edits(src, out, edits)
+        print(f"applied {len(edits)} edit(s) to {len(touched)} sheet(s): {sorted(touched)}")
+        return 0
+    if cmd == "validate":
+        src, out, ef = argv[2], argv[3], argv[4]
+        edits = json.load(open(ef, encoding="utf-8"))
+        rep = validate(src, out, edits)
+        print(json.dumps(rep, indent=2, default=str))
+        return 0 if rep["ok"] else 1
+    print(f"unknown command: {cmd}")
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(_main(sys.argv))
