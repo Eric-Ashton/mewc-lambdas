@@ -1,7 +1,9 @@
 === SIGNATURE ===
 z_route_worker(_s, _p, _f2, cost_map, _nr, _nc, _rd, _cd, _sq)
+
 === COMMENT ===
 Private recursive worker for route_cost - do not call directly. Runs one Dijkstra relaxation pass over the frontier and recurses until no cell's cost improves. Extra args carry route_cost's grid, size and move deltas.
+
 === CODE ===
 =LAMBDA(_s, _p, _f2, cost_map, _nr, _nc, _rd, _cd, _sq, LET(
    _tr, TOCOL(_rd + INDEX(_f2, 0, 1)),
@@ -43,6 +45,7 @@ Private recursive worker for route_cost - do not call directly. Runs one Dijkstr
    ),
    IF(SUM(_fs) = 0, _p, _s(_s, _um, _fs, cost_map, _nr, _nc, _rd, _cd, _sq))
 ))
+
 === DESCRIPTION ===
 Private recursive worker for route_cost - do not call directly.
 

@@ -1,9 +1,12 @@
 === SIGNATURE ===
 rev(arr)
+
 === COMMENT ===
 Cleans and reverses an array (same as xtocol(arr, 0, , "←↑")).
+
 === CODE ===
 =LAMBDA(arr, xtocol(arr, 0, , arrow("L") & arrow("U")))
+
 === DESCRIPTION ===
 Reverses the order of an array.
 

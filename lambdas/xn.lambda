@@ -1,7 +1,9 @@
 === SIGNATURE ===
 xn(value_or_array)
+
 === COMMENT ===
 Converts numeric strings to numbers (like N). Non-numeric strings pass through unchanged, TRUE/FALSE become 1/0, blanks become "", "" stays "". Works on arrays.
+
 === CODE ===
 =LAMBDA(val_or_arr, LET(
    fn_convert, LAMBDA(x,
@@ -17,6 +19,7 @@ Converts numeric strings to numbers (like N). Non-numeric strings pass through u
       MAP(val_or_arr, fn_convert)
    )
 ))
+
 === DESCRIPTION ===
 Coerces values to numbers where sensible.
 

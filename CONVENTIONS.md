@@ -11,19 +11,24 @@ this file.
 - `MEWC Lambda and VBA Unit Tests.xlsm` — the committed test workbook (formatted Prep + all VBA + lambdas + unit-test sheets). The upstream/dev workbook, refreshed from the text sources — the text files are what you edit. The downstream template lives outside the repo.
 
 ### `.lambda` file format
-Four delimited sections; `SIGNATURE`, `COMMENT`, `CODE` are required.
+Four delimited sections; `SIGNATURE`, `COMMENT`, `CODE` are required. A blank line
+precedes every header except the first (`SIGNATURE`).
 ```
 === SIGNATURE ===
 name(arg1, [opt2])
+
 === COMMENT ===
 <= 255 char one-liner (feeds Excel's Name comment)
+
 === CODE ===
 =LAMBDA(...)
+
 === DESCRIPTION ===
 <full description>
 ```
 The lambda's name is the text before `(` in the signature and must match the
-filename. **The `DESCRIPTION` section is the documentation** — there is no
+filename. The parsers (`lambda_check.py`, `import_lambdas`) tolerate the blank
+lines either way; `export_lambdas` writes them so in-Excel edits keep the style. **The `DESCRIPTION` section is the documentation** — there is no
 separate descriptions file to keep in sync.
 
 ## The hard rules about writing workbooks

@@ -1,7 +1,9 @@
 === SIGNATURE ===
 xsequence(start, stop, [step], [repeat_element], [repeat_array])
+
 === COMMENT ===
 Vertical sequence from start to stop inclusive, counting by step. Can repeat each element or repeat the whole array. Optional args default to 1. Decimal steps may cause floating-point drift.
+
 === CODE ===
 =LAMBDA(start, stop, [step], [repeat_element], [repeat_array], LET(
    s, start,
@@ -18,6 +20,7 @@ Vertical sequence from start to stop inclusive, counting by step. Can repeat eac
    whole_rep, INDEX(each_rep, MOD(SEQUENCE(n * re * ra) - 1, n * re) + 1),
    IF(AND(stp <> 0, ok_dir, ok_div), whole_rep, NA())
 ))
+
 === DESCRIPTION ===
 Flexible numeric sequence with repetition options.
 

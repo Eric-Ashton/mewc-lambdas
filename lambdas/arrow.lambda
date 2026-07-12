@@ -1,9 +1,12 @@
 === SIGNATURE ===
 arrow(str)
+
 === COMMENT ===
 Converts a direction string to a standard arrow. Accepts letter codes ("U","DL"), compass points ("NE"), and non-standard arrows (⇧, ➶). Returns one of ↑↓←→↖↗↙↘↺↻↕↔⤡⤢.
+
 === CODE ===
 =LAMBDA(str, XLOOKUP(TRUE, EXACT(str, Prep!$V$13:$ALY$13), Prep!$V$14:$ALY$14))
+
 === DESCRIPTION ===
 Converts a direction keyword or symbol into the standard arrow character.
 

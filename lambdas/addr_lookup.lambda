@@ -1,7 +1,9 @@
 === SIGNATURE ===
 addr_lookup(arr, address)
+
 === COMMENT ===
 Non-volatile INDIRECT: value(s) at addr_ad within rng. addr_ad may be a numeric address, an A1 string, a range string (e.g. B2:D4), or an array of these. Out-of-bounds or no overlap returns "".
+
 === CODE ===
 =LAMBDA(arr, address,
   LET(
@@ -39,6 +41,7 @@ Non-volatile INDIRECT: value(s) at addr_ad within rng. addr_ad may be a numeric 
       MAP(address, get_cell))
   )
 )
+
 === DESCRIPTION ===
 Non-volatile alternative to INDIRECT: returns the value(s) at one or more addresses inside a range.
 

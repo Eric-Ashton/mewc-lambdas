@@ -1,7 +1,9 @@
 === SIGNATURE ===
 xfilter(arr, f_1, [f_2], [f_3], [f_4], [f_5])
+
 === COMMENT ===
 Multi-criteria FILTER. ANDs up to 5 boolean masks. A column-vector mask filters rows; a row-vector mask filters columns - so you can filter BOTH directions in one call. Omitted masks default to 1. Returns "" if nothing matches.
+
 === CODE ===
 =LAMBDA(arr, f_1, [f_2], [f_3], [f_4], [f_5], LET(
    nr, ROWS(arr),
@@ -18,6 +20,7 @@ Multi-criteria FILTER. ANDs up to 5 boolean masks. A column-vector mask filters 
       * as_col_mask(filt3) * as_col_mask(filt4) * as_col_mask(filt5),
    IFERROR(FILTER(FILTER(arr, row_mask), col_mask), "")
 ))
+
 === DESCRIPTION ===
 Applies FILTER with up to five criteria at once, joined by multiplication (logical AND), and can filter both directions in a single call.
 

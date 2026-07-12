@@ -1,7 +1,9 @@
 === SIGNATURE ===
 str_rev(str)
+
 === COMMENT ===
 Reverses a string (character by character), respecting whole multi-character symbols.
+
 === CODE ===
 =LAMBDA(str,
    IF(
@@ -13,6 +15,7 @@ Reverses a string (character by character), respecting whole multi-character sym
       )
    )
 )
+
 === DESCRIPTION ===
 Reverses the characters of a string.
 

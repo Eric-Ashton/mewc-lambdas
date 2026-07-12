@@ -1,7 +1,9 @@
 === SIGNATURE ===
 str2arr(str_or_array, [as_row])
+
 === COMMENT ===
 Splits a string into a vertical array (horizontal if as_row=1), keeping multi-char Unicode symbols whole. 1D input splits into the unused axis; 2D concatenates row-major first. Digits become numbers.
+
 === CODE ===
 =LAMBDA(str_or_array, [as_row], LET(
  a, str_or_array,
@@ -94,6 +96,7 @@ Splits a string into a vertical array (horizontal if as_row=1), keeping multi-ch
   )
  )
 ))
+
 === DESCRIPTION ===
 Explodes a string into an array of its characters.
 

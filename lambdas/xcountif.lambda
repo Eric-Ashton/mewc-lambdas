@@ -1,7 +1,9 @@
 === SIGNATURE ===
 xcountif(arr, criteria)
+
 === COMMENT ===
 Like COUNTIF but both arguments may be arrays. Uses FILTER internally and correctly returns 0 (not an error) when nothing matches.
+
 === CODE ===
 =LAMBDA(arr, criteria, LET(
    flat, TOCOL(arr, 0),
@@ -12,6 +14,7 @@ Like COUNTIF but both arguments may be arrays. Uses FILTER internally and correc
       MAP(criteria, count_fx)
    )
 ))
+
 === DESCRIPTION ===
 COUNTIF that accepts arrays in either or both arguments.
 

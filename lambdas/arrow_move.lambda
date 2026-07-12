@@ -1,7 +1,9 @@
 === SIGNATURE ===
 arrow_move(start_ad, arrow, [steps], [board_rng], [push_mode])
+
 === COMMENT ===
 Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction, bounded by board_rng (default whole sheet). Returns a NUMERIC address. Out of bounds, push_mode: 1 stop at edge (default), 0 stay, -1 'oob'.
+
 === CODE ===
 =LAMBDA(start_ad, arrow, [steps], [board_rng], [push_mode],
   LET(
@@ -30,6 +32,7 @@ Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction,
       1000000 * try_row + try_col)
   )
 )
+
 === DESCRIPTION ===
 Moves an address a number of steps in an arrow direction, constrained to a board. Computes in numeric-address space and RETURNS A NUMERIC address (use str_ad for the final A1 answer).
 

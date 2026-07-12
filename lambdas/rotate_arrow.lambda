@@ -1,7 +1,9 @@
 === SIGNATURE ===
 rotate_arrow(arrow, steps, [clockwise])
+
 === COMMENT ===
 Rotates an arrow by 45 degrees times steps. clockwise = 1 (default) rotates clockwise; clockwise = 0 rotates counter-clockwise.
+
 === CODE ===
 =LAMBDA(arrow, steps, [dir], LET(
    arrows, "↑↗→↘↓↙←↖",
@@ -11,6 +13,7 @@ Rotates an arrow by 45 degrees times steps. clockwise = 1 (default) rotates cloc
    n, MOD(i - 1 + s, 8) + 1,
    MID(arrows, n, 1)
 ))
+
 === DESCRIPTION ===
 Rotates an arrow around the eight compass directions.
 

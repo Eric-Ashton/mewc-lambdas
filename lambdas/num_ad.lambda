@@ -1,7 +1,9 @@
 === SIGNATURE ===
 num_ad(arr)
+
 === COMMENT ===
 Converts each valid A1 string address in arr to a numeric address (1e6*row+col). Anything that is not a string address - values already numeric, ranges, or junk - passes through unchanged. Element-wise; same shape as arr.
+
 === CODE ===
 =LAMBDA(arr,
   LET(
@@ -23,6 +25,7 @@ Converts each valid A1 string address in arr to a numeric address (1e6*row+col).
     IF(ROWS(arr) * COLUMNS(arr) = 1, to_num(arr), MAP(arr, to_num))
   )
 )
+
 === DESCRIPTION ===
 Converts A1 string addresses to numeric addresses (1e6 * row + col), element-wise.
 

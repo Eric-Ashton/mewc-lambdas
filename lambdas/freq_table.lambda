@@ -1,7 +1,9 @@
 === SIGNATURE ===
 freq_table(array, [min_freq])
+
 === COMMENT ===
 Turns an array into a frequency table sorted by frequency descending. min_freq filters out rows below that count. Ignores blanks and ""; errors if every row is filtered out.
+
 === CODE ===
 =LAMBDA(array, [min_freq], LET(
    mf, IF(ISOMITTED(min_freq), 1, min_freq),
@@ -12,6 +14,7 @@ Turns an array into a frequency table sorted by frequency descending. min_freq f
    tab, IFERROR(FILTER(HSTACK(u, cnt), cnt >= mf), NA()),
    IFERROR(SORT(tab, {2, 1}, {-1, 1}), NA())
 ))
+
 === DESCRIPTION ===
 Builds a frequency table from an array.
 

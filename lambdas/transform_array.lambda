@@ -1,7 +1,9 @@
 === SIGNATURE ===
 transform_array(arr, dir)
+
 === COMMENT ===
 Rotates 90 degrees or flips an array, once or twice, using one or two of ↺↻↕↔. For two operations pass them concatenated, e.g. "↕↔" or "↺↺".
+
 === CODE ===
 =LAMBDA(arr, dir, LET(
    base, arr,
@@ -62,6 +64,7 @@ Rotates 90 degrees or flips an array, once or twice, using one or two of ↺↻�
       )
    )
 ))
+
 === DESCRIPTION ===
 Rotates or flips a 2D array.
 

@@ -1,7 +1,9 @@
 === SIGNATURE ===
 set(rng, [as_row])
+
 === COMMENT ===
 Turns a range into a set: flattens, removes blanks and errors, uniques, and sorts. Returns a column by default, or a row if as_row = 1.
+
 === CODE ===
 =LAMBDA(data_rng, [as_row],
    IFERROR(
@@ -14,6 +16,7 @@ Turns a range into a set: flattens, removes blanks and errors, uniques, and sort
       ""
    )
 )
+
 === DESCRIPTION ===
 Reduces a range to a clean, sorted set of unique values.
 

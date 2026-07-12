@@ -1,9 +1,12 @@
 === SIGNATURE ===
 xmod(a, b)
+
 === COMMENT ===
 One-based modulo: like MOD but cycles 1..b instead of 0..b-1. Equal to MOD(a,b) except when that is 0, where it returns b.
+
 === CODE ===
 =LAMBDA(a, b, IF(MOD(a, b) = 0, b, MOD(a, b)))
+
 === DESCRIPTION ===
 Modulo that returns the divisor instead of zero (1-based).
 

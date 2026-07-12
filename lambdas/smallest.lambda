@@ -1,9 +1,12 @@
 === SIGNATURE ===
 smallest(check, return)
+
 === COMMENT ===
 Finds the smallest number in "check" and returns the first matching value in "return" (an XLOOKUP on MIN).
+
 === CODE ===
 =LAMBDA(check, return, XLOOKUP(MIN(check), check, return))
+
 === DESCRIPTION ===
 Returns the value paired with the minimum of a checked array.
 

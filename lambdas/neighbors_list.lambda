@@ -1,7 +1,9 @@
 === SIGNATURE ===
 neighbors_list(center_ad, [size], [boundary_rng], [diag_allowed])
+
 === COMMENT ===
 Lists the A1 addresses around a center cell within size (default 1), bounded by boundary_rng (default whole sheet). center_ad accepts a numeric address or an A1 string. diag_allowed 1 = chessboard (default), 0 = Manhattan.
+
 === CODE ===
 =LAMBDA(center_ad, [size], [boundary_rng], [diag_allowed], LET(
    s, IF(ISOMITTED(size), 1, size),
@@ -36,6 +38,7 @@ Lists the A1 addresses around a center cell within size (default 1), bounded by 
       )
    )
 ))
+
 === DESCRIPTION ===
 Lists the cell addresses around a center cell, ordered by distance (nearest first).
 

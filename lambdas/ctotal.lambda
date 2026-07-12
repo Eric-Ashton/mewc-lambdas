@@ -1,9 +1,12 @@
 === SIGNATURE ===
 ctotal(arr)
+
 === COMMENT ===
 Cumulative (running) total of an array. Returns an array of the same size where each value is the sum of itself and all values before it, in row-major order.
+
 === CODE ===
 =LAMBDA(arr, SCAN(0, arr, LAMBDA(a, b, a + b)))
+
 === DESCRIPTION ===
 Running cumulative total of an array.
 
