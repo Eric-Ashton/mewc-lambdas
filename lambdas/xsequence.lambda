@@ -18,7 +18,7 @@ Vertical sequence from start to stop inclusive, counting by step. Can repeat eac
    base, s + stp * SEQUENCE(n, , 0, 1),
    each_rep, INDEX(base, ROUNDUP(SEQUENCE(n * re) / re, 0)),
    whole_rep, INDEX(each_rep, MOD(SEQUENCE(n * re * ra) - 1, n * re) + 1),
-   IF(AND(stp <> 0, ok_dir, ok_div), whole_rep, NA())
+   IF(AND(stp <> 0, ok_dir, ok_div), whole_rep, #VALUE!)
 ))
 
 === DESCRIPTION ===
@@ -32,7 +32,7 @@ Arguments:
   [repeat_array]   - times to repeat the whole sequence (default 1).
 
 Returns:
-  A vertical array from start to stop. Decimal steps may introduce floating-point error.
+  A vertical array from start to stop, or #VALUE! if step is 0, points the wrong way, or does not divide the span evenly. Decimal steps may introduce floating-point error.
 
 Example:
   xsequence(1, 5)  ->  {1;2;3;4;5}

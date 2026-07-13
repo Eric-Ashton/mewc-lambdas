@@ -11,7 +11,7 @@ Converts die-face pip characters (⚀-⚅) to their numbers. Handles a concatena
       chars, MID(txt, seq, 1),
       codes, UNICODE(chars),
       isDie, (codes >= 9856) * (codes <= 9861),
-      vals, FILTER(codes - 9855, isDie, NA()),
+      vals, FILTER(codes - 9855, isDie, ""),
       IF(ROWS(vals) * COLUMNS(vals) = 1, INDEX(vals, 1), vals)
    )),
    IF(
@@ -28,7 +28,7 @@ Arguments:
   st - one or more die-face characters (⚀ ⚁ ⚂ ⚃ ⚄ ⚅), either concatenated in a string or as an array with one die per cell.
 
 Returns:
-  The pip value(s) as numbers. For multiple dice within a single cell, concatenate them into one string first.
+  The pip value(s) as numbers. Cells with no die glyph return "" (blank), so it can be applied to mixed arrays. For multiple dice within a single cell, concatenate them into one string first.
 
 Example:
   die_pips("⚄")  ->  5

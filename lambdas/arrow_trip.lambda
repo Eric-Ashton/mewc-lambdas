@@ -17,7 +17,7 @@ Walks from start_ad (numeric or A1) in a straight arrow direction across rng unt
     bottom_row, top_row + height - 1,
     right_col, left_col + width - 1,
     inside, AND(start_row >= top_row, start_row <= bottom_row, start_col >= left_col, start_col <= right_col),
-    IF(NOT(inside), NA(),
+    IFNA(IF(NOT(inside), "X",
       LET(
         arrow_list, {"↑"; "↓"; "←"; "→"; "↖"; "↗"; "↘"; "↙"},
         row_steps, {-1; 1; 0; 0; -1; -1; 1; 1},
@@ -40,7 +40,7 @@ Walks from start_ad (numeric or A1) in a straight arrow direction across rng unt
         out_vals, CHOOSEROWS(val_list, SEQUENCE(keep_rows)),
         HSTACK(out_addrs, out_vals)
       )
-    )
+    ), "")
   )
 )
 
@@ -54,4 +54,4 @@ Arguments:
   [stopper] - a value that halts the trip when encountered (inclusive).
 
 Returns:
-  A 2-column array: NUMERIC addresses in column 1 and their values in column 2, starting at the start cell. #N/A if the start is outside rng.
+  A 2-column array: NUMERIC addresses in column 1 and their values in column 2, starting at the start cell. Returns "X" if the start is outside rng, or "" if dir is not a recognized arrow.

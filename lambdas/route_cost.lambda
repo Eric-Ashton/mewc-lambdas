@@ -23,7 +23,7 @@ Dijkstra over cost_map (numbers = cost, text = walls): least cost to reach each 
    _rc, INDEX(_c, 2),
    IF(
       OR(_rr < 1, _rr > _nr, _rc < 1, _rc > _nc),
-      NA(),
+      "X",
       LET(
          _dg, IF(ISOMITTED(diag_allowed), 1, diag_allowed),
          _rd, IF(_dg, {-1, 1, 0, 0, -1, -1, 1, 1}, {-1, 1, 0, 0}),
@@ -49,6 +49,6 @@ Arguments:
   [diag_allowed] - 1 to allow diagonal moves (default 1).
 
 Returns:
-  An array the same size as cost_map giving the minimum total cost to reach each cell. The destination cell's cost is included; the start cell's cost is ignored. Unreachable cells are left blank/impassable.
+  An array the same size as cost_map giving the minimum total cost to reach each cell. The destination cell's cost is included; the start cell's cost is ignored. Unreachable cells are left blank/impassable. A start point outside cost_map returns "X".
 
 Note: the recursion is done by the private helper z_route_worker.

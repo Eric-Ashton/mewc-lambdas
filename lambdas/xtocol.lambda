@@ -16,12 +16,12 @@ Flattens a 2D range to a column. show_addr (default 1) adds an address column; c
   _in_dir,
   IF(
    _len <> 1,
-   NA(),
+   #VALUE!,
    LET(
     char_one, _in_dir,
     is_vert, OR(char_one = "↑", char_one = "↓"),
     is_horz, OR(char_one = "←", char_one = "→"),
-    IF(is_vert, char_one & "→", IF(is_horz, char_one & "↓", NA()))
+    IF(is_vert, char_one & "→", IF(is_horz, char_one & "↓", #VALUE!))
    )
   )
  ),
@@ -42,7 +42,7 @@ Flattens a 2D range to a column. show_addr (default 1) adds an address column; c
  is_valid, AND(LEN(_d) = 2, has_vert, has_horz),
  IF(
   NOT(is_valid),
-  NA(),
+  #VALUE!,
   LET(
    op_h, IF(OR(first_char = "←", second_char = "←"), "↔", ""),
    op_v, IF(OR(first_char = "↑", second_char = "↑"), "↕", ""),
@@ -94,7 +94,7 @@ Arguments:
   [snake]      - 1 to snake back and forth across rows/columns (default 0).
 
 Returns:
-  The flattened values as a column (address + value when show_addr = 1).
+  The flattened values as a column (address + value when show_addr = 1). Returns #VALUE! if dir is not a valid one- or two-arrow scan direction.
 
 Example:
   xtocol(A1:B5)

@@ -40,7 +40,7 @@ Rotates 90 degrees or flips an array, once or twice, using one or two of ↺↻�
                      col_count,
                      LAMBDA(i, j, INDEX(cur, i, col_count - j + 1))
                   ),
-                  NA()
+                  #VALUE!
                )
             )
          )
@@ -54,7 +54,7 @@ Rotates 90 degrees or flips an array, once or twice, using one or two of ↺↻�
          base,
          IF(
             op_count > 2,
-            NA(),
+            #VALUE!,
             REDUCE(
                base,
                SEQUENCE(op_count),
@@ -73,7 +73,7 @@ Arguments:
   dir - one or two operation arrows: ↺ (rotate CCW), ↻ (rotate CW), ↕ (flip vertical), ↔ (flip horizontal). Concatenate two for a double operation ("↕↔", "↺↺").
 
 Returns:
-  The transformed array.
+  The transformed array, or #VALUE! if dir contains an unrecognized operation or more than two operations.
 
 Example:
   transform_array(board, "↻")
