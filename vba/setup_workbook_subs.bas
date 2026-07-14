@@ -951,8 +951,19 @@ Private Sub create_level_worksheets()
         End With
 
         ' Buttons/toggles
-        With level_ws.Buttons.Add(217.875, 9.75, 92.25, 32.625): .OnAction = "done": .Text = "Done": End With
-        With level_ws.Buttons.Add(410.625, 11.25, 95.25, 30.75): .OnAction = "copy_previous": .Text = "Copy Previous": End With
+        ' "Done" and "Copy Previous" are Shapes, not classic Buttons.Add Form
+        ' Controls: Form Control buttons are locked to the OS/Office theme's
+        ' gray button chrome and can't take a custom fill, which is why they
+        ' previously looked mismatched sitting on the blue backdrop behind
+        ' them. StyleLevelButton colors them to match that backdrop (I1:K3
+        ' above, and E1:G3 via conditional formatting below) - same blue,
+        ' RGB(34,138,184), used both places.
+        Call StyleLevelButton( _
+            level_ws.Shapes.AddShape(msoShapeRoundedRectangle, 217.875, 9.75, 92.25, 32.625), _
+            "Done", "done")
+        Call StyleLevelButton( _
+            level_ws.Shapes.AddShape(msoShapeRoundedRectangle, 410.625, 11.25, 95.25, 30.75), _
+            "Copy Previous", "copy_previous")
         With level_ws.OptionButtons.Add(586.125, 21.75, 58.875, 18.375): .OnAction = "what_if_on": .Text = "What If On": End With
         With level_ws.OptionButtons.Add(653.625, 22.5, 61.125, 18.375): .OnAction = "what_if_off": .Text = "What If Off": End With
 
@@ -1126,6 +1137,31 @@ ErrorHandler:
     e_num = Err.Number: e_desc = Err.Description
     Call LogError(e_num, e_desc, "create_level_worksheets")
     Err.Raise e_num, "create_level_worksheets", e_desc
+End Sub
+
+' Styles a level-sheet action button (Shape) to match the blue theme used for
+' its backdrop elsewhere on the sheet (RGB(34,138,184)), instead of the
+' OS/Office default gray Form Control button chrome, which can't be
+' recolored. Centers bold white text, locks the size to what AddShape was
+' given (no autosize surprises), and assigns the click macro.
+Private Sub StyleLevelButton(ByVal shp As Shape, ByVal caption As String, ByVal macroName As String)
+    shp.OnAction = macroName
+    With shp.Fill
+        .Visible = msoTrue
+        .ForeColor.RGB = RGB(34, 138, 184)
+    End With
+    shp.Line.Visible = msoFalse
+    With shp.TextFrame2
+        .AutoSize = msoAutoSizeNone
+        .VerticalAnchor = msoAnchorMiddle
+        With .TextRange
+            .Text = caption
+            .Font.Size = 11
+            .Font.Bold = msoTrue
+            .Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
+            .ParagraphFormat.Alignment = msoAlignCenter
+        End With
+    End With
 End Sub
 
 ' === Align Level Worksheets Subroutine ===
