@@ -597,7 +597,15 @@ Private Sub test_get_return_column_number()
     grp "GetReturnColumnNumber"
     Dim ws As Worksheet
     Set ws = AddSheet("zz_retcol")
-    ws.Range("C1").Formula = "=XLOOKUP(A2,Case!C1:C369,Case!H1:H369)"
+    ' Text-format the cells before writing so Excel stores the "=..." text
+    ' literally instead of parsing/calculating it as a live formula.
+    ' GetReturnColumnNumber only ever reads .Formula as a STRING - it never
+    ' needs the referenced sheet/range to actually exist or resolve, and a
+    ' live XLOOKUP referencing a "Case!" sheet this workbook doesn't have
+    ' triggered an "Update Values" external-link prompt when it WAS a real
+    ' formula. Plain text sidesteps that entirely.
+    ws.Range("C1:C2").NumberFormat = "@"
+    ws.Range("C1").Value = "=XLOOKUP(A2,Case!C1:C369,Case!H1:H369)"
     ' LIKELY BUG (button_subs.bas, ~line 235): "colLetters = colLetters Like
     ' ")*" Or colLetters Like """"" assigns a Boolean to the String colLetters,
     ' which VBA coerces to the literal text "False" (or "True") - clobbering
@@ -608,7 +616,7 @@ Private Sub test_get_return_column_number()
     ' intended one - see the PR notes.
     chk "XLOOKUP formula (real target is H) -> currently always F (bug)", "6", GetReturnColumnNumber(ws, 1)
 
-    ws.Range("C2").Formula = "=SUM(A1)"    ' fewer than 2 colons -> 0, unaffected by the bug above
+    ws.Range("C2").Value = "=SUM(A1)"      ' fewer than 2 colons -> 0, unaffected by the bug above
     chk "formula with <2 colons -> 0", "0", GetReturnColumnNumber(ws, 2)
 
     ws.Range("E1").Value = "GetReturnColumnNumber: C1 has a realistic XLOOKUP formula; C2 has too few colons"
@@ -634,8 +642,11 @@ Private Sub test_make_level_data_table()
         chk "A2 = first game number", "101", newWs.Range("A2").Value
         chk "B4 yellow fill (drop target formula here)", "#FFFF00", get_color(newWs.Range("B4"))
         chk "A5 = game numbers list starts here", "101", newWs.Range("A5").Value
+        ' Excel only quotes a sheet name in stored formula text when the name
+        ' needs escaping (spaces, etc.) - "zz_tmsrc" doesn't, so despite the
+        ' sub writing the quoted form, .Formula2 reads back unquoted.
         chk "B2 XLOOKUP formula spills the matching row", _
-            "=XLOOKUP(A2,'zz_tmsrc'!$A$2,'zz_tmsrc'!$B$2)", newWs.Range("B2").Formula2
+            "=XLOOKUP(A2,zz_tmsrc!$A$2,zz_tmsrc!$B$2)", newWs.Range("B2").Formula2
         DeleteSheet newWs.Name
     End If
 End Sub
