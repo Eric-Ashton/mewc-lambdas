@@ -51,7 +51,7 @@ Either lane leaves the Lamb sheet and the `.lambda` file matching. Then:
    test — you want to test exactly what you'll commit. If you edited in Excel (Lane B),
    run `export_lambdas` now. (Lane A already reconciled them via `import_lambdas`.)
 2. Run `lambda_update`. It copies the lambda code from the Lamb sheet into the Name
-   Manager, hides the `z_` helpers, and rewrites the test-sheet formulas as dynamic arrays
+   Manager and rewrites the test-sheet formulas as dynamic arrays
    (stripping any stray `@` left over from AI editing).
 3. Confirm the tests pass **and** that they actually exercise the new/changed
    functionality. The `test_summary` sheet gives the per-lambda pass/fail roll-up.

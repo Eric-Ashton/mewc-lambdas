@@ -6,11 +6,9 @@ Attribute VB_Name = "unit_test_tools"
 '
 '   lambda_update       Push the Lamb sheet into the Name Manager (delete + re-add
 '                       each name from its Code cell, set the Name-Manager comment
-'                       from Comment, hide the "z_" helpers) and THEN rewrite the
-'                       test-sheet formulas as dynamic arrays. One button for the
-'                       test loop: edit lambdas -> lambda_update -> re-tested.
-'   lambda_hide_helpers / lambda_show_helpers
-'                       Hide / show every "z_" private-helper defined name.
+'                       from Comment) and THEN rewrite the test-sheet formulas as
+'                       dynamic arrays. One button for the test loop: edit lambdas
+'                       -> lambda_update -> re-tested.
 '
 '   link_test_headers   Make the Lamb sheet the single source of truth. On every
 '                       test sheet it replaces the hard-coded Signature (B1),
@@ -38,15 +36,14 @@ Private Const LAMB_SHEET As String = "Lamb"
 Private Const COL_SIG As Long = 1
 Private Const COL_COMMENT As Long = 2
 Private Const COL_CODE As Long = 3
-Private Const HELPER_PREFIX As String = "z_"
 
 '==============================================================================
 ' Lambda library management  (merged in from manage_lambda)
 '==============================================================================
 
 ' Read every row of "Lamb", (re)create the defined name from its Code cell, set
-' the Name-Manager comment from Comment, hide the "z_" helpers, then rewrite the
-' test-sheet formulas so they exercise the just-updated lambdas.
+' the Name-Manager comment from Comment, then rewrite the test-sheet formulas so
+' they exercise the just-updated lambdas.
 Public Sub lambda_update()
     Dim ws As Worksheet
     Dim lastRow As Long, r As Long
@@ -132,8 +129,6 @@ Public Sub lambda_update()
         End If
     Next r
 
-    lambda_hide_helpers
-
     ' --- refresh the test sheets against the just-updated lambdas ---
     Dim fixed As Long
     fixed = rewrite_test_formulas()
@@ -158,28 +153,6 @@ Private Function LambdaName(ByVal sig As String) As String
     If p > 0 Then sig = Left$(sig, p - 1)
     LambdaName = Trim$(sig)
 End Function
-
-Public Sub lambda_hide_helpers()
-    SetHelperVisibility False
-End Sub
-
-Public Sub lambda_show_helpers()
-    SetHelperVisibility True
-End Sub
-
-Private Sub SetHelperVisibility(ByVal makeVisible As Boolean)
-    Dim nm As Name, localName As String, bangPos As Long
-    For Each nm In ThisWorkbook.names
-        localName = nm.Name
-        bangPos = InStr(localName, "!")            ' drop any "Sheet!" qualifier
-        If bangPos > 0 Then localName = Mid$(localName, bangPos + 1)
-        If LCase$(Left$(localName, Len(HELPER_PREFIX))) = HELPER_PREFIX Then
-            On Error Resume Next
-            nm.Visible = makeVisible
-            On Error GoTo 0
-        End If
-    Next nm
-End Sub
 
 '==============================================================================
 ' Test-sheet headers  (single-source-of-truth lookups against Lamb)
