@@ -37,9 +37,23 @@ Private gCases() As String
 Private gExpected() As String
 Private gActual() As String
 Private gPass() As Boolean
+Private mKeepFixtures As Boolean   ' run_vba_tests_keep_fixtures sets True to leave zz_* sheets
 
-' ---- entry point ------------------------------------------------------------
+' ---- entry points -----------------------------------------------------------
 Public Sub run_vba_tests()
+    mKeepFixtures = False
+    run_all
+End Sub
+
+' Same as run_vba_tests but leaves the zz_* fixture sheets in place so you can
+' see what each test set up and produced. Don't commit the workbook after this
+' run (the fixtures would ride along) - re-run run_vba_tests to clean up.
+Public Sub run_vba_tests_keep_fixtures()
+    mKeepFixtures = True
+    run_all
+End Sub
+
+Private Sub run_all()
     Dim prevSU As Boolean, prevDA As Boolean
     prevSU = Application.ScreenUpdating
     prevDA = Application.DisplayAlerts
@@ -72,7 +86,8 @@ Public Sub run_vba_tests()
         If gPass(i) Then passN = passN + 1
     Next i
     MsgBox passN & " / " & gCount & " VBA tests passed." & _
-           IIf(passN = gCount, "", vbLf & vbLf & "See the vba_tests sheet for the failures."), _
+           IIf(passN = gCount, "", vbLf & vbLf & "See the vba_tests sheet for the failures.") & _
+           IIf(mKeepFixtures, vbLf & vbLf & "Fixtures kept (zz_* sheets); re-run run_vba_tests to clean up.", ""), _
            IIf(passN = gCount, vbInformation, vbExclamation), "run_vba_tests"
 End Sub
 
@@ -92,9 +107,9 @@ Private Sub RunGuarded(ByVal which As String)
 Failed:
     gGroup = which
     record "(group crashed)", "no error", "Error " & Err.Number & ": " & Err.Description, False
-    ' best-effort fixture cleanup
-    KillSheet "zz_color": KillSheet "zz_ind": KillSheet "zz_fx1": KillSheet "zz_fx2"
-    KillSheet "zz_conv": KillSheet "zz_maze": KillSheet "zz_bgc"
+    ' best-effort fixture cleanup (honours keep-mode)
+    CleanupSheet "zz_color": CleanupSheet "zz_fx1": CleanupSheet "zz_fx2"
+    CleanupSheet "zz_conv": CleanupSheet "zz_maze": CleanupSheet "zz_bgc"
 End Sub
 
 ' ---- assertions -------------------------------------------------------------
@@ -224,6 +239,11 @@ Private Sub KillSheet(ByVal nm As String)
     On Error GoTo 0
 End Sub
 
+' End-of-test cleanup that honours keep-mode (AddSheet still starts fresh either way).
+Private Sub CleanupSheet(ByVal nm As String)
+    If Not mKeepFixtures Then KillSheet nm
+End Sub
+
 ' ---- test groups ------------------------------------------------------------
 Private Sub test_unicode_split()
     grp "UNICODE_SPLIT"
@@ -242,7 +262,8 @@ Private Sub test_get_color()
     chk "unfilled -> white", "#FFFFFF", get_color(ws.Range("A2"))
     ws.Range("A3").Interior.Color = RGB(0, 0, 0)
     chk "solid black", "#000000", get_color(ws.Range("A3"))
-    KillSheet "zz_color"
+    ws.Range("C1").Value = "get_color: A1 red / A2 unfilled / A3 black"
+    CleanupSheet "zz_color"
 End Sub
 
 Private Sub test_sheet_names()
@@ -270,8 +291,8 @@ Private Sub test_sheet_data()
 
     chkTrue "invalid sheet name -> error", IsError(sheet_data(Array("nope_zz"), "B2:C3", 0))
 
-    KillSheet "zz_fx1"
-    KillSheet "zz_fx2"
+    CleanupSheet "zz_fx1"
+    CleanupSheet "zz_fx2"
 End Sub
 
 Private Sub test_xconvert()
@@ -291,43 +312,43 @@ Private Sub test_xconvert()
     chkTrue "no path -> error", IsError(xconvert(tbl, "m", 1, "xyz"))
     chk "malformed 2-col -> #VALUE!", "#VALUE!", xconvert(ws.Range("A1:B2"), "m", 1, "cm")
 
-    KillSheet "zz_conv"
+    ws.Range("A4").Value = "xconvert conversion table (From | Factor | To)"
+    CleanupSheet "zz_conv"
 End Sub
 
 Private Sub test_maze_solver()
     grp "maze_solver"
-    Dim ws As Worksheet, rng As Range
-
-    ' no-diagonal, 3x3 all open, start top-left
+    ' All three cases laid out on ONE sheet so keep-mode shows them together.
+    ' 0 = start, white = path, black = wall. Each grid is solved on its own selection.
+    Dim ws As Worksheet
     Set ws = AddSheet("zz_maze"): ws.Activate
-    Set rng = ws.Range("A1:C3")
-    rng.Interior.Color = RGB(255, 255, 255)
-    ws.Range("A1").Value = 0
-    rng.Select
+    ws.Range("A1").Value = "no-diag open (A2:C4)"
+    ws.Range("E1").Value = "with-diag open (E2:G4)"
+    ws.Range("A6").Value = "no-diag + wall at B7:B8 (A7:C9)"
+
+    ' Case 1 - 4-directional, open 3x3 -> Manhattan-style BFS distances
+    ws.Range("A2:C4").Interior.Color = RGB(255, 255, 255)
+    ws.Range("A2").Value = 0
+    ws.Range("A2:C4").Select
     Application.Run "maze_solver_color_no_diagonal"
-    chk "no-diag 3x3", "3x3[0|1|2|1|2|3|2|3|4]", rng.Value
-    KillSheet "zz_maze"
+    chk "no-diag open 3x3", "3x3[0|1|2|1|2|3|2|3|4]", ws.Range("A2:C4").Value
 
-    ' with-diagonal, 3x3 all open (Chebyshev distances)
-    Set ws = AddSheet("zz_maze"): ws.Activate
-    Set rng = ws.Range("A1:C3")
-    rng.Interior.Color = RGB(255, 255, 255)
-    ws.Range("A1").Value = 0
-    rng.Select
+    ' Case 2 - 8-directional, open 3x3 -> Chebyshev distances
+    ws.Range("E2:G4").Interior.Color = RGB(255, 255, 255)
+    ws.Range("E2").Value = 0
+    ws.Range("E2:G4").Select
     Application.Run "maze_solver_color_with_diagonal"
-    chk "with-diag 3x3", "3x3[0|1|2|1|1|2|2|2|2]", rng.Value
-    KillSheet "zz_maze"
+    chk "with-diag open 3x3", "3x3[0|1|2|1|1|2|2|2|2]", ws.Range("E2:G4").Value
 
-    ' no-diagonal with a wall at B1:B2 (different color -> impassable, stay empty)
-    Set ws = AddSheet("zz_maze"): ws.Activate
-    Set rng = ws.Range("A1:C3")
-    rng.Interior.Color = RGB(255, 255, 255)
-    ws.Range("B1:B2").Interior.Color = RGB(0, 0, 0)
-    ws.Range("A1").Value = 0
-    rng.Select
+    ' Case 3 - 4-directional with a wall (B7:B8 black -> impassable, stay empty)
+    ws.Range("A7:C9").Interior.Color = RGB(255, 255, 255)
+    ws.Range("B7:B8").Interior.Color = RGB(0, 0, 0)
+    ws.Range("A7").Value = 0
+    ws.Range("A7:C9").Select
     Application.Run "maze_solver_color_no_diagonal"
-    chk "no-diag wall", "3x3[0|<empty>|6|1|<empty>|5|2|3|4]", rng.Value
-    KillSheet "zz_maze"
+    chk "no-diag wall", "3x3[0|<empty>|6|1|<empty>|5|2|3|4]", ws.Range("A7:C9").Value
+
+    CleanupSheet "zz_maze"
 End Sub
 
 Private Sub test_select_sheets()
@@ -349,7 +370,8 @@ Private Sub test_write_bg_color()
     Application.Run "write_background_color"
     chk "red -> #FF0000", "#FF0000", ws.Range("A1").Value
     chk "black -> #000000", "#000000", ws.Range("A2").Value
-    KillSheet "zz_bgc"
+    ws.Range("C1").Value = "write_background_color: A1 was red, A2 was black"
+    CleanupSheet "zz_bgc"
 End Sub
 
 ' ---- results writer ---------------------------------------------------------
