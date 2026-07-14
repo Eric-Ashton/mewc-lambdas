@@ -52,6 +52,8 @@ Sub setup_workbook()
 
     Call import_case
     Err.Clear
+    Call set_normal_style
+    Err.Clear
     Call classify_rows
     Err.Clear
     Call create_level_worksheets
@@ -94,6 +96,20 @@ ErrorHandler:
     Call LogError(Err.Number, Err.Description, "setup_workbook")
     Resume Cleanup
 
+End Sub
+
+
+' Pin the workbook's Normal style so default column widths stay stable across
+' setups. Moving sheets in/out (as import_case does) can silently flip the Normal
+' style to another font (e.g. Roboto), which widens every column even though the
+' zoom and units are unchanged. Aptos Narrow 11 is the intended baseline.
+Private Sub set_normal_style()
+    On Error Resume Next
+    With attempt_workbook.Styles("Normal").Font
+        .Name = "Aptos Narrow"
+        .Size = 11
+    End With
+    On Error GoTo 0
 End Sub
 
 
@@ -709,7 +725,7 @@ Private Sub create_level_worksheets()
         With level_ws.Cells
             .UnMerge
             .RowHeight = 14.3
-            .ColumnWidth = 5.23
+            .ColumnWidth = 7.82        ' ~93 px at the Normal-style font (Aptos Narrow 11)
             .HorizontalAlignment = xlLeft
             .VerticalAlignment = xlCenter
             .Font.Name = "Aptos Narrow"
