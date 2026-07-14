@@ -182,8 +182,6 @@ behind `xbyrow` and `route_cost`) get a **`z_` prefix** (`z_xbyrow_ix`,
 - **Keeps autocomplete clean.** Typing the public name never surfaces the helper.
 - **Call only the public wrapper** from worksheets; treat any `z_` name as
   internal.
-- `lambda_hide_helpers` (in `unit_test_tools.bas`) hides every `z_` name on open —
-  it keys on the exact `z_` prefix, so keep it consistent.
 
 ## 7. Editing lambdas — keep Code cells as text
 Lambdas live in `.lambda` files (canonical) and, in Excel, the `Lamb` sheet

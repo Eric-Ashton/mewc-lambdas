@@ -67,38 +67,6 @@ Private Function Hex2(n As Long) As String
 End Function
 
 
-' ==========
-' xindirect
-' ==========
-' Returns a reference to the specified range, similar to the built-in INDIRECT function,
-' but is non-volatile and does not recalculate unless its inputs change.
-'
-' Parameters:
-'   ref_text (String) - A string representing the cell or range reference. This can be
-'                       in A1 or R1C1 notation depending on the `a1` flag.
-'   a1 (Boolean) [Optional] - If TRUE or omitted, `ref_text` is interpreted as A1-style.
-'                             If FALSE, interpreted as R1C1-style.
-'
-' Returns:
-'   Range object - A reference to the specified range, which can be used in formulas.
-
-Function xindirect(ref_text As String, Optional a1 As Boolean = True) As Range
-    Application.Volatile False
-    On Error GoTo ErrHandler
-
-    If a1 Then
-        Set xindirect = Range(ref_text)
-    Else
-        Set xindirect = Range(Cells.Range(ref_text).Address(False, False, xlR1C1))
-    End If
-    Exit Function
-
-ErrHandler:
-    Set xindirect = Nothing
-End Function
-
-
-
 ' ============
 ' sheet_names
 ' ============

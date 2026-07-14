@@ -65,8 +65,6 @@ Sub setup_workbook()
     Err.Clear
     Call create_hints_sheet
     Err.Clear
-    Call HideHelperNames
-    Err.Clear
 
     ' Final UI nicety - guarded the same way (no _L1 sheet means earlier
     ' stages failed; we don't want that to abort the cleanup).
