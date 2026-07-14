@@ -57,6 +57,10 @@ Public Sub run_vba_tests()
     RunGuarded "get_color"
     RunGuarded "sheet_names"
     RunGuarded "sheet_data"
+    RunGuarded "xconvert"
+    RunGuarded "maze_solver"
+    RunGuarded "select_sheets"
+    RunGuarded "write_bg_color"
 
     write_results
 
@@ -79,6 +83,10 @@ Private Sub RunGuarded(ByVal which As String)
         Case "get_color": test_get_color
         Case "sheet_names": test_sheet_names
         Case "sheet_data": test_sheet_data
+        Case "xconvert": test_xconvert
+        Case "maze_solver": test_maze_solver
+        Case "select_sheets": test_select_sheets
+        Case "write_bg_color": test_write_bg_color
     End Select
     Exit Sub
 Failed:
@@ -86,6 +94,7 @@ Failed:
     record "(group crashed)", "no error", "Error " & Err.Number & ": " & Err.Description, False
     ' best-effort fixture cleanup
     KillSheet "zz_color": KillSheet "zz_ind": KillSheet "zz_fx1": KillSheet "zz_fx2"
+    KillSheet "zz_conv": KillSheet "zz_maze": KillSheet "zz_bgc"
 End Sub
 
 ' ---- assertions -------------------------------------------------------------
@@ -263,6 +272,84 @@ Private Sub test_sheet_data()
 
     KillSheet "zz_fx1"
     KillSheet "zz_fx2"
+End Sub
+
+Private Sub test_xconvert()
+    grp "xconvert"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_conv")
+    ' 3-column table: From | Factor | To
+    ws.Range("A1").Value = "m":  ws.Range("B1").Value = 100:  ws.Range("C1").Value = "cm"
+    ws.Range("A2").Value = "km": ws.Range("B2").Value = 1000: ws.Range("C2").Value = "m"
+    Dim tbl As Range
+    Set tbl = ws.Range("A1:C2")
+
+    chk "direct m->cm (2)", "200", xconvert(tbl, "m", 2, "cm")
+    chk "reverse cm->m (200)", "2", xconvert(tbl, "cm", 200, "m")
+    chk "same unit m->m (5)", "5", xconvert(tbl, "m", 5, "m")
+    chk "multi-hop km->cm (2)", "200000", xconvert(tbl, "km", 2, "cm")
+    chkTrue "no path -> error", IsError(xconvert(tbl, "m", 1, "xyz"))
+    chk "malformed 2-col -> #VALUE!", "#VALUE!", xconvert(ws.Range("A1:B2"), "m", 1, "cm")
+
+    KillSheet "zz_conv"
+End Sub
+
+Private Sub test_maze_solver()
+    grp "maze_solver"
+    Dim ws As Worksheet, rng As Range
+
+    ' no-diagonal, 3x3 all open, start top-left
+    Set ws = AddSheet("zz_maze"): ws.Activate
+    Set rng = ws.Range("A1:C3")
+    rng.Interior.Color = RGB(255, 255, 255)
+    ws.Range("A1").Value = 0
+    rng.Select
+    Application.Run "maze_solver_color_no_diagonal"
+    chk "no-diag 3x3", "3x3[0|1|2|1|2|3|2|3|4]", rng.Value
+    KillSheet "zz_maze"
+
+    ' with-diagonal, 3x3 all open (Chebyshev distances)
+    Set ws = AddSheet("zz_maze"): ws.Activate
+    Set rng = ws.Range("A1:C3")
+    rng.Interior.Color = RGB(255, 255, 255)
+    ws.Range("A1").Value = 0
+    rng.Select
+    Application.Run "maze_solver_color_with_diagonal"
+    chk "with-diag 3x3", "3x3[0|1|2|1|1|2|2|2|2]", rng.Value
+    KillSheet "zz_maze"
+
+    ' no-diagonal with a wall at B1:B2 (different color -> impassable, stay empty)
+    Set ws = AddSheet("zz_maze"): ws.Activate
+    Set rng = ws.Range("A1:C3")
+    rng.Interior.Color = RGB(255, 255, 255)
+    ws.Range("B1:B2").Interior.Color = RGB(0, 0, 0)
+    ws.Range("A1").Value = 0
+    rng.Select
+    Application.Run "maze_solver_color_no_diagonal"
+    chk "no-diag wall", "3x3[0|<empty>|6|1|<empty>|5|2|3|4]", rng.Value
+    KillSheet "zz_maze"
+End Sub
+
+Private Sub test_select_sheets()
+    grp "select_sheets"
+    Application.Run "select_first_sheet"
+    chkTrue "first sheet active", ActiveSheet.Name = ThisWorkbook.Worksheets(1).Name
+    Application.Run "select_last_sheet"
+    chkTrue "last sheet active", _
+        ActiveSheet.Name = ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count).Name
+End Sub
+
+Private Sub test_write_bg_color()
+    grp "write_background_color"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_bgc"): ws.Activate
+    ws.Range("A1").Interior.Color = RGB(255, 0, 0)
+    ws.Range("A2").Interior.Color = RGB(0, 0, 0)
+    ws.Range("A1:A2").Select
+    Application.Run "write_background_color"
+    chk "red -> #FF0000", "#FF0000", ws.Range("A1").Value
+    chk "black -> #000000", "#000000", ws.Range("A2").Value
+    KillSheet "zz_bgc"
 End Sub
 
 ' ---- results writer ---------------------------------------------------------
