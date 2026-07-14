@@ -29,7 +29,17 @@ Public yellow_cell_rows() As Long
 Public offset_rows_needed() As Long
 Public case_link_rows() As Long
 Public level_link_rows() As Long
-    
+
+' Column widths (points) for each sheet import_case copies in from the case
+' workbook, captured before set_normal_style repoints the workbook's Normal
+' style. ColumnWidth is denominated in "characters of the Normal font", so
+' the same numeric value renders at a different physical size once Normal
+' changes - set_normal_style converts these captured, font-independent POINT
+' widths back into the right ColumnWidth numbers once the new Normal is in
+' effect. See FreezeEffectiveFont for the equivalent fix for cell fonts.
+Private gCaseSheets As Collection
+Private gCaseColWidths As Collection
+
 Sub setup_workbook()
     On Error GoTo ErrorHandler
     Application.ScreenUpdating = False
@@ -103,12 +113,60 @@ End Sub
 ' setups. Moving sheets in/out (as import_case does) can silently flip the Normal
 ' style to another font (e.g. Roboto), which widens every column even though the
 ' zoom and units are unchanged. Aptos Narrow 11 is the intended baseline.
+'
+' "Normal" is a single style shared by the whole workbook, so this also
+' affects any Case/Data cell that doesn't have an explicit font of its own,
+' and every Case/Data column's width (ColumnWidth is denominated in
+' characters of Normal's font, so the same number renders at a different
+' physical size once Normal changes). import_case's FreezeEffectiveFont call
+' and CaptureColumnWidths snapshot (run before this stage) let the width
+' half be restored below, in point terms, once the new Normal is in effect.
 Private Sub set_normal_style()
     On Error Resume Next
     With attempt_workbook.Styles("Normal").Font
         .Name = "Aptos Narrow"
         .Size = 11
     End With
+    On Error GoTo 0
+
+    Call RestoreCaseColumnWidths
+End Sub
+
+' Converts each column width import_case captured (in points, before Normal
+' changed) back into the ColumnWidth "characters of Normal font" number that
+' renders at that same physical size under whatever Normal is NOW, and
+' re-applies it. ColumnWidth<->Width isn't perfectly linear (Excel truncates
+' to whole pixels internally), so this calibrates a single points-per-
+' character ratio once, off a scratch column with no real content, and
+' applies it uniformly - close enough that nothing looks squished; not
+' pixel-perfect, and not needed for it to be.
+Private Sub RestoreCaseColumnWidths()
+    If gCaseSheets Is Nothing Then Exit Sub
+
+    ' Calibrate character-units-per-point off a scratch column, guarded on
+    ' its own so a failed/zero read here can't fall through and collapse
+    ' every captured column to zero width below.
+    Dim probe As Range
+    Dim ratio As Double
+    Const PROBE_CHAR_WIDTH As Double = 20
+    On Error Resume Next
+    Set probe = prep_worksheet.Columns("ZZ")
+    probe.ColumnWidth = PROBE_CHAR_WIDTH
+    ratio = PROBE_CHAR_WIDTH / probe.Width
+    probe.ColumnWidth = 8.43   ' Excel's stock default column width - leaves no visible trace
+    On Error GoTo 0
+    If ratio <= 0 Then Exit Sub   ' calibration failed - leave the captured widths applied as-is rather than risk zeroing columns
+
+    On Error Resume Next
+    Dim i As Long, c As Long
+    Dim ws As Worksheet, widths() As Double
+    For i = 1 To gCaseSheets.count
+        Set ws = gCaseSheets(i)
+        widths = gCaseColWidths(i)
+        For c = LBound(widths) To UBound(widths)
+            ws.Columns(c).ColumnWidth = widths(c) * ratio
+        Next c
+    Next i
     On Error GoTo 0
 End Sub
 
@@ -222,6 +280,35 @@ Private Sub import_case()
     destBase = attempt_workbook.Sheets.count
     case_workbook.Worksheets.Copy _
         After:=attempt_workbook.Sheets(destBase)
+
+    ' Freeze each copied sheet's CURRENT effective font (name + size) as
+    ' direct cell formatting, and capture its CURRENT column widths in
+    ' points, before set_normal_style (the next pipeline stage) repoints the
+    ' workbook's shared "Normal" style to Aptos Narrow 11. Any cell here that
+    ' never had its own explicit font is currently inheriting from Normal,
+    ' and every column's ColumnWidth is denominated in Normal's character
+    ' metrics - so without this, both would silently reflow the moment
+    ' Normal changes, even though the on-screen appearance right now
+    ' (immediately after copy) is exactly right. Capturing worksheet OBJECT
+    ' references (not names/indices) so this survives the visibility restore
+    ' and junk-sheet cleanup below, and MakeCaseCopy's later same-workbook
+    ' .Copy of case_worksheet inherits both fixes for free.
+    Dim copiedSheets() As Worksheet
+    ReDim copiedSheets(1 To srcSheetCount)
+    Set gCaseSheets = New Collection
+    Set gCaseColWidths = New Collection
+    For k = 1 To srcSheetCount
+        Set copiedSheets(k) = attempt_workbook.Sheets(destBase + k)
+        Call FreezeEffectiveFont(copiedSheets(k))
+        gCaseSheets.Add copiedSheets(k)
+        gCaseColWidths.Add CaptureColumnWidths(copiedSheets(k))
+    Next k
+
+    ' Adopt the case workbook's THEME COLORS (a separate mechanism from font
+    ' and column width, and unlike those, one we deliberately want to match
+    ' the case rather than the template - see AdoptCaseThemeColors). Must run
+    ' while case_workbook is still open, below.
+    Call AdoptCaseThemeColors
 
     ' Move focus off the just-copied sheets so we can re-hide any of them
     prep_worksheet.Activate
@@ -368,11 +455,85 @@ ErrorHandler:
     e_num = Err.Number: e_desc = Err.Description
     Call LogError(e_num, e_desc, "import_case")
     Err.Raise e_num, "import_case", e_desc
-    
-    
+
+
 End Sub
 
+' Freezes every cell's CURRENT effective font (Name + Size) in ws.UsedRange as
+' direct formatting, so a later change to the workbook's shared "Normal" style
+' (see set_normal_style) can't alter how this sheet displays. Reading a Font
+' property back always returns the cell's true on-screen font, whether it
+' came from direct formatting or from inheriting the Normal style -
+' re-assigning that same value makes it direct without changing anything
+' visually. Batches a whole row in one call when that row's font is uniform
+' (the common case for body text) and only falls back to a per-cell loop for
+' rows with mixed fonts (e.g. a header cell in a different font from the rest
+' of its row), to keep this reasonably fast on a full case sheet.
+Private Sub FreezeEffectiveFont(ByVal ws As Worksheet)
+    On Error Resume Next
+    Dim used As Range
+    Set used = ws.UsedRange
+    If used Is Nothing Then Exit Sub
 
+    Dim r As Range, c As Range
+    Dim rowFontName As Variant, rowFontSize As Variant
+
+    For Each r In used.Rows
+        rowFontName = Null: rowFontSize = Null
+        rowFontName = r.Font.Name    ' Null when the row's font names differ
+        rowFontSize = r.Font.Size    ' Null when the row's font sizes differ
+        If Not IsNull(rowFontName) And Not IsNull(rowFontSize) Then
+            r.Font.Name = rowFontName
+            r.Font.Size = rowFontSize
+        Else
+            For Each c In r.Cells
+                c.Font.Name = c.Font.Name
+                c.Font.Size = c.Font.Size
+            Next c
+        End If
+    Next r
+    On Error GoTo 0
+End Sub
+
+' Reads each column's CURRENT rendered width in points (an absolute, font-
+' independent unit) up to the sheet's last used column. Called right after
+' import_case copies a sheet in, before set_normal_style changes the
+' workbook's Normal font, while these widths still reflect the source case
+' workbook's intended layout. set_normal_style converts them back into
+' ColumnWidth "characters" once the new Normal font is in effect.
+Private Function CaptureColumnWidths(ByVal ws As Worksheet) As Variant
+    Dim lastCol As Long
+    lastCol = GetLastUsedCol(ws)
+    If lastCol < 1 Then lastCol = 1
+    Dim widths() As Double
+    ReDim widths(1 To lastCol)
+    Dim i As Long
+    For i = 1 To lastCol
+        widths(i) = ws.Columns(i).Width
+    Next i
+    CaptureColumnWidths = widths
+End Function
+
+' Adopts the case workbook's THEME COLORS (Dark1/Light1, Dark2/Light2,
+' Accent1-6, Hyperlink, FollowedHyperlink) so puzzle content that uses a
+' Theme Color fill (as opposed to a literal RGB fill) renders with the color
+' the case author actually intended - e.g. "find the green squares" needs
+' the squares to actually BE green, not whatever THIS template's own accent
+' palette happens to map that slot to. A workbook's Theme is a single shared
+' object, same as Styles("Normal"), so a mismatch here silently recolors any
+' theme-referenced cell/shape the moment it's copied into a workbook with a
+' different palette. Unlike the font/width fixes above, this deliberately
+' ADOPTS the case's colors instead of preserving the template's - matching
+' the case author's written directions is the whole point. Must run while
+' case_workbook is still open (it's Closed shortly after this is called).
+Private Sub AdoptCaseThemeColors()
+    On Error Resume Next
+    Dim i As Long
+    For i = 1 To 12   ' Dark1, Light1, Dark2, Light2, Accent1-6, Hyperlink, FollowedHyperlink
+        attempt_workbook.Theme.ThemeColorScheme.Colors(i) = case_workbook.Theme.ThemeColorScheme.Colors(i)
+    Next i
+    On Error GoTo 0
+End Sub
 
 ' === Classify Rows Subroutine ===
 ' Parse case workbook and classify which rows are questions, instructions etc...
@@ -816,11 +977,34 @@ Private Sub create_level_worksheets()
             .Font.Color = RGB(255, 255, 255)
         End With
 
-        ' Buttons/toggles
-        With level_ws.Buttons.Add(217.875, 9.75, 92.25, 32.625): .OnAction = "done": .Text = "Done": End With
-        With level_ws.Buttons.Add(410.625, 11.25, 95.25, 30.75): .OnAction = "copy_previous": .Text = "Copy Previous": End With
-        With level_ws.OptionButtons.Add(586.125, 21.75, 58.875, 18.375): .OnAction = "what_if_on": .Text = "What If On": End With
-        With level_ws.OptionButtons.Add(653.625, 22.5, 61.125, 18.375): .OnAction = "what_if_off": .Text = "What If Off": End With
+        ' Buttons/toggles - normal gray Form Control chrome (Buttons.Add /
+        ' OptionButtons.Add), left alone visually. Positioned by centering
+        ' each control within its own backdrop range (E1:G3 for Done, I1:K3
+        ' for Copy Previous, M2:O3 for the What If toggles as a pair) instead
+        ' of hand-tuned pixel offsets, so they stay centered regardless of
+        ' how those backdrop ranges get resized.
+        Dim btnDone As Button, btnCopyPrev As Button
+        Set btnDone = level_ws.Buttons.Add(0, 0, 92.25, 32.625)
+        With btnDone: .OnAction = "done": .Text = "Done": End With
+        Call CenterControlOn(btnDone, level_ws.Range("E1:G3"))
+
+        Set btnCopyPrev = level_ws.Buttons.Add(0, 0, 95.25, 30.75)
+        With btnCopyPrev: .OnAction = "copy_previous": .Text = "Copy Previous": End With
+        Call CenterControlOn(btnCopyPrev, level_ws.Range("I1:K3"))
+
+        Dim whatIfArea As Range
+        Set whatIfArea = level_ws.Range("M2:O3")
+        Const OPT_ON_W As Double = 58.875, OPT_OFF_W As Double = 61.125
+        Const OPT_H As Double = 18.375, OPT_GAP As Double = 8.625
+        Dim optLeft As Double, optTop As Double
+        optLeft = whatIfArea.Left + (whatIfArea.Width - (OPT_ON_W + OPT_GAP + OPT_OFF_W)) / 2
+        optTop = whatIfArea.Top + (whatIfArea.Height - OPT_H) / 2
+        With level_ws.OptionButtons.Add(optLeft, optTop, OPT_ON_W, OPT_H)
+            .OnAction = "what_if_on": .Text = "What If On"
+        End With
+        With level_ws.OptionButtons.Add(optLeft + OPT_ON_W + OPT_GAP, optTop, OPT_OFF_W, OPT_H)
+            .OnAction = "what_if_off": .Text = "What If Off"
+        End With
 
         ' Copy "Level n Header" row
         For i = 1 To last_row_case
@@ -992,6 +1176,14 @@ ErrorHandler:
     e_num = Err.Number: e_desc = Err.Description
     Call LogError(e_num, e_desc, "create_level_worksheets")
     Err.Raise e_num, "create_level_worksheets", e_desc
+End Sub
+
+' Centers a floating control (Button, OptionButton, Shape, ...) within the
+' given cell range, both horizontally and vertically. Only moves Left/Top;
+' the control's Width/Height are left exactly as created.
+Private Sub CenterControlOn(ByVal ctrl As Object, ByVal targetRange As Range)
+    ctrl.Left = targetRange.Left + (targetRange.Width - ctrl.Width) / 2
+    ctrl.Top = targetRange.Top + (targetRange.Height - ctrl.Height) / 2
 End Sub
 
 ' === Align Level Worksheets Subroutine ===
