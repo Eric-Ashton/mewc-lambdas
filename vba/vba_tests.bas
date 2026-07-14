@@ -22,8 +22,10 @@ Attribute VB_Name = "vba_tests"
 '   2D array   -> "RxC[a|b|c|...]"    (row-major, includes bounds' size)
 '   1D array   -> "Nx1D[a|b|...]"
 '
-' Fixtures: tests that need real cells/sheets create temp "zz_*" sheets and
-' delete them, so a run leaves the workbook as it found it.
+' Fixtures: each test that needs real cells/sheets builds a persistent "zz_*"
+' sheet (refreshed in place each run, added at the end of the tab list) so you
+' can inspect what it set up and produced - kept in the workbook like the lambda
+' test sheets, next to the "vba_tests" results sheet.
 '
 ' run_vba_tests is Public so it shows in Alt+F8; that's intended for a dev
 ' workbook. (Macro-list cleanup is a separate to-do.)
@@ -37,23 +39,8 @@ Private gCases() As String
 Private gExpected() As String
 Private gActual() As String
 Private gPass() As Boolean
-Private mKeepFixtures As Boolean   ' run_vba_tests_keep_fixtures sets True to leave zz_* sheets
-
-' ---- entry points -----------------------------------------------------------
+' ---- entry point ------------------------------------------------------------
 Public Sub run_vba_tests()
-    mKeepFixtures = False
-    run_all
-End Sub
-
-' Same as run_vba_tests but leaves the zz_* fixture sheets in place so you can
-' see what each test set up and produced. Don't commit the workbook after this
-' run (the fixtures would ride along) - re-run run_vba_tests to clean up.
-Public Sub run_vba_tests_keep_fixtures()
-    mKeepFixtures = True
-    run_all
-End Sub
-
-Private Sub run_all()
     Dim prevSU As Boolean, prevDA As Boolean
     prevSU = Application.ScreenUpdating
     prevDA = Application.DisplayAlerts
@@ -86,8 +73,7 @@ Private Sub run_all()
         If gPass(i) Then passN = passN + 1
     Next i
     MsgBox passN & " / " & gCount & " VBA tests passed." & _
-           IIf(passN = gCount, "", vbLf & vbLf & "See the vba_tests sheet for the failures.") & _
-           IIf(mKeepFixtures, vbLf & vbLf & "Fixtures kept (zz_* sheets); re-run run_vba_tests to clean up.", ""), _
+           IIf(passN = gCount, "", vbLf & vbLf & "See the vba_tests sheet for the failures."), _
            IIf(passN = gCount, vbInformation, vbExclamation), "run_vba_tests"
 End Sub
 
@@ -107,9 +93,7 @@ Private Sub RunGuarded(ByVal which As String)
 Failed:
     gGroup = which
     record "(group crashed)", "no error", "Error " & Err.Number & ": " & Err.Description, False
-    ' best-effort fixture cleanup (honours keep-mode)
-    CleanupSheet "zz_color": CleanupSheet "zz_fx1": CleanupSheet "zz_fx2"
-    CleanupSheet "zz_conv": CleanupSheet "zz_maze": CleanupSheet "zz_bgc"
+    ' fixtures are left in place (persistent) so a crash can be inspected
 End Sub
 
 ' ---- assertions -------------------------------------------------------------
@@ -223,26 +207,21 @@ Private Function ErrToStr(ByVal e As Variant) As String
 End Function
 
 ' ---- fixture helpers --------------------------------------------------------
+' Get (or create at the end of the tab list) the persistent fixture sheet, then
+' clear it so each run refreshes it in place. The sheet is kept in the workbook.
 Private Function AddSheet(ByVal nm As String) As Worksheet
-    KillSheet nm
     Dim ws As Worksheet
-    Set ws = ThisWorkbook.Worksheets.Add
-    ws.Name = nm
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(nm)
+    On Error GoTo 0
+    If ws Is Nothing Then
+        Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.count))
+        ws.Name = nm
+    Else
+        ws.Cells.Clear
+    End If
     Set AddSheet = ws
 End Function
-
-Private Sub KillSheet(ByVal nm As String)
-    On Error Resume Next
-    Application.DisplayAlerts = False
-    ThisWorkbook.Worksheets(nm).Delete
-    Application.DisplayAlerts = True
-    On Error GoTo 0
-End Sub
-
-' End-of-test cleanup that honours keep-mode (AddSheet still starts fresh either way).
-Private Sub CleanupSheet(ByVal nm As String)
-    If Not mKeepFixtures Then KillSheet nm
-End Sub
 
 ' ---- test groups ------------------------------------------------------------
 Private Sub test_unicode_split()
@@ -263,7 +242,6 @@ Private Sub test_get_color()
     ws.Range("A3").Interior.Color = RGB(0, 0, 0)
     chk "solid black", "#000000", get_color(ws.Range("A3"))
     ws.Range("C1").Value = "get_color: A1 red / A2 unfilled / A3 black"
-    CleanupSheet "zz_color"
 End Sub
 
 Private Sub test_sheet_names()
@@ -290,9 +268,6 @@ Private Sub test_sheet_data()
         sheet_data(Array("zz_fx1", "zz_fx2"), "B2:C3", 0)
 
     chkTrue "invalid sheet name -> error", IsError(sheet_data(Array("nope_zz"), "B2:C3", 0))
-
-    CleanupSheet "zz_fx1"
-    CleanupSheet "zz_fx2"
 End Sub
 
 Private Sub test_xconvert()
@@ -313,7 +288,6 @@ Private Sub test_xconvert()
     chk "malformed 2-col -> #VALUE!", "#VALUE!", xconvert(ws.Range("A1:B2"), "m", 1, "cm")
 
     ws.Range("A4").Value = "xconvert conversion table (From | Factor | To)"
-    CleanupSheet "zz_conv"
 End Sub
 
 Private Sub test_maze_solver()
@@ -347,8 +321,6 @@ Private Sub test_maze_solver()
     ws.Range("A7:C9").Select
     Application.Run "maze_solver_color_no_diagonal"
     chk "no-diag wall", "3x3[0|<empty>|6|1|<empty>|5|2|3|4]", ws.Range("A7:C9").Value
-
-    CleanupSheet "zz_maze"
 End Sub
 
 Private Sub test_select_sheets()
@@ -371,7 +343,6 @@ Private Sub test_write_bg_color()
     chk "red -> #FF0000", "#FF0000", ws.Range("A1").Value
     chk "black -> #000000", "#000000", ws.Range("A2").Value
     ws.Range("C1").Value = "write_background_color: A1 was red, A2 was black"
-    CleanupSheet "zz_bgc"
 End Sub
 
 ' ---- results writer ---------------------------------------------------------
