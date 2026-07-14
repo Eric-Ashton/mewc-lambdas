@@ -1,4 +1,5 @@
 Attribute VB_Name = "setup_workbook_subs"
+' deploy: shared
 ' Module-level declarations
 
 ' Workbooks
