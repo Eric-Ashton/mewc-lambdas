@@ -67,6 +67,14 @@ Public Sub run_vba_tests()
     RunGuarded "frequency_table"
     RunGuarded "frequency_table_by_char"
     RunGuarded "tall_board"
+    RunGuarded "col_num_to_letter"
+    RunGuarded "sheet_exists"
+    RunGuarded "sanitize_row"
+    RunGuarded "count_error_cells"
+    RunGuarded "last_used_row_col"
+    RunGuarded "find_yellow"
+    RunGuarded "get_return_column_number"
+    RunGuarded "make_level_data_table"
 
     write_results
 
@@ -98,6 +106,14 @@ Private Sub RunGuarded(ByVal which As String)
         Case "frequency_table": test_frequency_table
         Case "frequency_table_by_char": test_frequency_table_by_char
         Case "tall_board": test_tall_board
+        Case "col_num_to_letter": test_col_num_to_letter
+        Case "sheet_exists": test_sheet_exists
+        Case "sanitize_row": test_sanitize_row
+        Case "count_error_cells": test_count_error_cells
+        Case "last_used_row_col": test_last_used_row_col
+        Case "find_yellow": test_find_yellow
+        Case "get_return_column_number": test_get_return_column_number
+        Case "make_level_data_table": test_make_level_data_table
     End Select
     Exit Sub
 Failed:
@@ -509,6 +525,128 @@ Private Sub test_tall_board()
         chk "row2 Background Color", "#FF0000", newWs.Range("C2").Value
         ' Font Color / Font Name (columns D:E) depend on the workbook's default
         ' font, so they're not asserted here - smoke-tested only (see PR notes).
+        DeleteSheet newWs.Name
+    End If
+End Sub
+
+Private Sub test_col_num_to_letter()
+    grp "ColNumToLetter"
+    chk "column 1 -> A", "A", ColNumToLetter(1)
+    chk "column 26 -> Z", "Z", ColNumToLetter(26)
+    chk "column 27 -> AA", "AA", ColNumToLetter(27)
+    chk "column 28 -> AB", "AB", ColNumToLetter(28)
+End Sub
+
+Private Sub test_sheet_exists()
+    grp "SheetExists"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_exists")
+    chkTrue "existing sheet -> True", SheetExists(ThisWorkbook, "zz_exists")
+    chkTrue "nonexistent sheet -> False", Not SheetExists(ThisWorkbook, "zz_definitely_not_a_sheet")
+End Sub
+
+Private Sub test_sanitize_row()
+    grp "SanitizeRow"
+    Dim arr(1 To 1, 1 To 3) As Variant
+    arr(1, 1) = "ok": arr(1, 2) = CVErr(xlErrValue): arr(1, 3) = 5
+    SanitizeRow arr
+    chk "2D row: error element -> ''", "1x3[ok||5]", arr
+
+    Dim v As Variant
+    v = CVErr(xlErrDiv0)
+    SanitizeRow v
+    chk "scalar error -> ''", "", v
+End Sub
+
+Private Sub test_count_error_cells()
+    grp "CountErrorCells"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_errcells")
+    ws.Range("A1").Value = "ok"
+    ws.Range("A2").Formula = "=1/0"        ' #DIV/0!
+    ws.Range("B1").Formula = "=NA()"       ' #N/A
+    ws.Range("B2").Value = 5
+    ws.Calculate
+    chkTrue "counts the 2 error cells in UsedRange", CountErrorCells(ws) = 2
+End Sub
+
+Private Sub test_last_used_row_col()
+    grp "GetLastUsedRow/Col"
+    ' Both helpers use an unqualified [a1] as the Find "After" anchor, which
+    ' resolves to the ACTIVE sheet's A1 - so ws must be active or Find errors
+    ' (After must be a cell within the range being searched). Activating the
+    ' fixture here documents that requirement.
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_lastused"): ws.Activate
+    ws.Range("B2").Value = "x"
+    ws.Range("D5").Value = "y"
+    chkTrue "last used row = 5", GetLastUsedRow(ws) = 5
+    chkTrue "last used col = D (4)", GetLastUsedCol(ws) = 4
+End Sub
+
+Private Sub test_find_yellow()
+    grp "find_yellow"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_yellow")
+    ws.Range("B5").Value = "x"
+    ws.Range("B5").Interior.Color = vbYellow
+    chkTrue "finds the yellow cell's row in column B", find_yellow(ws) = 5
+End Sub
+
+Private Sub test_get_return_column_number()
+    grp "GetReturnColumnNumber"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_retcol")
+    ' Text-format the cells before writing so Excel stores the "=..." text
+    ' literally instead of parsing/calculating it as a live formula.
+    ' GetReturnColumnNumber only ever reads .Formula as a STRING - it never
+    ' needs the referenced sheet/range to actually exist or resolve, and a
+    ' live XLOOKUP referencing a "Case!" sheet this workbook doesn't have
+    ' triggered an "Update Values" external-link prompt when it WAS a real
+    ' formula. Plain text sidesteps that entirely.
+    ws.Range("C1:C2").NumberFormat = "@"
+    ws.Range("C1").Value = "=XLOOKUP(A2,Case!C1:C369,Case!H1:H369)"
+    ' LIKELY BUG (button_subs.bas, ~line 235): "colLetters = colLetters Like
+    ' ")*" Or colLetters Like """"" assigns a Boolean to the String colLetters,
+    ' which VBA coerces to the literal text "False" (or "True") - clobbering
+    ' whatever the real column letters were. Only the uppercase "F" in "False"
+    ' survives the letters-only filter, so for any normal formula this
+    ' currently returns column F (6) regardless of the real target column.
+    ' Characterizing the CURRENT (buggy) behavior as a baseline, not the
+    ' intended one - see the PR notes.
+    chk "XLOOKUP formula (real target is H) -> currently always F (bug)", "6", GetReturnColumnNumber(ws, 1)
+
+    ws.Range("C2").Value = "=SUM(A1)"      ' fewer than 2 colons -> 0, unaffected by the bug above
+    chk "formula with <2 colons -> 0", "0", GetReturnColumnNumber(ws, 2)
+
+    ws.Range("E1").Value = "GetReturnColumnNumber: C1 has a realistic XLOOKUP formula; C2 has too few colons"
+End Sub
+
+Private Sub test_make_level_data_table()
+    grp "make_level_data_table"
+    Dim ws As Worksheet, newWs As Worksheet, before As Object
+    Set ws = AddSheet("zz_tmsrc"): ws.Activate
+    ws.Range("A1").Value = "Game": ws.Range("B1").Value = "Answer"
+    ws.Range("A2").Value = 101: ws.Range("B2").Value = "foo"
+    ws.Range("A1:B2").Select
+
+    Set before = SnapshotSheetNames()
+    Application.Run "make_level_data_table"
+    Set newWs = NewSheetSince(before)
+
+    chkTrue "creates a new _Tn sheet", Not newWs Is Nothing
+    If Not newWs Is Nothing Then
+        chkTrue "new sheet name starts with _T", Left$(newWs.Name, 2) = "_T"
+        chk "header A1 copied", "Game", newWs.Range("A1").Value
+        chk "header B1 copied", "Answer", newWs.Range("B1").Value
+        chk "A2 = first game number", "101", newWs.Range("A2").Value
+        chk "B4 yellow fill (drop target formula here)", "#FFFF00", get_color(newWs.Range("B4"))
+        chk "A5 = game numbers list starts here", "101", newWs.Range("A5").Value
+        ' Excel only quotes a sheet name in stored formula text when the name
+        ' needs escaping (spaces, etc.) - "zz_tmsrc" doesn't, so despite the
+        ' sub writing the quoted form, .Formula2 reads back unquoted.
+        chk "B2 XLOOKUP formula spills the matching row", _
+            "=XLOOKUP(A2,zz_tmsrc!$A$2,zz_tmsrc!$B$2)", newWs.Range("B2").Formula2
         DeleteSheet newWs.Name
     End If
 End Sub
