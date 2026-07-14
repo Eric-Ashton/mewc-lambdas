@@ -103,6 +103,11 @@ End Sub
 ' setups. Moving sheets in/out (as import_case does) can silently flip the Normal
 ' style to another font (e.g. Roboto), which widens every column even though the
 ' zoom and units are unchanged. Aptos Narrow 11 is the intended baseline.
+'
+' "Normal" is a single style shared by the whole workbook, so this also
+' affects any Case/Data cell that doesn't have an explicit font of its own -
+' import_case's FreezeEffectiveFont call (run before this stage) locks those
+' in as direct formatting first so they aren't swept up in the change.
 Private Sub set_normal_style()
     On Error Resume Next
     With attempt_workbook.Styles("Normal").Font
@@ -222,6 +227,24 @@ Private Sub import_case()
     destBase = attempt_workbook.Sheets.count
     case_workbook.Worksheets.Copy _
         After:=attempt_workbook.Sheets(destBase)
+
+    ' Freeze each copied sheet's CURRENT effective font (name + size) as
+    ' direct cell formatting, before set_normal_style (the next pipeline
+    ' stage) repoints the workbook's shared "Normal" style to Aptos Narrow
+    ' 11. Any cell here that never had its own explicit font is currently
+    ' inheriting from Normal, so without this it would silently reflow to
+    ' Aptos Narrow 11 the moment Normal changes - even though its on-screen
+    ' appearance right now (immediately after copy) is exactly right.
+    ' Capturing worksheet OBJECT references (not names/indices) so this
+    ' survives the visibility restore and junk-sheet cleanup below, and
+    ' MakeCaseCopy's later same-workbook .Copy of case_worksheet inherits
+    ' this frozen formatting for free.
+    Dim copiedSheets() As Worksheet
+    ReDim copiedSheets(1 To srcSheetCount)
+    For k = 1 To srcSheetCount
+        Set copiedSheets(k) = attempt_workbook.Sheets(destBase + k)
+        Call FreezeEffectiveFont(copiedSheets(k))
+    Next k
 
     ' Move focus off the just-copied sheets so we can re-hide any of them
     prep_worksheet.Activate
@@ -368,11 +391,45 @@ ErrorHandler:
     e_num = Err.Number: e_desc = Err.Description
     Call LogError(e_num, e_desc, "import_case")
     Err.Raise e_num, "import_case", e_desc
-    
-    
+
+
 End Sub
 
+' Freezes every cell's CURRENT effective font (Name + Size) in ws.UsedRange as
+' direct formatting, so a later change to the workbook's shared "Normal" style
+' (see set_normal_style) can't alter how this sheet displays. Reading a Font
+' property back always returns the cell's true on-screen font, whether it
+' came from direct formatting or from inheriting the Normal style -
+' re-assigning that same value makes it direct without changing anything
+' visually. Batches a whole row in one call when that row's font is uniform
+' (the common case for body text) and only falls back to a per-cell loop for
+' rows with mixed fonts (e.g. a header cell in a different font from the rest
+' of its row), to keep this reasonably fast on a full case sheet.
+Private Sub FreezeEffectiveFont(ByVal ws As Worksheet)
+    On Error Resume Next
+    Dim used As Range
+    Set used = ws.UsedRange
+    If used Is Nothing Then Exit Sub
 
+    Dim r As Range, c As Range
+    Dim rowFontName As Variant, rowFontSize As Variant
+
+    For Each r In used.Rows
+        rowFontName = Null: rowFontSize = Null
+        rowFontName = r.Font.Name    ' Null when the row's font names differ
+        rowFontSize = r.Font.Size    ' Null when the row's font sizes differ
+        If Not IsNull(rowFontName) And Not IsNull(rowFontSize) Then
+            r.Font.Name = rowFontName
+            r.Font.Size = rowFontSize
+        Else
+            For Each c In r.Cells
+                c.Font.Name = c.Font.Name
+                c.Font.Size = c.Font.Size
+            Next c
+        End If
+    Next r
+    On Error GoTo 0
+End Sub
 
 ' === Classify Rows Subroutine ===
 ' Parse case workbook and classify which rows are questions, instructions etc...
