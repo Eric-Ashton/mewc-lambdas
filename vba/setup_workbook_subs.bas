@@ -725,7 +725,7 @@ Private Sub create_level_worksheets()
         With level_ws.Cells
             .UnMerge
             .RowHeight = 14.3
-            .ColumnWidth = 5.23
+            .ColumnWidth = 7.82        ' ~93 px at the Normal-style font (Aptos Narrow 11)
             .HorizontalAlignment = xlLeft
             .VerticalAlignment = xlCenter
             .Font.Name = "Aptos Narrow"
