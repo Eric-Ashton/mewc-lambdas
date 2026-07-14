@@ -62,6 +62,11 @@ Public Sub run_vba_tests()
     RunGuarded "maze_solver"
     RunGuarded "select_sheets"
     RunGuarded "write_bg_color"
+    RunGuarded "fill_color"
+    RunGuarded "flood_fill"
+    RunGuarded "frequency_table"
+    RunGuarded "frequency_table_by_char"
+    RunGuarded "tall_board"
 
     write_results
 
@@ -88,6 +93,11 @@ Private Sub RunGuarded(ByVal which As String)
         Case "maze_solver": test_maze_solver
         Case "select_sheets": test_select_sheets
         Case "write_bg_color": test_write_bg_color
+        Case "fill_color": test_fill_color
+        Case "flood_fill": test_flood_fill
+        Case "frequency_table": test_frequency_table
+        Case "frequency_table_by_char": test_frequency_table_by_char
+        Case "tall_board": test_tall_board
     End Select
     Exit Sub
 Failed:
@@ -223,6 +233,40 @@ Private Function AddSheet(ByVal nm As String) As Worksheet
     Set AddSheet = ws
 End Function
 
+' Deletes a sheet outright (no re-create). Used for the output sheets that
+' frequency_table / frequency_table_by_char / tall_board create under their
+' own auto-numbered names (Freqs1, FreqsChar1, tall_board, ...) - unlike the
+' zz_* fixtures above, we don't want those piling up on every re-run.
+Private Sub DeleteSheet(ByVal nm As String)
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ThisWorkbook.Worksheets(nm).Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+End Sub
+
+' Snapshot of current sheet names, and the sheet (if any) that appeared since
+' that snapshot was taken - used to find the auto-named output sheet a sub
+' just created without hard-coding its name.
+Private Function SnapshotSheetNames() As Object
+    Dim d As Object, ws As Worksheet
+    Set d = CreateObject("Scripting.Dictionary")
+    For Each ws In ThisWorkbook.Worksheets
+        d(ws.Name) = True
+    Next ws
+    Set SnapshotSheetNames = d
+End Function
+
+Private Function NewSheetSince(before As Object) As Worksheet
+    Dim ws As Worksheet
+    For Each ws In ThisWorkbook.Worksheets
+        If Not before.Exists(ws.Name) Then
+            Set NewSheetSince = ws
+            Exit Function
+        End If
+    Next ws
+End Function
+
 ' ---- test groups ------------------------------------------------------------
 Private Sub test_unicode_split()
     grp "UNICODE_SPLIT"
@@ -343,6 +387,130 @@ Private Sub test_write_bg_color()
     chk "red -> #FF0000", "#FF0000", ws.Range("A1").Value
     chk "black -> #000000", "#000000", ws.Range("A2").Value
     ws.Range("C1").Value = "write_background_color: A1 was red, A2 was black"
+End Sub
+
+Private Sub test_fill_color()
+    grp "fill_color"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_fillcolor"): ws.Activate
+
+    ws.Range("A1").Value = "X"
+    ws.Range("A1").Interior.Color = RGB(255, 0, 0)
+    ws.Range("A2").Interior.Color = RGB(255, 0, 0)     ' blank, same color as source -> filled
+    ws.Range("A3").Interior.Color = RGB(0, 0, 255)     ' blank, different color -> stays blank
+    ws.Range("B1").Formula = "="""""
+    ws.Range("B1").Interior.Color = RGB(255, 0, 0)     ' blank-valued formula cell -> must survive
+
+    ws.Range("A1").Select
+    Application.Run "fill_color"
+
+    chk "same-color blank filled with source value", "X", ws.Range("A2").Value
+    chk "different-color blank left untouched", "<empty>", ws.Range("A3").Value
+    chkTrue "formula cell not overwritten", ws.Range("B1").HasFormula
+
+    ws.Range("D1").Value = _
+        "fill_color: A1=""X""/red (source, selected); A2 red (filled); A3 blue (untouched); B1 red formula (untouched)"
+End Sub
+
+Private Sub test_flood_fill()
+    grp "flood_fill"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_flood"): ws.Activate
+
+    ' basic flood: A1 seed spreads through matching red cells, stops at the blue column
+    ws.Range("A1").Value = "X"
+    ws.Range("A1:A3").Interior.Color = RGB(255, 0, 0)
+    ws.Range("B1:B3").Interior.Color = RGB(0, 0, 255)
+    ws.Range("A1:B3").Select
+    Application.Run "flood_fill"
+    chk "flood-fills a same-color blank neighbor", "X", ws.Range("A2").Value
+    chk "flood-fills through a chain of same-color blanks", "X", ws.Range("A3").Value
+    chk "stops at a color-mismatched neighbor", "<empty>", ws.Range("B1").Value
+
+    ' border stop: matching color but a border between D1/D2 blocks the flood
+    ws.Range("D1").Value = "Y"
+    ws.Range("D1:D2").Interior.Color = RGB(0, 255, 0)
+    ws.Range("D1").Borders(xlEdgeBottom).LineStyle = xlContinuous
+    ws.Range("D1:D2").Select
+    Application.Run "flood_fill"
+    chk "stops at a border even with matching color", "<empty>", ws.Range("D2").Value
+
+    ws.Range("F1").Value = "flood_fill: A1:B3 is the color-boundary case; D1:D2 is the border-boundary case"
+End Sub
+
+Private Sub test_frequency_table()
+    grp "frequency_table"
+    Dim ws As Worksheet, newWs As Worksheet, before As Object
+    Set ws = AddSheet("zz_freqsrc"): ws.Activate
+    ws.Range("A1").Value = "a"
+    ws.Range("A2").Value = "a"
+    ws.Range("A3").Value = "b"
+    ws.Range("A1:A3").Select
+
+    Set before = SnapshotSheetNames()
+    Application.Run "frequency_table"
+    Set newWs = NewSheetSince(before)
+
+    chkTrue "creates a new Freqs* sheet", Not newWs Is Nothing
+    If Not newWs Is Nothing Then
+        chkTrue "new sheet name starts with Freqs", Left$(newWs.Name, 5) = "Freqs"
+        chk "header A1", "Unique Values", newWs.Range("A1").Value
+        chk "header B1", "Counts", newWs.Range("B1").Value
+        chk "row2 (sorted desc) value", "a", newWs.Range("A2").Value
+        chk "row2 count", "2", newWs.Range("B2").Value
+        chk "row3 value", "b", newWs.Range("A3").Value
+        chk "row3 count", "1", newWs.Range("B3").Value
+        DeleteSheet newWs.Name   ' auto-named output sheet - don't let it pile up on re-runs
+    End If
+End Sub
+
+Private Sub test_frequency_table_by_char()
+    grp "frequency_table_by_char"
+    Dim ws As Worksheet, newWs As Worksheet, before As Object
+    Set ws = AddSheet("zz_freqcharsrc"): ws.Activate
+    ws.Range("A1").Value = "aab"
+    ws.Range("A1").Select
+
+    Set before = SnapshotSheetNames()
+    Application.Run "frequency_table_by_char"
+    Set newWs = NewSheetSince(before)
+
+    chkTrue "creates a new FreqsChar* sheet", Not newWs Is Nothing
+    If Not newWs Is Nothing Then
+        chkTrue "new sheet name starts with FreqsChar", Left$(newWs.Name, 9) = "FreqsChar"
+        chk "row2 char (sorted desc)", "a", newWs.Range("A2").Value
+        chk "row2 count", "2", newWs.Range("B2").Value
+        chk "row2 unicode (AscW of 'a')", "97", newWs.Range("C2").Value
+        chk "row3 char", "b", newWs.Range("A3").Value
+        chk "row3 count", "1", newWs.Range("B3").Value
+        chk "row3 unicode (AscW of 'b')", "98", newWs.Range("C3").Value
+        DeleteSheet newWs.Name
+    End If
+End Sub
+
+Private Sub test_tall_board()
+    grp "tall_board"
+    Dim ws As Worksheet, newWs As Worksheet, before As Object
+    Set ws = AddSheet("zz_tallsrc"): ws.Activate
+    ws.Range("A1").Value = "hi"
+    ws.Range("A1").Interior.Color = RGB(255, 0, 0)
+    ws.Range("A1").Select
+
+    Set before = SnapshotSheetNames()
+    Application.Run "tall_board"
+    Set newWs = NewSheetSince(before)
+
+    chkTrue "creates a new tall_board* sheet", Not newWs Is Nothing
+    If Not newWs Is Nothing Then
+        chkTrue "new sheet name starts with tall_board", Left$(newWs.Name, 10) = "tall_board"
+        chk "header A1", "Address", newWs.Range("A1").Value
+        chk "row2 Address", "A1", newWs.Range("A2").Value
+        chk "row2 Value", "hi", newWs.Range("B2").Value
+        chk "row2 Background Color", "#FF0000", newWs.Range("C2").Value
+        ' Font Color / Font Name (columns D:E) depend on the workbook's default
+        ' font, so they're not asserted here - smoke-tested only (see PR notes).
+        DeleteSheet newWs.Name
+    End If
 End Sub
 
 ' ---- results writer ---------------------------------------------------------
