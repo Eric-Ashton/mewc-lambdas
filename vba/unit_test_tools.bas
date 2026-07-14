@@ -1,4 +1,5 @@
 Attribute VB_Name = "unit_test_tools"
+' deploy: test
 '==============================================================================
 ' unit_test_tools  -  tooling for the Excel unit-test workbook (the UPSTREAM /
 '                     dev side of the repo). The old manage_lambda module was

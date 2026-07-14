@@ -1,4 +1,5 @@
 Attribute VB_Name = "maze_solver_color"
+' deploy: shared
 '=========================================
 ' Sub: maze_solver_color_with_diagonal
 '=========================================

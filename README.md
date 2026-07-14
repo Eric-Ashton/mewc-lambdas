@@ -7,7 +7,7 @@ The latest version of the template can be found at https://tinyurl.com/EricLamba
 | Path | What |
 |------|------|
 | `lambdas/*.lambda` | One file per lambda: signature, comment, code, description. |
-| `vba/*.bas` | VBA modules — repo sync (`repo_sync`), unit-test + lambda-management tools (`unit_test_tools`), utilities (`utils`), plus the workbook's supporting subs. |
+| `vba/*.bas` | VBA modules, one per file, each header-tagged `' deploy: shared\|test\|template` for which workbook(s) it syncs to — competition tools (utilities, board/setup subs, `table_maker`), the sync modules (`sync_test_workbook_from_repo`, `sync_template_from_repo`, `repo_export`), and test tooling (`unit_test_tools`, `vba_tests`). |
 | `tools/lambda_check.py` | Authoring-rule checker (run before committing). |
 | `tools/xlsm_edit.py` | Surgical cell editor for the test workbook — adds/edits test cases without corrupting the binary (never openpyxl `save()`). |
 | `MEWC Lambda and VBA Unit Tests.xlsm` | The committed test workbook — all lambdas, VBA, Prep sheet, and unit-test sheets. |

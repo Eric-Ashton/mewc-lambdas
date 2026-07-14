@@ -1,4 +1,5 @@
 Attribute VB_Name = "table_maker"
+' deploy: shared
 Option Explicit
 
 '==============================================================================

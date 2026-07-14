@@ -27,8 +27,8 @@ name(arg1, [opt2])
 <full description>
 ```
 The lambda's name is the text before `(` in the signature and must match the
-filename. The parsers (`lambda_check.py`, `import_lambdas`) tolerate the blank
-lines either way; `export_lambdas` writes them so in-Excel edits keep the style. **The `DESCRIPTION` section is the documentation** — there is no
+filename. The parsers (`lambda_check.py` and the sync modules) tolerate the blank
+lines either way; `repo_export.export_lambdas` writes them so in-Excel edits keep the style. **The `DESCRIPTION` section is the documentation** — there is no
 separate descriptions file to keep in sync.
 
 ## The hard rules about writing workbooks
@@ -55,7 +55,7 @@ values, all styles, and the VBA project intact. The only residue: cells you edit
 their `cm=` dynamic-array marker (the `@` problem), which the workbook's own
 `fix_test_formulas` / `lambda_update` VBA restores when you next open it in Excel. Cells
 you don't touch keep their markers. Lambda **code** still flows text-first via
-`import_lambdas` (see below) — you don't hand-edit the Lamb sheet for that.
+the test-workbook sync (see below) — you don't hand-edit the Lamb sheet for that.
 
 ## Workflow (repo ↔ Excel)
 The committed `MEWC Lambda and VBA Unit Tests.xlsm` is the upstream/dev workbook; the text
@@ -63,17 +63,19 @@ files are what you **edit**. Keep the direction of truth straight — *edit text
 workbook, commit both*:
 
 - **Lambdas** — edit `lambdas/*.lambda`, run `python tools/lambda_check.py
-  lambdas/*.lambda`, then in the test workbook run `import_lambdas` (rebuilds the Lamb sheet
-  + Name Manager). Commit the `.lambda` **and** the refreshed workbook.
+  lambdas/*.lambda`, then in the test workbook run `sync_test_workbook_from_repo.sync_lambdas`
+  (rewrites the Lamb sheet, pushes the Name Manager, strips `@`). Commit the `.lambda` **and**
+  the refreshed workbook.
 - **Test cases** — edit the test sheets in `MEWC Lambda and VBA Unit Tests.xlsm` with
   `tools/xlsm_edit.py` (surgical cell edits; never openpyxl `save()`). Then open the
   workbook in Excel and run `lambda_update` / `fix_test_formulas` to restore dynamic
   arrays on the edited cells, confirm the tests pass, and save from Excel. Commit the
   workbook.
-- **VBA** — edit `vba/*.bas`, then re-import the changed module into the test workbook
-  (in the VBE: remove the old module, drag the `.bas` in — import won't overwrite). Commit both.
-- `export_lambdas` writes the Lamb sheet back to `.lambda` files if you edited a
-  lambda directly in Excel.
+- **VBA** — edit `vba/*.bas` (keep its `' deploy:` tag), then in the test workbook run
+  `sync_test_workbook_from_repo.sync_vba` — it re-imports every shared/test module and prunes
+  any stale one (or re-import a single module by hand in the VBE). Commit both.
+- `repo_export.export_lambdas` writes the Lamb sheet back to `.lambda` files if you edited a
+  lambda directly in Excel (Lane B).
 
 The downstream template workbook lives **outside** the repo and pulls finished lambdas from
 a local clone — it's a consumer, never a source. See `MEWC Lambdas Edit and Test Workflow.md`
@@ -192,7 +194,7 @@ Name Manager.
   apostrophe is invisible in the cell but shows in the formula bar.
 - If you edit a Code cell directly, **keep the leading apostrophe**; retyping
   `=LAMBDA(...)` without it converts it to a formula (`@`, `#NAME?`).
-  (`import_lambdas` handles this for you when syncing from the repo.)
+  (the sync modules handle this for you when syncing from the repo.)
 
 ## 8. Error handling — catch `#N/A`, keep real errors visible
 If a lambda's output can produce **`#N/A`**, wrap the public output in

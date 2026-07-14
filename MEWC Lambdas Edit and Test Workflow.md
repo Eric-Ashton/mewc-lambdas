@@ -12,7 +12,8 @@ diff **before** merging into the remote repo. The two workbooks play different r
 
 The **source of truth is the `lambdas/*.lambda` text files**, not either workbook. The
 Lamb sheet and the `.lambda` files are two views of the same thing and must be kept in
-sync; `import_lambdas` / `export_lambdas` do that syncing.
+sync; `sync_test_workbook_from_repo` (repo → workbook) and `repo_export.export_lambdas`
+(workbook → repo) do that syncing.
 
 ---
 
@@ -25,8 +26,10 @@ one of them.
 **Lane A — text-first (use when an AI tool such as Claude Code makes the edit):**
 
 1. Edit the signature / code / comment / description in `mewc-lambdas\lambdas\<name>.lambda`.
-2. In `MEWC Lambda and VBA Unit Tests.xlsm`, run `import_lambdas` — it rewrites the Lamb
-   sheet from the `.lambda` files and pushes the names into the Name Manager.
+2. In `MEWC Lambda and VBA Unit Tests.xlsm`, run `sync_test_workbook_from_repo.sync_lambdas`
+   — it rewrites the Lamb sheet from the `.lambda` files, pushes the names into the Name
+   Manager, and strips any stray `@`. (Run `sync_all` instead to also re-import the VBA and
+   run the tests.)
 
 **Lane B — Excel-first (use when you hand-edit in the workbook):**
 
@@ -49,7 +52,7 @@ Either lane leaves the Lamb sheet and the `.lambda` file matching. Then:
 
 1. **Reconcile first.** Make sure the Lamb sheet and the `.lambda` files match before you
    test — you want to test exactly what you'll commit. If you edited in Excel (Lane B),
-   run `export_lambdas` now. (Lane A already reconciled them via `import_lambdas`.)
+   run `repo_export.export_lambdas` now. (Lane A already reconciled them via `sync_lambdas`.)
 2. Run `lambda_update`. It copies the lambda code from the Lamb sheet into the Name
    Manager and rewrites the test-sheet formulas as dynamic arrays
    (stripping any stray `@` left over from AI editing).
@@ -87,8 +90,8 @@ gh pr merge --squash --delete-branch
 Claude Code can drive most of this: make the `.lambda` edit, author/edit the test cases in
 the workbook via `tools/xlsm_edit.py`, run the checker, walk you through `git diff`, draft
 the commit message, open the PR with `gh`, and `/review` the diff. What stays with you is
-the Excel side: running `import_lambdas` and `lambda_update` / `fix_test_formulas` (there's
-no Excel on GitHub Actions), then eyeballing that the tests actually pass before you commit
+the Excel side: running `sync_test_workbook_from_repo.sync_all` (Lamb + Name Manager + `@`-fix
++ tests; there's no Excel on GitHub Actions), then eyeballing that the tests actually pass before you commit
 the workbook.
 
 ---
@@ -99,9 +102,10 @@ The template lives **outside** the repo and pulls from its own local clone, so u
 clone first:
 
 1. In the template's local clone of `mewc-lambdas`: `git pull`.
-2. In the template workbook, run `sync_template_from_repo` to load the updated lambdas from
-   the clone. *(Sub still to be written — the downstream equivalent of `import_lambdas`,
-   without the test-formula fixing.)*
+2. In the template workbook, run `sync_template_from_repo.sync_all` (from the VBE — it's an
+   `Option Private Module`, so it's hidden from Alt+F8). It loads the updated lambdas into the
+   Lamb sheet + Name Manager and re-imports every shared/template VBA module (pruning any
+   stale one), skipping the test-only tooling and the test-formula fixing.
 
 ---
 

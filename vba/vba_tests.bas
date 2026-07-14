@@ -1,4 +1,5 @@
 Attribute VB_Name = "vba_tests"
+' deploy: test
 '==============================================================================
 ' vba_tests  -  unit-test harness for the repo's VBA functions/subs.
 '
