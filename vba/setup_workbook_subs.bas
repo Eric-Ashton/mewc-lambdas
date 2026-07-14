@@ -304,6 +304,12 @@ Private Sub import_case()
         gCaseColWidths.Add CaptureColumnWidths(copiedSheets(k))
     Next k
 
+    ' Adopt the case workbook's THEME COLORS (a separate mechanism from font
+    ' and column width, and unlike those, one we deliberately want to match
+    ' the case rather than the template - see AdoptCaseThemeColors). Must run
+    ' while case_workbook is still open, below.
+    Call AdoptCaseThemeColors
+
     ' Move focus off the just-copied sheets so we can re-hide any of them
     prep_worksheet.Activate
 
@@ -507,6 +513,27 @@ Private Function CaptureColumnWidths(ByVal ws As Worksheet) As Variant
     Next i
     CaptureColumnWidths = widths
 End Function
+
+' Adopts the case workbook's THEME COLORS (Dark1/Light1, Dark2/Light2,
+' Accent1-6, Hyperlink, FollowedHyperlink) so puzzle content that uses a
+' Theme Color fill (as opposed to a literal RGB fill) renders with the color
+' the case author actually intended - e.g. "find the green squares" needs
+' the squares to actually BE green, not whatever THIS template's own accent
+' palette happens to map that slot to. A workbook's Theme is a single shared
+' object, same as Styles("Normal"), so a mismatch here silently recolors any
+' theme-referenced cell/shape the moment it's copied into a workbook with a
+' different palette. Unlike the font/width fixes above, this deliberately
+' ADOPTS the case's colors instead of preserving the template's - matching
+' the case author's written directions is the whole point. Must run while
+' case_workbook is still open (it's Closed shortly after this is called).
+Private Sub AdoptCaseThemeColors()
+    On Error Resume Next
+    Dim i As Long
+    For i = 1 To 12   ' Dark1, Light1, Dark2, Light2, Accent1-6, Hyperlink, FollowedHyperlink
+        attempt_workbook.Theme.ThemeColorScheme.Colors(i) = case_workbook.Theme.ThemeColorScheme.Colors(i)
+    Next i
+    On Error GoTo 0
+End Sub
 
 ' === Classify Rows Subroutine ===
 ' Parse case workbook and classify which rows are questions, instructions etc...
