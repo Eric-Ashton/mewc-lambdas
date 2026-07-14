@@ -29,7 +29,17 @@ Public yellow_cell_rows() As Long
 Public offset_rows_needed() As Long
 Public case_link_rows() As Long
 Public level_link_rows() As Long
-    
+
+' Column widths (points) for each sheet import_case copies in from the case
+' workbook, captured before set_normal_style repoints the workbook's Normal
+' style. ColumnWidth is denominated in "characters of the Normal font", so
+' the same numeric value renders at a different physical size once Normal
+' changes - set_normal_style converts these captured, font-independent POINT
+' widths back into the right ColumnWidth numbers once the new Normal is in
+' effect. See FreezeEffectiveFont for the equivalent fix for cell fonts.
+Private gCaseSheets As Collection
+Private gCaseColWidths As Collection
+
 Sub setup_workbook()
     On Error GoTo ErrorHandler
     Application.ScreenUpdating = False
@@ -105,15 +115,58 @@ End Sub
 ' zoom and units are unchanged. Aptos Narrow 11 is the intended baseline.
 '
 ' "Normal" is a single style shared by the whole workbook, so this also
-' affects any Case/Data cell that doesn't have an explicit font of its own -
-' import_case's FreezeEffectiveFont call (run before this stage) locks those
-' in as direct formatting first so they aren't swept up in the change.
+' affects any Case/Data cell that doesn't have an explicit font of its own,
+' and every Case/Data column's width (ColumnWidth is denominated in
+' characters of Normal's font, so the same number renders at a different
+' physical size once Normal changes). import_case's FreezeEffectiveFont call
+' and CaptureColumnWidths snapshot (run before this stage) let the width
+' half be restored below, in point terms, once the new Normal is in effect.
 Private Sub set_normal_style()
     On Error Resume Next
     With attempt_workbook.Styles("Normal").Font
         .Name = "Aptos Narrow"
         .Size = 11
     End With
+    On Error GoTo 0
+
+    Call RestoreCaseColumnWidths
+End Sub
+
+' Converts each column width import_case captured (in points, before Normal
+' changed) back into the ColumnWidth "characters of Normal font" number that
+' renders at that same physical size under whatever Normal is NOW, and
+' re-applies it. ColumnWidth<->Width isn't perfectly linear (Excel truncates
+' to whole pixels internally), so this calibrates a single points-per-
+' character ratio once, off a scratch column with no real content, and
+' applies it uniformly - close enough that nothing looks squished; not
+' pixel-perfect, and not needed for it to be.
+Private Sub RestoreCaseColumnWidths()
+    If gCaseSheets Is Nothing Then Exit Sub
+
+    ' Calibrate character-units-per-point off a scratch column, guarded on
+    ' its own so a failed/zero read here can't fall through and collapse
+    ' every captured column to zero width below.
+    Dim probe As Range
+    Dim ratio As Double
+    Const PROBE_CHAR_WIDTH As Double = 20
+    On Error Resume Next
+    Set probe = prep_worksheet.Columns("ZZ")
+    probe.ColumnWidth = PROBE_CHAR_WIDTH
+    ratio = PROBE_CHAR_WIDTH / probe.Width
+    probe.ColumnWidth = 8.43   ' Excel's stock default column width - leaves no visible trace
+    On Error GoTo 0
+    If ratio <= 0 Then Exit Sub   ' calibration failed - leave the captured widths applied as-is rather than risk zeroing columns
+
+    On Error Resume Next
+    Dim i As Long, c As Long
+    Dim ws As Worksheet, widths() As Double
+    For i = 1 To gCaseSheets.count
+        Set ws = gCaseSheets(i)
+        widths = gCaseColWidths(i)
+        For c = LBound(widths) To UBound(widths)
+            ws.Columns(c).ColumnWidth = widths(c) * ratio
+        Next c
+    Next i
     On Error GoTo 0
 End Sub
 
@@ -229,21 +282,26 @@ Private Sub import_case()
         After:=attempt_workbook.Sheets(destBase)
 
     ' Freeze each copied sheet's CURRENT effective font (name + size) as
-    ' direct cell formatting, before set_normal_style (the next pipeline
-    ' stage) repoints the workbook's shared "Normal" style to Aptos Narrow
-    ' 11. Any cell here that never had its own explicit font is currently
-    ' inheriting from Normal, so without this it would silently reflow to
-    ' Aptos Narrow 11 the moment Normal changes - even though its on-screen
-    ' appearance right now (immediately after copy) is exactly right.
-    ' Capturing worksheet OBJECT references (not names/indices) so this
-    ' survives the visibility restore and junk-sheet cleanup below, and
-    ' MakeCaseCopy's later same-workbook .Copy of case_worksheet inherits
-    ' this frozen formatting for free.
+    ' direct cell formatting, and capture its CURRENT column widths in
+    ' points, before set_normal_style (the next pipeline stage) repoints the
+    ' workbook's shared "Normal" style to Aptos Narrow 11. Any cell here that
+    ' never had its own explicit font is currently inheriting from Normal,
+    ' and every column's ColumnWidth is denominated in Normal's character
+    ' metrics - so without this, both would silently reflow the moment
+    ' Normal changes, even though the on-screen appearance right now
+    ' (immediately after copy) is exactly right. Capturing worksheet OBJECT
+    ' references (not names/indices) so this survives the visibility restore
+    ' and junk-sheet cleanup below, and MakeCaseCopy's later same-workbook
+    ' .Copy of case_worksheet inherits both fixes for free.
     Dim copiedSheets() As Worksheet
     ReDim copiedSheets(1 To srcSheetCount)
+    Set gCaseSheets = New Collection
+    Set gCaseColWidths = New Collection
     For k = 1 To srcSheetCount
         Set copiedSheets(k) = attempt_workbook.Sheets(destBase + k)
         Call FreezeEffectiveFont(copiedSheets(k))
+        gCaseSheets.Add copiedSheets(k)
+        gCaseColWidths.Add CaptureColumnWidths(copiedSheets(k))
     Next k
 
     ' Move focus off the just-copied sheets so we can re-hide any of them
@@ -430,6 +488,25 @@ Private Sub FreezeEffectiveFont(ByVal ws As Worksheet)
     Next r
     On Error GoTo 0
 End Sub
+
+' Reads each column's CURRENT rendered width in points (an absolute, font-
+' independent unit) up to the sheet's last used column. Called right after
+' import_case copies a sheet in, before set_normal_style changes the
+' workbook's Normal font, while these widths still reflect the source case
+' workbook's intended layout. set_normal_style converts them back into
+' ColumnWidth "characters" once the new Normal font is in effect.
+Private Function CaptureColumnWidths(ByVal ws As Worksheet) As Variant
+    Dim lastCol As Long
+    lastCol = GetLastUsedCol(ws)
+    If lastCol < 1 Then lastCol = 1
+    Dim widths() As Double
+    ReDim widths(1 To lastCol)
+    Dim i As Long
+    For i = 1 To lastCol
+        widths(i) = ws.Columns(i).Width
+    Next i
+    CaptureColumnWidths = widths
+End Function
 
 ' === Classify Rows Subroutine ===
 ' Parse case workbook and classify which rows are questions, instructions etc...
