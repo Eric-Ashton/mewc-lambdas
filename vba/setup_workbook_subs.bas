@@ -977,22 +977,34 @@ Private Sub create_level_worksheets()
             .Font.Color = RGB(255, 255, 255)
         End With
 
-        ' Buttons/toggles
-        ' "Done" and "Copy Previous" are Shapes, not classic Buttons.Add Form
-        ' Controls: Form Control buttons are locked to the OS/Office theme's
-        ' gray button chrome and can't take a custom fill, which is why they
-        ' previously looked mismatched sitting on the blue backdrop behind
-        ' them. StyleLevelButton colors them to match that backdrop (I1:K3
-        ' above, and E1:G3 via conditional formatting below) - same blue,
-        ' RGB(34,138,184), used both places.
-        Call StyleLevelButton( _
-            level_ws.Shapes.AddShape(msoShapeRoundedRectangle, 217.875, 9.75, 92.25, 32.625), _
-            "Done", "done")
-        Call StyleLevelButton( _
-            level_ws.Shapes.AddShape(msoShapeRoundedRectangle, 410.625, 11.25, 95.25, 30.75), _
-            "Copy Previous", "copy_previous")
-        With level_ws.OptionButtons.Add(586.125, 21.75, 58.875, 18.375): .OnAction = "what_if_on": .Text = "What If On": End With
-        With level_ws.OptionButtons.Add(653.625, 22.5, 61.125, 18.375): .OnAction = "what_if_off": .Text = "What If Off": End With
+        ' Buttons/toggles - normal gray Form Control chrome (Buttons.Add /
+        ' OptionButtons.Add), left alone visually. Positioned by centering
+        ' each control within its own backdrop range (E1:G3 for Done, I1:K3
+        ' for Copy Previous, M2:O3 for the What If toggles as a pair) instead
+        ' of hand-tuned pixel offsets, so they stay centered regardless of
+        ' how those backdrop ranges get resized.
+        Dim btnDone As Button, btnCopyPrev As Button
+        Set btnDone = level_ws.Buttons.Add(0, 0, 92.25, 32.625)
+        With btnDone: .OnAction = "done": .Text = "Done": End With
+        Call CenterControlOn(btnDone, level_ws.Range("E1:G3"))
+
+        Set btnCopyPrev = level_ws.Buttons.Add(0, 0, 95.25, 30.75)
+        With btnCopyPrev: .OnAction = "copy_previous": .Text = "Copy Previous": End With
+        Call CenterControlOn(btnCopyPrev, level_ws.Range("I1:K3"))
+
+        Dim whatIfArea As Range
+        Set whatIfArea = level_ws.Range("M2:O3")
+        Const OPT_ON_W As Double = 58.875, OPT_OFF_W As Double = 61.125
+        Const OPT_H As Double = 18.375, OPT_GAP As Double = 8.625
+        Dim optLeft As Double, optTop As Double
+        optLeft = whatIfArea.Left + (whatIfArea.Width - (OPT_ON_W + OPT_GAP + OPT_OFF_W)) / 2
+        optTop = whatIfArea.Top + (whatIfArea.Height - OPT_H) / 2
+        With level_ws.OptionButtons.Add(optLeft, optTop, OPT_ON_W, OPT_H)
+            .OnAction = "what_if_on": .Text = "What If On"
+        End With
+        With level_ws.OptionButtons.Add(optLeft + OPT_ON_W + OPT_GAP, optTop, OPT_OFF_W, OPT_H)
+            .OnAction = "what_if_off": .Text = "What If Off"
+        End With
 
         ' Copy "Level n Header" row
         For i = 1 To last_row_case
@@ -1166,29 +1178,12 @@ ErrorHandler:
     Err.Raise e_num, "create_level_worksheets", e_desc
 End Sub
 
-' Styles a level-sheet action button (Shape) to match the blue theme used for
-' its backdrop elsewhere on the sheet (RGB(34,138,184)), instead of the
-' OS/Office default gray Form Control button chrome, which can't be
-' recolored. Centers bold white text, locks the size to what AddShape was
-' given (no autosize surprises), and assigns the click macro.
-Private Sub StyleLevelButton(ByVal shp As Shape, ByVal caption As String, ByVal macroName As String)
-    shp.OnAction = macroName
-    With shp.Fill
-        .Visible = msoTrue
-        .ForeColor.RGB = RGB(34, 138, 184)
-    End With
-    shp.Line.Visible = msoFalse
-    With shp.TextFrame2
-        .AutoSize = msoAutoSizeNone
-        .VerticalAnchor = msoAnchorMiddle
-        With .TextRange
-            .Text = caption
-            .Font.Size = 11
-            .Font.Bold = msoTrue
-            .Font.Fill.ForeColor.RGB = RGB(255, 255, 255)
-            .ParagraphFormat.Alignment = msoAlignCenter
-        End With
-    End With
+' Centers a floating control (Button, OptionButton, Shape, ...) within the
+' given cell range, both horizontally and vertically. Only moves Left/Top;
+' the control's Width/Height are left exactly as created.
+Private Sub CenterControlOn(ByVal ctrl As Object, ByVal targetRange As Range)
+    ctrl.Left = targetRange.Left + (targetRange.Width - ctrl.Width) / 2
+    ctrl.Top = targetRange.Top + (targetRange.Height - ctrl.Height) / 2
 End Sub
 
 ' === Align Level Worksheets Subroutine ===
