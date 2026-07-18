@@ -39,6 +39,7 @@ Public level_link_rows() As Long
 ' effect. See FreezeEffectiveFont for the equivalent fix for cell fonts.
 Private gCaseSheets As Collection
 Private gCaseColWidths As Collection
+Private gSetupAborted As Boolean    ' a stage bailed out - stop the pipeline cleanly
 
 Sub setup_workbook()
     On Error GoTo ErrorHandler
@@ -47,6 +48,14 @@ Sub setup_workbook()
     Application.EnableEvents = False
 
     Set attempt_workbook = ThisWorkbook
+    gSetupAborted = False
+
+    ' Validate the case location BEFORE saving or creating anything. A wrong
+    ' folder used to sail straight through here: import_case SaveAs'd a new
+    ' attempt file, then bailed on the missing case, and the best-effort
+    ' pipeline below carried on building tabs on a half-set-up workbook.
+    If Not case_inputs_valid() Then GoTo Cleanup
+
     ThisWorkbook.Save
 
     ' --- Best-effort pipeline -------------------------------------------------
@@ -62,6 +71,7 @@ Sub setup_workbook()
 
     Call import_case
     Err.Clear
+    If gSetupAborted Then GoTo Cleanup
     Call set_normal_style
     Err.Clear
     Call classify_rows
@@ -171,6 +181,51 @@ Private Sub RestoreCaseColumnWidths()
 End Sub
 
 
+' Validate the case folder/file named on Prep (B1/B2) before setup touches
+' anything. Returns False - after telling the user exactly what's missing - so
+' setup_workbook can stop without saving a new file or creating any tabs.
+Private Function case_inputs_valid() As Boolean
+    Dim ws As Worksheet
+    Dim casePath As String, caseFile As String, fullPath As String
+
+    On Error GoTo Invalid
+    Set ws = attempt_workbook.Sheets("Prep")
+    casePath = Trim$(CStr(ws.Range("B1").Value))
+    caseFile = Trim$(CStr(ws.Range("B2").Value))
+    On Error GoTo 0
+
+    If Len(casePath) = 0 Or Len(caseFile) = 0 Then
+        MsgBox "Set the case folder (Prep!B1) and the case file name (Prep!B2) " & _
+               "before running setup." & vbLf & vbLf & _
+               "Setup stopped - nothing was saved or created.", _
+               vbCritical, "setup_workbook"
+        Exit Function
+    End If
+
+    If Len(Dir(casePath, vbDirectory)) = 0 Then
+        MsgBox "Case folder not found:" & vbLf & casePath & vbLf & vbLf & _
+               "Setup stopped - nothing was saved or created.", _
+               vbCritical, "setup_workbook"
+        Exit Function
+    End If
+
+    fullPath = casePath & Application.PathSeparator & caseFile
+    If Len(Dir(fullPath)) = 0 Then
+        MsgBox "Case file not found:" & vbLf & fullPath & vbLf & vbLf & _
+               "Setup stopped - nothing was saved or created.", _
+               vbCritical, "setup_workbook"
+        Exit Function
+    End If
+
+    case_inputs_valid = True
+    Exit Function
+
+Invalid:
+    MsgBox "Could not read the case location from the Prep sheet (B1/B2)." & vbLf & vbLf & _
+           "Setup stopped - nothing was saved or created.", _
+           vbCritical, "setup_workbook"
+End Function
+
 ' === Import Case Subroutine ===
 Private Sub import_case()
     On Error GoTo ErrorHandler
@@ -192,7 +247,10 @@ Private Sub import_case()
         If Dir(full_attempt_path) <> "" Then
             overwrite = MsgBox("The target filename already exists." & vbCrLf & _
                            "Do you want to overwrite it?", vbYesNo + vbQuestion)
-            If overwrite <> vbYes Then Exit Sub
+            If overwrite <> vbYes Then
+                gSetupAborted = True
+                Exit Sub
+            End If
             ' Back up the file we're about to overwrite so a crashed or
             ' mid-run-failed setup doesn't destroy a previously-good attempt.
             Call BackupExistingFile(full_attempt_path)
@@ -209,6 +267,7 @@ Private Sub import_case()
     full_case_path = case_path & Application.PathSeparator & case_filename
     If Dir(full_case_path) = "" Then
         MsgBox "Case file not found: " & full_case_path, vbCritical
+        gSetupAborted = True
         Exit Sub
     End If
 
@@ -297,6 +356,11 @@ Private Sub import_case()
     ReDim copiedSheets(1 To srcSheetCount)
     Set gCaseSheets = New Collection
     Set gCaseColWidths = New Collection
+    ' Prep's own columns are denominated in the OLD Normal font too, so capture
+    ' it alongside the copied sheets - otherwise set_normal_style leaves the
+    ' Prep sheet visibly shrunk once Normal becomes Aptos Narrow 11.
+    gCaseSheets.Add prep_worksheet
+    gCaseColWidths.Add CaptureColumnWidths(prep_worksheet)
     For k = 1 To srcSheetCount
         Set copiedSheets(k) = attempt_workbook.Sheets(destBase + k)
         Call FreezeEffectiveFont(copiedSheets(k))
@@ -2102,8 +2166,13 @@ Sub safe_setup()
     Application.EnableEvents = False
     
     Set attempt_workbook = ThisWorkbook
+    gSetupAborted = False
+
+    ' Same gate as setup_workbook: don't save or import against a bad location.
+    If Not case_inputs_valid() Then GoTo Cleanup
+
     ThisWorkbook.Save
-    
+
     Call import_case
 Cleanup:
     Application.ScreenUpdating = True
