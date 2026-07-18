@@ -39,6 +39,10 @@ Private gCases() As String
 Private gExpected() As String
 Private gActual() As String
 Private gPass() As Boolean
+Private gMapGroup() As String   ' group name -> the first fixture sheet it built
+Private gMapSheet() As String
+Private gMapN As Long
+
 ' ---- entry point ------------------------------------------------------------
 Public Sub run_vba_tests()
     Dim prevSU As Boolean, prevDA As Boolean
@@ -52,6 +56,9 @@ Public Sub run_vba_tests()
     ReDim gExpected(1 To 2000)
     ReDim gActual(1 To 2000)
     ReDim gPass(1 To 2000)
+    ReDim gMapGroup(1 To 200)
+    ReDim gMapSheet(1 To 200)
+    gMapN = 0
 
     ' Each group guards its own fixtures; a crash records a failure and moves on.
     RunGuarded "unicode_split"
@@ -77,6 +84,7 @@ Public Sub run_vba_tests()
     RunGuarded "make_level_data_table"
 
     write_results
+    write_group_blocks        ' per-group Case/Expected/Actual/Result on each sheet
 
     Application.ScreenUpdating = prevSU
     Application.DisplayAlerts = prevDA
@@ -235,7 +243,7 @@ End Function
 ' ---- fixture helpers --------------------------------------------------------
 ' Get (or create at the end of the tab list) the persistent fixture sheet, then
 ' clear it so each run refreshes it in place. The sheet is kept in the workbook.
-Private Function AddSheet(ByVal nm As String) As Worksheet
+Private Function bare_sheet(ByVal nm As String) As Worksheet
     Dim ws As Worksheet
     On Error Resume Next
     Set ws = ThisWorkbook.Worksheets(nm)
@@ -246,8 +254,27 @@ Private Function AddSheet(ByVal nm As String) As Worksheet
     Else
         ws.Cells.Clear
     End If
-    Set AddSheet = ws
+    Set bare_sheet = ws
 End Function
+
+' As bare_sheet, but also remembers which sheet the current group built so its
+' Case/Expected/Actual/Result block can be written onto it afterwards.
+Private Function AddSheet(ByVal nm As String) As Worksheet
+    Set AddSheet = bare_sheet(nm)
+    record_group_sheet nm
+End Function
+
+Private Sub record_group_sheet(ByVal nm As String)
+    If Len(gGroup) = 0 Then Exit Sub
+    Dim i As Long
+    For i = 1 To gMapN
+        If gMapGroup(i) = gGroup Then Exit Sub      ' keep the FIRST sheet per group
+    Next i
+    If gMapN >= 200 Then Exit Sub
+    gMapN = gMapN + 1
+    gMapGroup(gMapN) = gGroup
+    gMapSheet(gMapN) = nm
+End Sub
 
 ' Deletes a sheet outright (no re-create). Used for the output sheets that
 ' frequency_table / frequency_table_by_char / tall_board create under their
@@ -695,3 +722,84 @@ Private Sub write_results()
     ws.Columns("A:F").AutoFit
     ws.Activate
 End Sub
+
+' ---- per-group result blocks ------------------------------------------------
+' Give every group its own Case | Expected | Actual | Result table on its sheet,
+' so each sheet reads like a lambda test sheet. The block is anchored just to the
+' right of whatever the fixture already used, so it can never overwrite it.
+Private Sub write_group_blocks()
+    Dim i As Long, seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+    For i = 1 To gCount
+        If Not seen.Exists(gGroups(i)) Then
+            seen.Add gGroups(i), True
+            write_one_group gGroups(i)
+        End If
+    Next i
+End Sub
+
+Private Sub write_one_group(ByVal groupName As String)
+    Dim ws As Worksheet
+    Set ws = group_sheet(groupName)
+    If ws Is Nothing Then Exit Sub
+
+    Dim anchor As Long
+    anchor = ws.UsedRange.Column + ws.UsedRange.Columns.count + 1
+    If anchor < 1 Then anchor = 1
+
+    ws.Cells(1, anchor).Value = groupName
+    ws.Cells(1, anchor).Font.Bold = True
+    ws.Cells(2, anchor).Value = "Case"
+    ws.Cells(2, anchor + 1).Value = "Expected"
+    ws.Cells(2, anchor + 2).Value = "Actual"
+    ws.Cells(2, anchor + 3).Value = "Result"
+    ws.Range(ws.Cells(2, anchor), ws.Cells(2, anchor + 3)).Font.Bold = True
+    ' keep "#REF!" and friends as text, not errors
+    ws.Range(ws.Cells(1, anchor + 1), ws.Cells(1, anchor + 2)).EntireColumn.NumberFormat = "@"
+
+    Dim i As Long, r As Long, passN As Long, totN As Long
+    r = 3
+    For i = 1 To gCount
+        If gGroups(i) = groupName Then
+            ws.Cells(r, anchor).Value = gCases(i)
+            ws.Cells(r, anchor + 1).Value = gExpected(i)
+            ws.Cells(r, anchor + 2).Value = gActual(i)
+            ws.Cells(r, anchor + 3).Value = IIf(gPass(i), "PASS", "FAIL")
+            ws.Cells(r, anchor + 3).Interior.Color = _
+                IIf(gPass(i), RGB(198, 239, 206), RGB(255, 199, 206))
+            totN = totN + 1
+            If gPass(i) Then passN = passN + 1
+            r = r + 1
+        End If
+    Next i
+
+    ws.Cells(1, anchor + 3).Value = passN & " / " & totN & " PASS"
+    ws.Cells(1, anchor + 3).Font.Bold = True
+    ws.Range(ws.Cells(1, anchor), ws.Cells(1, anchor + 3)).EntireColumn.AutoFit
+End Sub
+
+' The sheet a group built (via AddSheet). Groups with no fixture of their own get
+' a results-only sheet named after the group.
+Private Function group_sheet(ByVal groupName As String) As Worksheet
+    Dim i As Long
+    For i = 1 To gMapN
+        If gMapGroup(i) = groupName Then
+            On Error Resume Next
+            Set group_sheet = ThisWorkbook.Worksheets(gMapSheet(i))
+            On Error GoTo 0
+            If Not group_sheet Is Nothing Then Exit Function
+        End If
+    Next i
+    Set group_sheet = bare_sheet("zz_" & safe_sheet_name(groupName))
+End Function
+
+' Excel sheet names can't contain : \ / ? * [ ] and cap at 31 characters.
+Private Function safe_sheet_name(ByVal s As String) As String
+    Dim bad As Variant, v As Variant
+    bad = Array(":", "\", "/", "?", "*", "[", "]")
+    For Each v In bad
+        s = Replace(s, CStr(v), "_")
+    Next v
+    If Len(s) > 28 Then s = Left$(s, 28)
+    safe_sheet_name = s
+End Function

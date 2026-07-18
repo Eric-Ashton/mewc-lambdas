@@ -387,8 +387,15 @@ Sub done()
     ' This prevents the "Write" operation below from triggering a recalc of the heavy Data Table
     Application.Calculation = xlCalculationManual
     
-    ' 2. Paste values into Case sheet (Now instantaneous)
-    case_sheet.Cells(case_start_cell.Row, "E").Resize(UBound(answers_array, 1), 1).Value = answers_array
+    ' 2. Paste values into Case sheet.
+    '    Copy + PasteSpecial xlPasteValues, NOT ".Value = answers_array":
+    '    assigning a string like "12 - 16 - 18" to a General-formatted cell makes
+    '    Excel re-parse it, which silently turned that answer into the date
+    '    12/16/2018. PasteSpecial transfers the stored value without re-parsing,
+    '    and pastes values only so the Case sheet keeps its own formatting.
+    answer_range.Copy
+    case_sheet.Cells(case_start_cell.Row, "E").PasteSpecial Paste:=xlPasteValues
+    Application.CutCopyMode = False
 
     ' 3. Kill the Data Table (Now instantaneous because Calc is off)
     what_if_off
