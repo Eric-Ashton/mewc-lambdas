@@ -57,7 +57,7 @@ Either lane leaves the Lamb sheet and the `.lambda` file matching. Then:
    Manager and rewrites the test-sheet formulas as dynamic arrays
    (stripping any stray `@` left over from AI editing).
 3. Confirm the tests pass **and** that they actually exercise the new/changed
-   functionality. The `test_summary` sheet gives the per-lambda pass/fail roll-up.
+   functionality. The `lambda_tests` sheet gives the per-lambda pass/fail roll-up.
 
 > Excel testing is a **manual** gate — it can't run in CI (there's no Excel on GitHub
 > Actions). CI only re-checks the text authoring rules; a lambda that passes the checker

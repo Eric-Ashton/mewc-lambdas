@@ -164,7 +164,7 @@ Public Sub link_test_headers()
     Application.ScreenUpdating = False
     For Each ws In ThisWorkbook.Worksheets
         Select Case ws.Name
-            Case "Prep", "Lamb", "test_summary"
+            Case "Prep", "Lamb", "lambda_tests"
                 ' library / summary sheets - leave alone
             Case Else
                 set_hdr ws.Range("B1"), "A"   ' Signature   <- Lamb col A
@@ -202,7 +202,7 @@ Public Sub fit_test_row_heights()
     Application.Calculate                        ' make sure the lookups are current
     For Each ws In ThisWorkbook.Worksheets
         Select Case ws.Name
-            Case "Prep", "Lamb", "test_summary"
+            Case "Prep", "Lamb", "lambda_tests"
                 ' skip
             Case Else
                 set_row_height ws.Rows(1), LINE_H * display_lines(ws.Range("I1"))
