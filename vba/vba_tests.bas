@@ -599,16 +599,28 @@ End Sub
 
 Private Sub test_last_used_row_col()
     grp "GetLastUsedRow/Col"
-    ' Both helpers use an unqualified [a1] as the Find "After" anchor, which
-    ' resolves to the ACTIVE sheet's A1 - so ws must be active or Find errors
-    ' (After must be a cell within the range being searched). Activating the
-    ' fixture here documents that requirement.
     Dim ws As Worksheet
-    Set ws = AddSheet("zz_lastused"): ws.Activate
+    Set ws = AddSheet("zz_lastused")
     ws.Range("B2").Value = "x"
     ws.Range("D5").Value = "y"
     chkTrue "last used row = 5", GetLastUsedRow(ws) = 5
     chkTrue "last used col = D (4)", GetLastUsedCol(ws) = 4
+
+    ' Case 2 - a sheet with formatting but no values. Find returns Nothing here;
+    ' the helpers used to dereference it and raise error 91. A real case file
+    ' (Bimbadaboom) shipped exactly this, which aborted import_case midway.
+    Dim empty_ws As Worksheet
+    Set empty_ws = AddSheet("zz_lastused_empty")
+    empty_ws.Range("A1:J20").Interior.Color = RGB(255, 255, 0)
+    chkTrue "empty sheet row = 0", GetLastUsedRow(empty_ws) = 0
+    chkTrue "empty sheet col = 0", GetLastUsedCol(empty_ws) = 0
+
+    ' Case 3 - the searched sheet is not the active sheet. The old [a1] anchor
+    ' resolved against the ACTIVE sheet, putting Find's After outside the range
+    ' it was searching; ws.Cells(1, 1) keeps the anchor on the right sheet.
+    empty_ws.Activate
+    chkTrue "row from inactive sheet = 5", GetLastUsedRow(ws) = 5
+    chkTrue "col from inactive sheet = 4", GetLastUsedCol(ws) = 4
 End Sub
 
 Private Sub test_find_yellow()
