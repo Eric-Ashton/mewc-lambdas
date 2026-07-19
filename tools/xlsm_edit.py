@@ -286,6 +286,42 @@ def _rename_sheets(wb_xml, renames):
     return out
 
 
+CALC_CHAIN = "xl/calcChain.xml"
+
+
+def _drop_calc_chain(names, data):
+    """Remove the calculation chain part, if present.
+
+    calcChain.xml indexes every formula cell in the workbook. The moment an
+    edit adds a formula, or replaces a formula cell with a plain or empty one,
+    the index disagrees with the sheets and Excel declares the file corrupt:
+
+        Removed Records: Formula from /xl/calcChain.xml part
+
+    It is a pure recalculation cache with no user data in it - Excel rebuilds
+    it on open, and _force_full_recalc has already asked for a full recalc - so
+    dropping it is both safe and the standard remedy. The part must also be
+    unregistered from [Content_Types].xml and the workbook rels, or Excel will
+    flag the dangling references instead.
+    """
+    if CALC_CHAIN not in data:
+        return names, data
+
+    names = [n for n in names if n != CALC_CHAIN]
+    data = {k: v for k, v in data.items() if k != CALC_CHAIN}
+
+    ct = data["[Content_Types].xml"].decode("utf-8")
+    ct = re.sub(r'<Override[^>]*PartName="/xl/calcChain\.xml"[^>]*/>', "", ct)
+    data["[Content_Types].xml"] = ct.encode("utf-8")
+
+    rels_part = "xl/_rels/workbook.xml.rels"
+    rels = data[rels_part].decode("utf-8")
+    rels = re.sub(r'<Relationship[^>]*Target="calcChain\.xml"[^>]*/>', "", rels)
+    data[rels_part] = rels.encode("utf-8")
+
+    return names, data
+
+
 def _force_full_recalc(wb_xml):
     """Ensure Excel recalculates on open (cached formula values were dropped)."""
     if "<calcPr" in wb_xml:
@@ -341,6 +377,8 @@ def apply_edits(src, out, edits, renames=None):
         wbxml = _rename_sheets(wbxml, renames)
     data["xl/workbook.xml"] = _force_full_recalc(wbxml).encode("utf-8")
 
+    names, data = _drop_calc_chain(names, data)
+
     # rewrite zip, preserving order + compression; every non-edited part is byte-identical
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zo:
         for n in names:
@@ -370,13 +408,19 @@ def validate(src, out, edits, renames=None):
 
     zs, zo = zipfile.ZipFile(src), zipfile.ZipFile(out)
     part_of = _sheet_part_map(zs)
-    touched = {part_of[s] for s in by_sheet} | {"xl/workbook.xml"}
+    # apply_edits deliberately drops calcChain.xml and unregisters it, so those
+    # three parts are expected to differ - see _drop_calc_chain.
+    touched = ({part_of[s] for s in by_sheet}
+               | {"xl/workbook.xml", "[Content_Types].xml",
+                  "xl/_rels/workbook.xml.rels"})
 
-    report = {"ok": True, "parts_lost": [], "parts_added": [],
+    report = {"ok": True, "parts_lost": [], "parts_added": [], "calc_chain_dropped": False,
               "unexpected_changes": [], "edits_verified": 0, "edits_failed": []}
 
     sn, on = set(zs.namelist()), set(zo.namelist())
-    report["parts_lost"] = sorted(sn - on)
+    lost = sn - on
+    report["calc_chain_dropped"] = CALC_CHAIN in lost
+    report["parts_lost"] = sorted(lost - {CALC_CHAIN})
     report["parts_added"] = sorted(on - sn)
     if report["parts_lost"] or report["parts_added"]:
         report["ok"] = False
