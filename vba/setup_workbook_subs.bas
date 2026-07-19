@@ -98,6 +98,11 @@ Sub setup_workbook()
     ' --- end best-effort pipeline --------------------------------------------
 
 Cleanup:
+    ' Final safety net: no exit path from setup_workbook may leave the author's
+    ' read-only case workbook open. import_case closes it itself on both the
+    ' normal and error paths; this catches an abort raised anywhere else.
+    Call CloseCaseWorkbook
+
     ' Hide the ErrorLog sheet if it exists. Use SheetExists rather than
     ' exception-based lookup so the VBA debugger's "Break on All Errors"
     ' setting can't trip on a missing sheet.
@@ -384,7 +389,7 @@ Private Sub import_case()
         On Error GoTo ErrorHandler
     Next k
 
-    case_workbook.Close SaveChanges:=False
+    Call CloseCaseWorkbook
 
     ' --- Locate the case-content sheet among the sheets we just copied ---
     ' Only inspect the freshly-imported range (destBase+1 .. destBase+srcSheetCount)
@@ -517,6 +522,10 @@ ErrorHandler:
     ' Calculation and Events. Silent Resume Next here would leave Excel frozen.
     Dim e_num As Long, e_desc As String
     e_num = Err.Number: e_desc = Err.Description
+    ' Close the author's read-only copy before unwinding. Any failure between
+    ' Workbooks.Open and the normal close above would otherwise strand it on
+    ' screen, which is confusing and blocks a clean re-run.
+    Call CloseCaseWorkbook
     Call LogError(e_num, e_desc, "import_case")
     Err.Raise e_num, "import_case", e_desc
 
@@ -1896,11 +1905,51 @@ End Sub
 
 
 ' === Helper Functions ===
+
+' Close the author's read-only case workbook if it is still open, and clear the
+' module-level reference. Idempotent and never raises, so it is safe to call
+' from both the normal path and an error handler. Always SaveChanges:=False -
+' we opened the file ReadOnly and must never write to the author's original.
+Public Sub CloseCaseWorkbook()
+    On Error Resume Next
+    If Not case_workbook Is Nothing Then
+        case_workbook.Close SaveChanges:=False
+    End If
+    Set case_workbook = Nothing
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+' Last used row/column, or 0 when the sheet holds no values at all.
+'
+' Two bugs are fixed here versus the original one-liners:
+'   1. Find returns Nothing on a sheet that has formatting but no values, and
+'      the unguarded ".Row" then raised error 91. A real case file (Bimbadaboom)
+'      shipped a 300x300 formatting-only sheet, which killed import_case partway
+'      through and left the read-only case workbook open.
+'   2. After:=[a1] is Evaluate("A1") on the ACTIVE sheet, not on ws. Whenever ws
+'      was not the active sheet that is an After outside the searched range,
+'      which Find rejects with a 1004.
+' Callers must treat 0 as "empty" - CaptureColumnWidths already does.
 Function GetLastUsedRow(ws As Worksheet) As Long
-    GetLastUsedRow = ws.Cells.Find(What:="*", After:=[a1], SearchOrder:=xlByRows, SearchDirection:=xlPrevious).Row
+    Dim found As Range
+    Set found = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), _
+                              SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    If found Is Nothing Then
+        GetLastUsedRow = 0
+    Else
+        GetLastUsedRow = found.Row
+    End If
 End Function
 Function GetLastUsedCol(ws As Worksheet) As Long
-    GetLastUsedCol = ws.Cells.Find(What:="*", After:=[a1], SearchOrder:=xlByColumns, SearchDirection:=xlPrevious).Column
+    Dim found As Range
+    Set found = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), _
+                              SearchOrder:=xlByColumns, SearchDirection:=xlPrevious)
+    If found Is Nothing Then
+        GetLastUsedCol = 0
+    Else
+        GetLastUsedCol = found.Column
+    End If
 End Function
 Function ColNumToLetter(lngCol As Long) As String
     Dim vArr
