@@ -286,6 +286,41 @@ def _rename_sheets(wb_xml, renames):
     return out
 
 
+def _reorder_sheets(wb_xml, order):
+    """Reorder <sheet> elements in xl/workbook.xml; `order` is every sheet name.
+
+    Tab order is the document order of <sheet> elements. Each element carries
+    its own sheetId and r:id, so moving whole elements keeps every sheet bound
+    to its part - nothing else needs rewriting.
+
+    Safe here ONLY because this workbook has no sheet-local defined names:
+    those carry a localSheetId that is an INDEX into this list, so reordering
+    would silently reassign them. Checked and enforced below.
+    """
+    m = re.search(r"(<sheets>)(.*?)(</sheets>)", wb_xml, re.S)
+    if not m:
+        raise ValueError("no <sheets> element in workbook.xml")
+    head, body, tail = m.groups()
+
+    elems = re.findall(r"<sheet\b[^>]*/?>", body)
+    by_name = {}
+    for el in elems:
+        nm = _xml_unescape(re.search(r'\bname="([^"]*)"', el).group(1))
+        by_name[nm] = el
+
+    if set(order) != set(by_name):
+        missing = sorted(set(by_name) - set(order))
+        extra = sorted(set(order) - set(by_name))
+        raise ValueError(f"order must list every sheet exactly once; "
+                         f"missing={missing} unknown={extra}")
+
+    if re.search(r"localSheetId=", wb_xml):
+        raise ValueError("workbook has sheet-local defined names (localSheetId); "
+                         "reordering would reassign them by index")
+
+    return wb_xml[:m.start()] + head + "".join(by_name[n] for n in order) + tail + wb_xml[m.end():]
+
+
 CALC_CHAIN = "xl/calcChain.xml"
 
 
@@ -339,7 +374,7 @@ def _force_full_recalc(wb_xml):
 # --------------------------------------------------------------------------- #
 # main entry point
 # --------------------------------------------------------------------------- #
-def apply_edits(src, out, edits, renames=None):
+def apply_edits(src, out, edits, renames=None, sheet_order=None):
     """Write `out` = `src` with the given cell edits applied via XML surgery.
 
     edits: iterable of dicts {sheet, cell, value?|formula?, style?}. `src` is
@@ -349,6 +384,9 @@ def apply_edits(src, out, edits, renames=None):
     xl/workbook.xml only. Sheet names in `edits` always refer to the names as
     they exist in `src`, so a rename and edits to the renamed sheet can be
     done in a single call. See _rename_sheets for the safety caveat.
+
+    sheet_order: optional list of every sheet name in the desired tab order,
+    given in POST-rename names since it is applied after `renames`.
     """
     by_sheet = {}
     for e in edits:
@@ -375,6 +413,8 @@ def apply_edits(src, out, edits, renames=None):
     wbxml = data["xl/workbook.xml"].decode("utf-8")
     if renames:
         wbxml = _rename_sheets(wbxml, renames)
+    if sheet_order:
+        wbxml = _reorder_sheets(wbxml, sheet_order)
     data["xl/workbook.xml"] = _force_full_recalc(wbxml).encode("utf-8")
 
     names, data = _drop_calc_chain(names, data)
