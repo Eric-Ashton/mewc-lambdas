@@ -253,6 +253,39 @@ def _insert_row(sheet_xml, rownum, new_row):
     return sheet_xml[:sd.start()] + new_body + sheet_xml[sd.end():]
 
 
+def _xml_escape_attr(s: str) -> str:
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+             .replace('"', "&quot;"))
+
+
+def _rename_sheets(wb_xml, renames):
+    """Rewrite the name="" attribute of <sheet> elements in xl/workbook.xml.
+
+    renames: {old display name -> new display name}
+
+    This changes the sheet's display name ONLY. It does not rewrite formulas,
+    defined names, or anything else that might refer to the sheet by its old
+    name, so it is safe only for a sheet nothing else references yet - e.g. a
+    freshly made copy. Excel would normally fix up such references itself.
+    """
+    seen = set()
+
+    def repl(m):
+        tag = m.group(0)
+        nm = _xml_unescape(re.search(r'\bname="([^"]*)"', tag).group(1))
+        if nm not in renames:
+            return tag
+        seen.add(nm)
+        new = _xml_escape_attr(renames[nm])
+        return re.sub(r'\bname="[^"]*"', f'name="{new}"', tag, count=1)
+
+    out = re.sub(r"<sheet\b[^>]*/?>", repl, wb_xml)
+    missing = sorted(set(renames) - seen)
+    if missing:
+        raise KeyError(f"sheet(s) not found for rename: {missing}")
+    return out
+
+
 def _force_full_recalc(wb_xml):
     """Ensure Excel recalculates on open (cached formula values were dropped)."""
     if "<calcPr" in wb_xml:
@@ -270,11 +303,16 @@ def _force_full_recalc(wb_xml):
 # --------------------------------------------------------------------------- #
 # main entry point
 # --------------------------------------------------------------------------- #
-def apply_edits(src, out, edits):
+def apply_edits(src, out, edits, renames=None):
     """Write `out` = `src` with the given cell edits applied via XML surgery.
 
     edits: iterable of dicts {sheet, cell, value?|formula?, style?}. `src` is
     never modified. Returns the set of sheet part-names that were touched.
+
+    renames: optional {old sheet name -> new sheet name}, applied to
+    xl/workbook.xml only. Sheet names in `edits` always refer to the names as
+    they exist in `src`, so a rename and edits to the renamed sheet can be
+    done in a single call. See _rename_sheets for the safety caveat.
     """
     by_sheet = {}
     for e in edits:
@@ -299,6 +337,8 @@ def apply_edits(src, out, edits):
 
     # force recalc since we dropped cached formula values
     wbxml = data["xl/workbook.xml"].decode("utf-8")
+    if renames:
+        wbxml = _rename_sheets(wbxml, renames)
     data["xl/workbook.xml"] = _force_full_recalc(wbxml).encode("utf-8")
 
     # rewrite zip, preserving order + compression; every non-edited part is byte-identical
@@ -313,9 +353,16 @@ def apply_edits(src, out, edits):
     return touched_parts
 
 
-def validate(src, out, edits):
-    """Structural check: non-edited parts byte-identical, edits readable back."""
+def validate(src, out, edits, renames=None):
+    """Structural check: non-edited parts byte-identical, edits readable back.
+
+    `renames` must match what was passed to apply_edits: sheet names in `edits`
+    are given as they exist in `src`, so they are mapped forward before the
+    edited values are read back out of `out`.
+    """
     import openpyxl
+
+    renames = renames or {}
 
     by_sheet = {}
     for e in edits:
@@ -344,14 +391,15 @@ def validate(src, out, edits):
     # read edited values back
     wb = openpyxl.load_workbook(out, data_only=False)
     for e in edits:
-        ws = wb[e["sheet"]]
+        sheet_now = renames.get(e["sheet"], e["sheet"])
+        ws = wb[sheet_now]
         got = ws[e["cell"].upper()].value
         want = ("=" + e["formula"].lstrip("=")) if "formula" in e else e.get("value")
         ok = (str(got) == str(want)) if want is not None else (got is None)
         if ok:
             report["edits_verified"] += 1
         else:
-            report["edits_failed"].append({"cell": f'{e["sheet"]}!{e["cell"]}',
+            report["edits_failed"].append({"cell": f'{sheet_now}!{e["cell"]}',
                                            "want": want, "got": got})
             report["ok"] = False
     wb.close()
