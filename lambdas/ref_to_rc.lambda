@@ -1,0 +1,38 @@
+=== SIGNATURE ===
+ref_to_rc(ref, [as_row])
+
+=== COMMENT ===
+Splits a single cell reference into its row and column numbers. Accepts either form - a numeric address (1e6*row+col) or an A1 string ("D3") - and autodetects which. Returns {row; col} vertically by default, or {row, col} horizontally when as_row = 1. Invalid reference returns #VALUE!.
+
+=== CODE ===
+=LAMBDA(ref, [as_row],
+  LET(
+    wide, IF(ISOMITTED(as_row), 0, as_row),
+    num, num_ad(ref),
+    ok, IFERROR(AND(ROWS(ref) * COLUMNS(ref) = 1, ISNUMBER(num), num = INT(num),
+                    INT(num / 1000000) >= 1, INT(num / 1000000) <= 1048576,
+                    MOD(num, 1000000) >= 1, MOD(num, 1000000) <= 16384), FALSE),
+    IF(NOT(ok), #VALUE!,
+       IF(wide,
+          HSTACK(INT(num / 1000000), MOD(num, 1000000)),
+          VSTACK(INT(num / 1000000), MOD(num, 1000000))))
+  )
+)
+
+=== DESCRIPTION ===
+Splits one cell reference into its row and column numbers. The inverse of rc_to_ref.
+
+The reference is autodetected: pass either a numeric address (1e6 * row + col) or an A1 string. Coercion is done with num_ad, so "$D$3", "Sheet1!D3" and lower case all work, and a value that is already numeric passes straight through.
+
+Arguments:
+  ref      - a single cell reference, numeric (3000004) or A1 string ("D3").
+  [as_row] - 0 (default) returns a 2-row vertical array; 1 returns a 2-column horizontal array.
+
+Returns:
+  The row and column as two numbers, in that order - vertical by default, horizontal when as_row = 1. Returns #VALUE! if ref is not a single valid cell reference (junk text, an out-of-range address, a multi-cell array, or an error).
+
+Example:
+  ref_to_rc("D3")     ->  {3; 4}
+  ref_to_rc(3000004)  ->  {3; 4}
+  ref_to_rc("D3", 1)  ->  {3, 4}
+  ref_to_rc("hi")     ->  #VALUE!

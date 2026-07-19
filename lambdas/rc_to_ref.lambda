@@ -1,0 +1,38 @@
+=== SIGNATURE ===
+rc_to_ref(row_n, col_n, [str])
+
+=== COMMENT ===
+Builds a cell reference from a row and column number. Returns the numeric address (1e6*row+col) by default, or an A1 string ("D3") when str = 1. Out-of-range or non-integer inputs return #VALUE!.
+
+=== CODE ===
+=LAMBDA(row_n, col_n, [str],
+  LET(
+    want_str, IF(ISOMITTED(str), 0, str),
+    ok, IFERROR(AND(ISNUMBER(row_n), ISNUMBER(col_n),
+                    row_n = INT(row_n), col_n = INT(col_n),
+                    row_n >= 1, row_n <= 1048576,
+                    col_n >= 1, col_n <= 16384), FALSE),
+    IF(NOT(ok), #VALUE!,
+       IF(want_str,
+          str_ad(1000000 * row_n + col_n),
+          1000000 * row_n + col_n))
+  )
+)
+
+=== DESCRIPTION ===
+Builds a cell reference from a row and column number. The inverse of ref_to_rc.
+
+Numeric output is the project's standard packed address (1e6 * row + col). The string form is produced with str_ad, so it matches the relative A1 style used everywhere else in the library.
+
+Arguments:
+  row_n - row number, 1 to 1048576.
+  col_n - column number, 1 to 16384.
+  [str] - 0 (default) returns the numeric address; 1 returns an A1 string.
+
+Returns:
+  The reference in the requested form. Returns #VALUE! if either coordinate is non-numeric, non-integer, or outside the sheet.
+
+Example:
+  rc_to_ref(3, 4)     ->  3000004
+  rc_to_ref(3, 4, 1)  ->  "D3"
+  rc_to_ref(0, 4)     ->  #VALUE!
