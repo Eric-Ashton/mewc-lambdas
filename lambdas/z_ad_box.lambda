@@ -1,0 +1,42 @@
+=== SIGNATURE ===
+z_ad_box(ref)
+
+=== COMMENT ===
+Helper: bounding box of a single address or a range string, as {top; left; bottom; right} absolute row/column numbers. Accepts a numeric address (1e6*row+col), an A1 string, or an A1 range ("B2:D4"). Returns #VALUE! if ref is not a valid address or range.
+
+=== CODE ===
+=LAMBDA(ref,
+  LET(
+    txt, IF(ISTEXT(ref), UPPER(SUBSTITUTE(ref, "$", "")), ""),
+    is_rng, ISNUMBER(SEARCH(":", txt)),
+    parts, IF(is_rng, TEXTSPLIT(txt, ":"), ref),
+    first, num_ad(IF(is_rng, INDEX(parts, 1), ref)),
+    last, num_ad(IF(is_rng, INDEX(parts, 2), ref)),
+    ok, LAMBDA(one, IFERROR(AND(ISNUMBER(one), one = INT(one),
+                                INT(one / 1000000) >= 1, INT(one / 1000000) <= 1048576,
+                                MOD(one, 1000000) >= 1, MOD(one, 1000000) <= 16384), FALSE)),
+    IF(NOT(AND(ok(first), ok(last))), #VALUE!,
+       VSTACK(MIN(INT(first / 1000000), INT(last / 1000000)),
+              MIN(MOD(first, 1000000), MOD(last, 1000000)),
+              MAX(INT(first / 1000000), INT(last / 1000000)),
+              MAX(MOD(first, 1000000), MOD(last, 1000000))))
+  )
+)
+
+=== DESCRIPTION ===
+Private helper. Parses one address or range into its bounding box so callers do not each re-implement address validation.
+
+The box is always normalised: top <= bottom and left <= right, so a reversed range ("D4:B2") gives the same box as "B2:D4". A single cell gives a degenerate box where top = bottom and left = right, which is how a caller tells a cell from a range.
+
+Coercion is done with num_ad, so "$D$3", "Sheet1!D3" and lower case all work, and a numeric address passes straight through.
+
+Arguments:
+  ref - a numeric address (3000004), an A1 string ("D3"), or an A1 range string ("B2:D4").
+
+Returns:
+  A 4-row vertical array {top; left; bottom; right} of absolute row/column numbers. Returns #VALUE! if ref is not a single valid address or range - which is what z_is_ad tests for.
+
+Example:
+  z_ad_box("D3")     ->  {3; 4; 3; 4}
+  z_ad_box("B2:D4")  ->  {2; 2; 4; 4}
+  z_ad_box("hi")     ->  #VALUE!

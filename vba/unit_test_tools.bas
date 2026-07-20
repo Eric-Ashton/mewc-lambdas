@@ -22,6 +22,12 @@ Attribute VB_Name = "unit_test_tools"
 '   fix_test_formulas   Rewrite every test-sheet formula as a dynamic array
 '                       (via .Formula2): strips the implicit-intersection "@"
 '                       and converts legacy CSE {array} formulas to spilling.
+'   sort_test_tabs      Restore tab order: Prep, Lamb, lambda_tests, vba_tests
+'                       pinned first, everything else alphabetical.
+'
+'   Which sheets count as lambda test sheets is decided in one place,
+'   is_lambda_test_sheet - the four fixed sheets and the zz_* VBA fixtures are
+'   not test sheets and must never get header lookups written onto them.
 '
 '   The header lookup: CELL("filename",A1) gives the tab name; that name + "("
 '   is wildcard-matched against the Lamb Signature column, so `set` finds
@@ -159,19 +165,29 @@ End Function
 ' Test-sheet headers  (single-source-of-truth lookups against Lamb)
 '==============================================================================
 
+' True only for a lambda's own test sheet. Excludes the four fixed sheets and
+' the zz_* VBA fixtures, which have no lambda of that name and whose B1/B2/I1
+' are real fixture data - writing header lookups onto them would clobber it.
+' Centralised so the callers below cannot drift apart.
+Public Function is_lambda_test_sheet(ByVal sheet_name As String) As Boolean
+    Select Case sheet_name
+        Case "Prep", "Lamb", "lambda_tests", "vba_tests"
+            is_lambda_test_sheet = False
+        Case Else
+            is_lambda_test_sheet = (LCase$(Left$(sheet_name, 3)) <> "zz_")
+    End Select
+End Function
+
 Public Sub link_test_headers()
     Dim ws As Worksheet, n As Long
     Application.ScreenUpdating = False
     For Each ws In ThisWorkbook.Worksheets
-        Select Case ws.Name
-            Case "Prep", "Lamb", "lambda_tests"
-                ' library / summary sheets - leave alone
-            Case Else
-                set_hdr ws.Range("B1"), "A"   ' Signature   <- Lamb col A
-                set_hdr ws.Range("I1"), "D"   ' Description  <- Lamb col D
-                set_hdr ws.Range("B2"), "C"   ' Code (text)  <- Lamb col C
-                n = n + 1
-        End Select
+        If is_lambda_test_sheet(ws.Name) Then
+            set_hdr ws.Range("B1"), "A"   ' Signature   <- Lamb col A
+            set_hdr ws.Range("I1"), "D"   ' Description  <- Lamb col D
+            set_hdr ws.Range("B2"), "C"   ' Code (text)  <- Lamb col C
+            n = n + 1
+        End If
     Next ws
     Application.ScreenUpdating = True
     MsgBox "Linked headers on " & n & " test sheet(s) to the Lamb sheet.", _
@@ -201,14 +217,11 @@ Public Sub fit_test_row_heights()
     Application.ScreenUpdating = False
     Application.Calculate                        ' make sure the lookups are current
     For Each ws In ThisWorkbook.Worksheets
-        Select Case ws.Name
-            Case "Prep", "Lamb", "lambda_tests"
-                ' skip
-            Case Else
-                set_row_height ws.Rows(1), LINE_H * display_lines(ws.Range("I1"))
-                set_row_height ws.Rows(2), LINE_H * display_lines(ws.Range("B2"))
-                n = n + 1
-        End Select
+        If is_lambda_test_sheet(ws.Name) Then
+            set_row_height ws.Rows(1), LINE_H * display_lines(ws.Range("I1"))
+            set_row_height ws.Rows(2), LINE_H * display_lines(ws.Range("B2"))
+            n = n + 1
+        End If
     Next ws
     Application.ScreenUpdating = True
     MsgBox "Sized row 1 (description) & row 2 (code) on " & n & " test sheet(s).", _
@@ -312,3 +325,81 @@ Private Function rewrite_test_formulas() As Long
 
     rewrite_test_formulas = changed
 End Function
+
+'==============================================================================
+' Tab order
+'==============================================================================
+
+' Put the tabs back in order: Prep, Lamb, lambda_tests, vba_tests pinned as the
+' first four, everything else alphabetical (case-insensitive). Run after adding
+' a test sheet - Excel drops a copied sheet next to its source, and the VBA
+' harness appends new zz_ fixtures at the end.
+'
+' zz_ fixtures need no special handling: they sort to the back on their own.
+Public Sub sort_test_tabs()
+    Dim pinned As Variant
+    pinned = Array("Prep", "Lamb", "lambda_tests", "vba_tests")
+
+    Dim others() As String
+    Dim n As Long
+    ReDim others(1 To ThisWorkbook.Worksheets.count)
+
+    Dim ws As Worksheet
+    For Each ws In ThisWorkbook.Worksheets
+        If IsError(Application.Match(ws.Name, pinned, 0)) Then
+            n = n + 1
+            others(n) = ws.Name
+        End If
+    Next ws
+
+    ' Insertion sort - n is small and this avoids depending on any sort helper.
+    Dim i As Long, j As Long, tmp As String
+    For i = 2 To n
+        tmp = others(i)
+        j = i - 1
+        Do While j >= 1
+            If LCase$(others(j)) <= LCase$(tmp) Then Exit Do
+            others(j + 1) = others(j)
+            j = j - 1
+        Loop
+        others(j + 1) = tmp
+    Next i
+
+    Application.ScreenUpdating = False
+
+    ' Place each sheet after the previous one. Pinned sheets that don't exist
+    ' are skipped rather than raising, so this still works on a partial workbook.
+    Dim prev As String
+    Dim k As Long
+    For k = LBound(pinned) To UBound(pinned)
+        If SheetThere(CStr(pinned(k))) Then
+            MoveSheet CStr(pinned(k)), prev
+            prev = CStr(pinned(k))
+        End If
+    Next k
+    For i = 1 To n
+        MoveSheet others(i), prev
+        prev = others(i)
+    Next i
+
+    Application.ScreenUpdating = True
+    MsgBox "Sorted " & (n + 4) & " tabs: 4 pinned, " & n & " alphabetical.", _
+           vbInformation, "sort_test_tabs"
+End Sub
+
+Private Function SheetThere(ByVal nm As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(nm)
+    On Error GoTo 0
+    SheetThere = Not ws Is Nothing
+End Function
+
+' Move nm directly after after_nm, or to the front when after_nm is empty.
+Private Sub MoveSheet(ByVal nm As String, ByVal after_nm As String)
+    If Len(after_nm) = 0 Then
+        ThisWorkbook.Worksheets(nm).Move Before:=ThisWorkbook.Sheets(1)
+    Else
+        ThisWorkbook.Worksheets(nm).Move After:=ThisWorkbook.Worksheets(after_nm)
+    End If
+End Sub

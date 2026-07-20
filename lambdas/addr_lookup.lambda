@@ -1,56 +1,77 @@
 === SIGNATURE ===
-addr_lookup(arr, address)
+addr_lookup(arr, addr_or_value, [rows_n], [cols_n])
 
 === COMMENT ===
-Non-volatile INDIRECT: value(s) at addr_ad within rng. addr_ad may be a numeric address, an A1 string, a range string (e.g. B2:D4), or an array of these. Out-of-bounds or no overlap returns "".
+Non-volatile INDIRECT, both ways. Given an address, A1 range, or array of addresses, returns the value(s) at it inside arr. Given a plain value, returns the numeric address of its first occurrence (row-major). [rows_n]/[cols_n] grow the block by rows_n-1 rows and cols_n-1 columns. No overlap with arr returns "".
 
 === CODE ===
-=LAMBDA(arr, address,
+=LAMBDA(arr, addr_or_value, [rows_n], [cols_n],
   LET(
-    start_row, ROW(INDEX(arr, 1, 1)),
-    start_col, COLUMN(INDEX(arr, 1, 1)),
-    n_rows, ROWS(arr),
-    n_cols, COLUMNS(arr),
-    get_cell, LAMBDA(one,
-      IFERROR(
+    n_r, IF(ISOMITTED(rows_n), 1, rows_n),
+    n_c, IF(ISOMITTED(cols_n), 1, cols_n),
+    s_row, ROW(INDEX(arr, 1, 1)),
+    s_col, COLUMN(INDEX(arr, 1, 1)),
+    a_rows, ROWS(arr),
+    a_cols, COLUMNS(arr),
+    many, ROWS(addr_or_value) * COLUMNS(addr_or_value) > 1,
+    cell_at, LAMBDA(one, IFERROR(LET(
+      num, num_ad(one),
+      r_off, INT(num / 1000000) - s_row + 1,
+      c_off, MOD(num, 1000000) - s_col + 1,
+      IF(OR(r_off < 1, r_off > a_rows, c_off < 1, c_off > a_cols), "",
+         INDEX(arr, r_off, c_off))), "")),
+    box, IFERROR(z_ad_box(addr_or_value), 0),
+    IF(many, MAP(addr_or_value, cell_at),
+      IF(COUNT(box) < 4,
         LET(
-          num, num_ad(one),
-          abs_row, INT(num / 1000000),
-          abs_col, MOD(num, 1000000),
-          rel_row, abs_row - start_row + 1,
-          rel_col, abs_col - start_col + 1,
-          IF(OR(rel_row < 1, rel_row > n_rows, rel_col < 1, rel_col > n_cols), "", INDEX(arr, rel_row, rel_col))
-        ), "")),
-    get_rect, LAMBDA(range_txt,
-      IFERROR(
+          hit, IFERROR(XMATCH(addr_or_value, TOROW(arr), 0), 0),
+          row_i, INT((hit - 1) / a_cols) + 1,
+          IF(hit = 0, "",
+             1000000 * (s_row + row_i - 1) + s_col + hit - (row_i - 1) * a_cols - 1)),
         LET(
-          parts, TEXTSPLIT(UPPER(SUBSTITUTE(range_txt, "$", "")), ":"),
-          first_num, num_ad(INDEX(parts, 1)),
-          last_num, num_ad(INDEX(parts, 2)),
-          f_r, INT(first_num / 1000000), f_c, MOD(first_num, 1000000),
-          l_r, INT(last_num / 1000000), l_c, MOD(last_num, 1000000),
-          i_top, MAX(start_row, MIN(f_r, l_r)),
-          i_bot, MIN(start_row + n_rows - 1, MAX(f_r, l_r)),
-          i_left, MAX(start_col, MIN(f_c, l_c)),
-          i_right, MIN(start_col + n_cols - 1, MAX(f_c, l_c)),
-          IF(OR(i_top > i_bot, i_left > i_right), "",
-            TAKE(DROP(arr, i_top - start_row, i_left - start_col), i_bot - i_top + 1, i_right - i_left + 1))
-        ), "")),
-    IF(AND(ROWS(address) = 1, COLUMNS(address) = 1),
-      IF(AND(ISTEXT(address), ISNUMBER(SEARCH(":", address))), get_rect(address), get_cell(address)),
-      MAP(address, get_cell))
+          top, INDEX(box, 1),
+          lft, INDEX(box, 2),
+          bot, INDEX(box, 3) + n_r - 1,
+          rgt, INDEX(box, 4) + n_c - 1,
+          i_top, MAX(s_row, top),
+          i_lft, MAX(s_col, lft),
+          i_bot, MIN(s_row + a_rows - 1, bot),
+          i_rgt, MIN(s_col + a_cols - 1, rgt),
+          IF(OR(i_top > i_bot, i_lft > i_rgt), "",
+            IF(AND(top = INDEX(box, 3), lft = INDEX(box, 4), n_r = 1, n_c = 1),
+               INDEX(arr, i_top - s_row + 1, i_lft - s_col + 1),
+               TAKE(DROP(arr, i_top - s_row, i_lft - s_col),
+                    i_bot - i_top + 1, i_rgt - i_lft + 1))))))
   )
 )
 
 === DESCRIPTION ===
-Non-volatile alternative to INDIRECT: returns the value(s) at one or more addresses inside a range.
+Non-volatile alternative to INDIRECT, and its inverse: address to value, or value to address.
+
+Which way it goes depends on what you pass as addr_or_value, decided by z_is_ad:
+
+  a valid address or range -> returns the value(s) there (lookup)
+  anything else            -> returns the numeric address of the first match (reverse lookup)
+
+arr does not have to start at A1. Addresses are absolute sheet coordinates and are resolved against arr's own top-left corner, so a lookup into B2:Z10 uses the same "C3" you would type on the sheet.
+
+Reverse lookup scans row-major (left to right, then down) and returns the first match as a numeric address (1e6*row+col); pass it to str_ad for an A1 string. Matching follows Excel's usual rules, so text comparison is case-insensitive.
+
+[rows_n] and [cols_n] grow the block, adding rows_n-1 rows and cols_n-1 columns to whatever the address or range already covers. The result is a scalar only when the address is a single cell and both are 1; otherwise it is an array. Growth happens before clipping, so a block that runs off the edge of arr is trimmed to the overlap, exactly like a partially overlapping range.
 
 Arguments:
-  rng     - source range to read from.
-  addr_ad - a numeric address, an A1 string ("C2"), a range string ("B2:D4"), or an array of addresses (coerced with num_ad).
+  arr           - source range to read from.
+  addr_or_value - a numeric address, an A1 string ("C3"), an A1 range ("B2:D4"), an array of addresses, or a value to search for.
+  [rows_n]      - total rows to return, default 1. Adds rows_n-1 rows.
+  [cols_n]      - total columns to return, default 1. Adds cols_n-1 columns.
 
 Returns:
-  The value at the address. A range string returns the overlapping rectangle; an array returns an array of values. "" when a cell is out of bounds or the range does not overlap.
+  The value at a single address, the rectangle covered by a range, an array of values for an array of addresses, or the numeric address of a searched-for value. "" when nothing overlaps arr, or when a searched-for value is not found.
+
+  An array of addresses is looked up cell by cell and ignores rows_n/cols_n, since each element already stands for one cell.
 
 Example:
-  addr_lookup(Sheet1!B2:D4, "C2") ; addr_lookup(grid, 3000004)
+  addr_lookup(B2:Z10, "C3")           ->  the value at C3
+  addr_lookup(B2:Z10, "C3", 5, 1)     ->  C3:C7
+  addr_lookup(B2:Z10, "C3:D4", 5, 1)  ->  C3:D8
+  addr_lookup(B2:Z10, 50)             ->  numeric address of the first 50

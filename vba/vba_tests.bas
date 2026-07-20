@@ -82,6 +82,7 @@ Public Sub run_vba_tests()
     RunGuarded "find_yellow"
     RunGuarded "get_return_column_number"
     RunGuarded "make_level_data_table"
+    RunGuarded "is_lambda_test_sheet"
 
     write_results
     write_group_blocks        ' per-group Case/Expected/Actual/Result on each sheet
@@ -122,6 +123,7 @@ Private Sub RunGuarded(ByVal which As String)
         Case "find_yellow": test_find_yellow
         Case "get_return_column_number": test_get_return_column_number
         Case "make_level_data_table": test_make_level_data_table
+        Case "is_lambda_test_sheet": test_is_lambda_test_sheet
     End Select
     Exit Sub
 Failed:
@@ -659,6 +661,22 @@ Private Sub test_get_return_column_number()
     chk "formula with <2 colons -> 0", "0", GetReturnColumnNumber(ws, 2)
 
     ws.Range("E1").Value = "GetReturnColumnNumber: C1 has a realistic XLOOKUP formula; C2 has too few colons"
+End Sub
+
+Private Sub test_is_lambda_test_sheet()
+    grp "is_lambda_test_sheet"
+    ' Pure name predicate - no fixture sheet needed.
+    chkTrue "a lambda sheet is one", is_lambda_test_sheet("addr_lookup")
+    chkTrue "Prep is not", Not is_lambda_test_sheet("Prep")
+    chkTrue "Lamb is not", Not is_lambda_test_sheet("Lamb")
+    chkTrue "lambda_tests is not", Not is_lambda_test_sheet("lambda_tests")
+    ' vba_tests and the zz_ fixtures were the bug: they used to be treated as
+    ' lambda sheets, so link_test_headers wrote header lookups over them.
+    chkTrue "vba_tests is not", Not is_lambda_test_sheet("vba_tests")
+    chkTrue "zz_ fixture is not", Not is_lambda_test_sheet("zz_lastused")
+    chkTrue "zz_ match is case-insensitive", Not is_lambda_test_sheet("ZZ_Color")
+    ' A name merely starting with z is still a real lambda sheet.
+    chkTrue "z_ helper name is one", is_lambda_test_sheet("z_route_worker")
 End Sub
 
 Private Sub test_make_level_data_table()
