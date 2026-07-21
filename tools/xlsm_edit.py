@@ -138,6 +138,27 @@ def _duplicate_sheets(names, data, infos, duplicates):
     next_sheet_id = max(int(m) for m in re.findall(r'<sheet[^>]*sheetId="(\d+)"', wb)) + 1
     next_rid = max(int(m) for m in re.findall(r'Id="rId(\d+)"', rels)) + 1
 
+    # VBA sheet code names must be unique across the workbook. A byte copy would
+    # duplicate the source's <sheetPr codeName="..."> and Excel repairs the file
+    # on open ("Removed Records"). Collect the used names so each copy gets a
+    # fresh one.
+    used_codes = set()
+    for n in names:
+        if re.match(r"xl/worksheets/sheet\d+\.xml$", n):
+            cm = re.search(r'<sheetPr[^>]*\bcodeName="([^"]+)"', data[n].decode("utf-8"))
+            if cm:
+                used_codes.add(cm.group(1))
+    code_ctr = [max((int(m.group(1)) for c in used_codes
+                     for m in [re.fullmatch(r"Sheet(\d+)", c)] if m), default=0)]
+
+    def _fresh_code():
+        while True:
+            code_ctr[0] += 1
+            cand = f"Sheet{code_ctr[0]}"
+            if cand not in used_codes:
+                used_codes.add(cand)
+                return cand
+
     new_parts = set()
     for src, new in duplicates:
         if src not in part_of:
@@ -153,9 +174,14 @@ def _duplicate_sheets(names, data, infos, duplicates):
         new_part = f"xl/worksheets/sheet{next_part}.xml"
         rid = f"rId{next_rid}"
         # Byte copy of the source worksheet, minus any selected/active markers so
-        # the copy does not fight the original for the active-tab slot.
+        # the copy does not fight the original for the active-tab slot, and with a
+        # fresh unique VBA code name so it does not collide with the source's.
         body = data[src_part].decode("utf-8")
         body = body.replace(' tabSelected="1"', "")
+        src_code = re.search(r'<sheetPr[^>]*\bcodeName="([^"]+)"', body)
+        if src_code:
+            body = body.replace(f'codeName="{src_code.group(1)}"',
+                                f'codeName="{_fresh_code()}"', 1)
         data[new_part] = body.encode("utf-8")
         infos[new_part] = None            # signal: synthesize a ZipInfo on write
         names.append(new_part)
