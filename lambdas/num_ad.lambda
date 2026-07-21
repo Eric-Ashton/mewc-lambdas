@@ -14,7 +14,7 @@ Convert any address or range to a numeric address (1e6*row+col) or an array of t
         has_colon, AND(ISTEXT(ad_or_rng), ISNUMBER(SEARCH(":", ad_or_rng))),
         box, IFERROR(z_ad_box(ad_or_rng), 0),
         IF(AND(has_colon, COUNT(box) = 4),
-          LET(top, INDEX(box, 1), lft, INDEX(box, 2), bot, INDEX(box, 3), rgt, INDEX(box, 4),
+          LET(top, SUM(INDEX(box, 1)), lft, SUM(INDEX(box, 2)), bot, SUM(INDEX(box, 3)), rgt, SUM(INDEX(box, 4)),
               MAKEARRAY(bot - top + 1, rgt - lft + 1, LAMBDA(dr, dc, 1000000 * (top + dr - 1) + (lft + dc - 1)))),
           to_num_1(ad_or_rng))))
   )
