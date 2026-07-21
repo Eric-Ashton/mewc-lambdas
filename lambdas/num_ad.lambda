@@ -1,41 +1,48 @@
 === SIGNATURE ===
-num_ad(arr)
+num_ad(ad_or_rng)
 
 === COMMENT ===
-Converts each valid A1 string address in arr to a numeric address (1e6*row+col). Anything that is not a string address - values already numeric, ranges, or junk - passes through unchanged. Element-wise; same shape as arr.
+Convert any address or range to a numeric address (1e6*row+col) or an array of them. A string address becomes its number; a range (A1 or numeric) expands to an array of numeric addresses top-left to bottom-right; empty becomes ""; anything else passes through. Element-wise over an array (ranges inside an array pass through).
 
 === CODE ===
-=LAMBDA(arr,
+=LAMBDA(ad_or_rng,
   LET(
-    to_num, LAMBDA(one,
-      IFERROR(
-        IF(NOT(ISTEXT(one)), one,
-          LET(
-            s, UPPER(SUBSTITUTE(IFERROR(TEXTAFTER(one, "!"), one), "$", "")),
-            IF(NOT(REGEXTEST(s, "^[A-Z]{1,3}[0-9]+$")), one,
-              LET(
-                letters, REGEXEXTRACT(s, "[A-Z]+"),
-                row_num, VALUE(REGEXEXTRACT(s, "[0-9]+")),
-                nlet, LEN(letters),
-                seq, SEQUENCE(nlet),
-                col, SUM((CODE(MID(letters, seq, 1)) - 64) * 26 ^ (nlet - seq)),
-                IF(OR(col > 16384, row_num > 1048576), one, 1000000 * row_num + col)))
-          )),
-        one)),
-    IF(ROWS(arr) * COLUMNS(arr) = 1, to_num(arr), MAP(arr, to_num))
+    to_num_1, LAMBDA(one, IF(one = "", "", IFERROR(z_a1n(one), one))),
+    IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1,
+      MAP(ad_or_rng, to_num_1),
+      LET(
+        has_colon, AND(ISTEXT(ad_or_rng), ISNUMBER(SEARCH(":", ad_or_rng))),
+        box, IFERROR(z_ad_box(ad_or_rng), 0),
+        IF(AND(has_colon, COUNT(box) = 4),
+          LET(top, INDEX(box, 1), lft, INDEX(box, 2), bot, INDEX(box, 3), rgt, INDEX(box, 4),
+              MAKEARRAY(bot - top + 1, rgt - lft + 1, LAMBDA(dr, dc, 1000000 * (top + dr - 1) + (lft + dc - 1)))),
+          to_num_1(ad_or_rng))))
   )
 )
 
 === DESCRIPTION ===
-Converts A1 string addresses to numeric addresses (1e6 * row + col), element-wise.
+Convert any address or range to numeric form - the mirror of str_ad, and the standard way to coerce mixed address input to numbers.
 
-Only a valid A1 string address is converted; everything else - numbers (already numeric), non-address text, range strings, errors - is returned unchanged. Safe to run at a boundary to coerce mixed inputs to numeric, and idempotent.
+Behaviour by input:
+  valid string address ("D3")            -> the numeric address (3000004)
+  valid A1 range ("A1:B4")               -> an array of numeric addresses, top-left first, bottom-right last
+  valid numeric range ("1000001:4000002")-> the same array
+  empty                                  -> "" (never coerced to 0)
+  any other single value                 -> passed through unchanged
+  an array                               -> element-wise; string addresses convert, everything else (including ranges) passes through
+
+A single string/numeric address returns a scalar, so the many callers that convert one address still get a plain number. Ranges only expand when passed as a single value; inside an array they pass through, because expanding one element into many would need a ragged result Excel cannot make.
+
+Empty cells become "" rather than 0 - fake coerced zeros corrupt later aggregates. Parsing is shared with str_ad and the rest of the library via z_a1n / z_ad_box.
 
 Arguments:
-  arr - a value or array. Strings are tested after stripping $ and any Sheet! prefix and upper-casing; must match ^[A-Z]{1,3}[0-9]+$ with col <= 16384 and row <= 1048576.
+  ad_or_rng - a numeric address, A1 string, A1 range, numeric range, or an array of these.
 
 Returns:
-  Same shape as arr, each valid string address replaced by its numeric address; all else unchanged. A single cell returns a scalar.
+  A number for a single address, an array of numbers for a single range, "" for empty, the input unchanged otherwise; element-wise over an array.
 
 Example:
-  num_ad("D3") -> 3000004 ; num_ad(3000004) -> 3000004 ; num_ad("hi") -> "hi"
+  num_ad("D3")                ->  3000004
+  num_ad("A1:B2")             ->  {1000001, 1000002; 2000001, 2000002}
+  num_ad(3000004)             ->  3000004
+  num_ad("hi")                ->  "hi"

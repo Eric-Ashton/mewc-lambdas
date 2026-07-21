@@ -1,0 +1,33 @@
+=== SIGNATURE ===
+z_numval(val)
+
+=== COMMENT ===
+Helper: validate val as a numeric address. Returns the number when val (a number, or a digit string like "1000001") is a positive integer with row in 1..1048576 and column in 1..16384; otherwise #VALUE!.
+
+=== CODE ===
+=LAMBDA(val,
+  IFERROR(
+    LET(num, val * 1,
+      IF(AND(num = INT(num), num > 0,
+             MOD(num, 1000000) >= 1, MOD(num, 1000000) <= 16384,
+             INT(num / 1000000) >= 1, INT(num / 1000000) <= 1048576),
+         num, #VALUE!)),
+    #VALUE!)
+)
+
+=== DESCRIPTION ===
+Private leaf helper - the single definition of "is this number a valid numeric address", using the exact rule: a positive integer where MOD(x, 1e6) is 1..16384 (the column) and INT(x / 1e6) is 1..1048576 (the row).
+
+Accepts either a real number or a digit string ("1000001"), because the halves of a numeric range ("1000001:4000002") arrive as strings after splitting on ":". Coercion is a bare val * 1, so genuine text ("A1", "hi") errors out to #VALUE!.
+
+Arguments:
+  val - a number or a numeric string to validate.
+
+Returns:
+  The number itself when it is a valid numeric address, else #VALUE!.
+
+Example:
+  z_numval(3000004)    ->  3000004
+  z_numval("1000001")  ->  1000001
+  z_numval(42)         ->  #VALUE!
+  z_numval("A1")       ->  #VALUE!

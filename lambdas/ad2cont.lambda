@@ -1,0 +1,58 @@
+=== SIGNATURE ===
+ad2cont(ad_or_rng, arr)
+
+=== COMMENT ===
+Non-volatile INDIRECT: the contents of arr at an address or range. A single address gives one value; a range gives the array of contents where it overlaps arr; an array of addresses gives their contents element-wise. Empty cells return "" (never 0). No overlap, or a non-address, returns "".
+
+=== CODE ===
+=LAMBDA(ad_or_rng, arr,
+  LET(
+    s_row, ROW(INDEX(arr, 1, 1)),
+    s_col, COLUMN(INDEX(arr, 1, 1)),
+    a_rows, ROWS(arr),
+    a_cols, COLUMNS(arr),
+    cell_at, LAMBDA(one, IFERROR(
+      LET(box, z_ad_box(one),
+        IF(OR(INDEX(box, 1) <> INDEX(box, 3), INDEX(box, 2) <> INDEX(box, 4)), "",
+          LET(rel_r, INDEX(box, 1) - s_row + 1, rel_c, INDEX(box, 2) - s_col + 1,
+            IF(OR(rel_r < 1, rel_r > a_rows, rel_c < 1, rel_c > a_cols), "",
+              LET(cval, INDEX(arr, rel_r, rel_c), IF(cval = "", "", cval)))))), "")),
+    box0, IFERROR(z_ad_box(ad_or_rng), 0),
+    is_rng, AND(COUNT(box0) = 4, OR(INDEX(box0, 1) <> INDEX(box0, 3), INDEX(box0, 2) <> INDEX(box0, 4))),
+    IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1, MAP(ad_or_rng, cell_at),
+      IF(is_rng,
+        LET(top, INDEX(box0, 1), lft, INDEX(box0, 2), bot, INDEX(box0, 3), rgt, INDEX(box0, 4),
+            i_top, MAX(s_row, top), i_lft, MAX(s_col, lft),
+            i_bot, MIN(s_row + a_rows - 1, bot), i_rgt, MIN(s_col + a_cols - 1, rgt),
+            IF(OR(i_top > i_bot, i_lft > i_rgt), "",
+              LET(block, TAKE(DROP(arr, i_top - s_row, i_lft - s_col), i_bot - i_top + 1, i_rgt - i_lft + 1),
+                  IF(block = "", "", block)))),
+        cell_at(ad_or_rng)))
+  )
+)
+
+=== DESCRIPTION ===
+Non-volatile alternative to INDIRECT: reads values out of arr by address. The lookup half of the old addr_lookup, split off so the direction is never ambiguous.
+
+arr need not start at A1, and may be on another sheet (e.g. data!A4:F5). Addresses are absolute sheet coordinates, resolved against arr's own top-left corner, so the "C3" you would type on the sheet is the "C3" this reads.
+
+Behaviour by input:
+  single address inside arr      -> the value there
+  range overlapping arr          -> an array of the overlapping contents
+  address/range not touching arr -> ""
+  any other single value         -> ""
+  an array of addresses          -> element-wise contents; any element that is not a single address (a range, junk) -> ""
+
+Empty cells come back as "" rather than 0 - fake coerced zeros corrupt later aggregates. Address parsing is shared with the library via z_ad_box.
+
+Arguments:
+  ad_or_rng - a numeric address, A1 string, A1 range, numeric range, or an array of single addresses.
+  arr       - the source range to read from.
+
+Returns:
+  A single value, a rectangle of values, or an element-wise array of values; "" wherever there is no valid, overlapping address.
+
+Example:
+  ad2cont("C3", B2:Z10)      ->  the value at C3
+  ad2cont("C3:D4", B2:Z10)   ->  the 2x2 block C3:D4
+  ad2cont(3000004, grid)     ->  the value at C3... (numeric form)

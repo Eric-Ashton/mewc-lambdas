@@ -32,7 +32,7 @@ Walks from start_ad (numeric or A1) in a straight arrow direction across rng unt
         trip_rows, start_row + steps * row_delta,
         trip_cols, start_col + steps * col_delta,
         num_list, 1000000 * trip_rows + trip_cols,
-        val_list, MAP(num_list, LAMBDA(a, LET(v, addr_lookup(rng, a), IF(OR(v = "", ISBLANK(v)), "", v)))),
+        val_list, MAP(num_list, LAMBDA(a, LET(v, ad2cont(a, rng), IF(OR(v = "", ISBLANK(v)), "", v)))),
         use_stop, NOT(ISOMITTED(stopper)),
         stop_pos, IF(use_stop, XMATCH(stopper, val_list, 0), NA()),
         keep_rows, IF(use_stop, IF(ISERROR(stop_pos), max_steps + 1, stop_pos), max_steps + 1),

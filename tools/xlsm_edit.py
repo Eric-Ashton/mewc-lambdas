@@ -98,10 +98,8 @@ def read_grid(path, sheet, max_row=30, max_col=20):
 # --------------------------------------------------------------------------- #
 # zip / sheet-name plumbing
 # --------------------------------------------------------------------------- #
-def _sheet_part_map(z: zipfile.ZipFile):
-    """{sheet display name -> 'xl/worksheets/sheetN.xml'}."""
-    wb = z.read("xl/workbook.xml").decode("utf-8", "replace")
-    rels = z.read("xl/_rels/workbook.xml.rels").decode("utf-8", "replace")
+def _sheet_part_map_xml(wb: str, rels: str):
+    """{sheet display name -> 'xl/worksheets/sheetN.xml'} from raw part text."""
     relmap = dict(re.findall(r'<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"', rels))
     out = {}
     for nm, rid in re.findall(r'<sheet[^>]*name="([^"]+)"[^>]*r:id="([^"]+)"', wb):
@@ -110,6 +108,78 @@ def _sheet_part_map(z: zipfile.ZipFile):
             target = "xl/" + target if not target.startswith("xl/") else target
         out[_xml_unescape(nm)] = target
     return out
+
+
+def _sheet_part_map(z: zipfile.ZipFile):
+    """{sheet display name -> 'xl/worksheets/sheetN.xml'}."""
+    return _sheet_part_map_xml(
+        z.read("xl/workbook.xml").decode("utf-8", "replace"),
+        z.read("xl/_rels/workbook.xml.rels").decode("utf-8", "replace"))
+
+
+def _duplicate_sheets(names, data, infos, duplicates):
+    """Append copies of existing sheets. duplicates: [(src name, new name)].
+
+    A duplicated sheet is a byte copy of the source worksheet part, registered
+    with fresh sheetId / r:id / part name in workbook.xml, its rels, and
+    [Content_Types].xml. Copies the CELL content only: a source with its own
+    rels (drawings, form controls - e.g. the Prep sheet) is rejected, since
+    those referenced parts are not copied. Test sheets have no such rels.
+
+    Mutates data/names/infos in place and returns the set of new part names.
+    """
+    WS_CT = "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"
+    wb = data["xl/workbook.xml"].decode("utf-8")
+    rels = data["xl/_rels/workbook.xml.rels"].decode("utf-8")
+    ct = data["[Content_Types].xml"].decode("utf-8")
+    part_of = _sheet_part_map_xml(wb, rels)
+
+    next_part = max(int(m) for m in re.findall(r"xl/worksheets/sheet(\d+)\.xml", " ".join(names))) + 1
+    next_sheet_id = max(int(m) for m in re.findall(r'<sheet[^>]*sheetId="(\d+)"', wb)) + 1
+    next_rid = max(int(m) for m in re.findall(r'Id="rId(\d+)"', rels)) + 1
+
+    new_parts = set()
+    for src, new in duplicates:
+        if src not in part_of:
+            raise KeyError(f"duplicate source sheet not found: {src!r}")
+        if new in part_of:
+            raise KeyError(f"duplicate target name already exists: {new!r}")
+        src_part = part_of[src]
+        src_rels = f"xl/worksheets/_rels/{src_part.split('/')[-1]}.rels"
+        if src_rels in data:
+            raise ValueError(f"cannot duplicate {src!r}: it has its own rels "
+                             f"({src_rels}); referenced parts would be lost")
+
+        new_part = f"xl/worksheets/sheet{next_part}.xml"
+        rid = f"rId{next_rid}"
+        # Byte copy of the source worksheet, minus any selected/active markers so
+        # the copy does not fight the original for the active-tab slot.
+        body = data[src_part].decode("utf-8")
+        body = body.replace(' tabSelected="1"', "")
+        data[new_part] = body.encode("utf-8")
+        infos[new_part] = None            # signal: synthesize a ZipInfo on write
+        names.append(new_part)
+
+        ct = ct.replace("</Types>",
+                        f'<Override PartName="/{new_part}" ContentType="{WS_CT}"/></Types>')
+        rels = rels.replace("</Relationships>",
+                            f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/'
+                            f'officeDocument/2006/relationships/worksheet" '
+                            f'Target="worksheets/sheet{next_part}.xml"/></Relationships>')
+        wb = re.sub(r"(</sheets>)",
+                    f'<sheet name="{_xml_escape_attr(new)}" sheetId="{next_sheet_id}" '
+                    f'r:id="{rid}"/>\\1', wb, count=1)
+
+        part_of[new] = new_part
+        new_parts.add(new_part)
+        next_part += 1
+        next_sheet_id += 1
+        next_rid += 1
+
+    data["xl/workbook.xml"] = wb.encode("utf-8")
+    data["xl/_rels/workbook.xml.rels"] = rels.encode("utf-8")
+    data["[Content_Types].xml"] = ct.encode("utf-8")
+    return new_parts
 
 
 def _xml_unescape(s: str) -> str:
@@ -374,45 +444,54 @@ def _force_full_recalc(wb_xml):
 # --------------------------------------------------------------------------- #
 # main entry point
 # --------------------------------------------------------------------------- #
-def apply_edits(src, out, edits, renames=None, sheet_order=None):
+def apply_edits(src, out, edits, renames=None, sheet_order=None, duplicates=None):
     """Write `out` = `src` with the given cell edits applied via XML surgery.
 
     edits: iterable of dicts {sheet, cell, value?|formula?, style?}. `src` is
     never modified. Returns the set of sheet part-names that were touched.
 
-    renames: optional {old sheet name -> new sheet name}, applied to
-    xl/workbook.xml only. Sheet names in `edits` always refer to the names as
-    they exist in `src`, so a rename and edits to the renamed sheet can be
-    done in a single call. See _rename_sheets for the safety caveat.
+    Operations are applied in a fixed order so names resolve predictably:
+      1. duplicates: [(src name, new name)] - append copies of existing sheets.
+      2. renames: {old name -> new name} - rename existing sheets in place.
+      3. edits - reference sheets by their FINAL name (post-duplicate/rename).
+      4. sheet_order: full tab order, in final names.
 
-    sheet_order: optional list of every sheet name in the desired tab order,
-    given in POST-rename names since it is applied after `renames`.
+    renames only changes the display name (see _rename_sheets for the caveat).
     """
     by_sheet = {}
     for e in edits:
         by_sheet.setdefault(e["sheet"], []).append(e)
 
     with zipfile.ZipFile(src) as z:
-        names = z.namelist()
-        part_of = _sheet_part_map(z)
-        unknown = [s for s in by_sheet if s not in part_of]
-        if unknown:
-            raise KeyError(f"unknown sheet(s): {unknown}. known: {sorted(part_of)}")
-        touched_parts = {part_of[s] for s in by_sheet}
+        names = list(z.namelist())
         data = {n: z.read(n) for n in names}
         infos = {n: z.getinfo(n) for n in names}
 
-    # edit each target sheet's XML
+    # 1. duplicate sheets (updates workbook.xml, rels, [Content_Types].xml)
+    if duplicates:
+        _duplicate_sheets(names, data, infos, duplicates)
+
+    # 2. rename existing sheets
+    wbxml = data["xl/workbook.xml"].decode("utf-8")
+    if renames:
+        wbxml = _rename_sheets(wbxml, renames)
+    data["xl/workbook.xml"] = wbxml.encode("utf-8")
+
+    # 3. resolve edits against the FINAL names, then apply
+    part_of = _sheet_part_map_xml(
+        wbxml, data["xl/_rels/workbook.xml.rels"].decode("utf-8"))
+    unknown = [s for s in by_sheet if s not in part_of]
+    if unknown:
+        raise KeyError(f"unknown sheet(s): {unknown}. known: {sorted(part_of)}")
+    touched_parts = {part_of[s] for s in by_sheet}
     for sheet, sheet_edits in by_sheet.items():
         part = part_of[sheet]
         xml = data[part].decode("utf-8")
         xml = _apply_sheet_edits(xml, sheet_edits)
         data[part] = xml.encode("utf-8")
 
-    # force recalc since we dropped cached formula values
+    # 4. reorder tabs, force recalc (cached formula values were dropped)
     wbxml = data["xl/workbook.xml"].decode("utf-8")
-    if renames:
-        wbxml = _rename_sheets(wbxml, renames)
     if sheet_order:
         wbxml = _reorder_sheets(wbxml, sheet_order)
     data["xl/workbook.xml"] = _force_full_recalc(wbxml).encode("utf-8")
@@ -422,35 +501,42 @@ def apply_edits(src, out, edits, renames=None, sheet_order=None):
     # rewrite zip, preserving order + compression; every non-edited part is byte-identical
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zo:
         for n in names:
-            zi = zipfile.ZipInfo(n, date_time=infos[n].date_time)
-            zi.compress_type = infos[n].compress_type
-            zi.external_attr = infos[n].external_attr
-            zi.internal_attr = infos[n].internal_attr
-            zi.create_system = infos[n].create_system
+            info = infos.get(n)
+            if info is None:                       # synthesized (duplicated) part
+                zi = zipfile.ZipInfo(n, date_time=(1980, 1, 1, 0, 0, 0))
+                zi.compress_type = zipfile.ZIP_DEFLATED
+            else:
+                zi = zipfile.ZipInfo(n, date_time=info.date_time)
+                zi.compress_type = info.compress_type
+                zi.external_attr = info.external_attr
+                zi.internal_attr = info.internal_attr
+                zi.create_system = info.create_system
             zo.writestr(zi, data[n])
     return touched_parts
 
 
-def validate(src, out, edits, renames=None):
+def validate(src, out, edits, duplicates=None, sheet_order=None):
     """Structural check: non-edited parts byte-identical, edits readable back.
 
-    `renames` must match what was passed to apply_edits: sheet names in `edits`
-    are given as they exist in `src`, so they are mapped forward before the
-    edited values are read back out of `out`.
+    Matches the apply_edits contract: `edits` reference FINAL sheet names (after
+    any duplicate/rename), so values are read back from `out` by those names.
+
+    Legitimately-changed parts are excused: the edited sheet parts, the three
+    structural parts (workbook.xml, [Content_Types].xml, workbook rels), and the
+    dropped calcChain. When `duplicates` is given, newly-added worksheet parts
+    are expected rather than flagged.
     """
     import openpyxl
-
-    renames = renames or {}
 
     by_sheet = {}
     for e in edits:
         by_sheet.setdefault(e["sheet"], []).append(e)
 
     zs, zo = zipfile.ZipFile(src), zipfile.ZipFile(out)
-    part_of = _sheet_part_map(zs)
-    # apply_edits deliberately drops calcChain.xml and unregisters it, so those
-    # three parts are expected to differ - see _drop_calc_chain.
-    touched = ({part_of[s] for s in by_sheet}
+    part_of_out = _sheet_part_map_xml(
+        zo.read("xl/workbook.xml").decode("utf-8"),
+        zo.read("xl/_rels/workbook.xml.rels").decode("utf-8"))
+    touched = ({part_of_out[s] for s in by_sheet if s in part_of_out}
                | {"xl/workbook.xml", "[Content_Types].xml",
                   "xl/_rels/workbook.xml.rels"})
 
@@ -461,7 +547,12 @@ def validate(src, out, edits, renames=None):
     lost = sn - on
     report["calc_chain_dropped"] = CALC_CHAIN in lost
     report["parts_lost"] = sorted(lost - {CALC_CHAIN})
-    report["parts_added"] = sorted(on - sn)
+
+    added = on - sn
+    # New worksheet parts are expected when duplicating; anything else added is not.
+    expected_added = {n for n in added if re.match(r"xl/worksheets/sheet\d+\.xml$", n)} \
+        if duplicates else set()
+    report["parts_added"] = sorted(added - expected_added)
     if report["parts_lost"] or report["parts_added"]:
         report["ok"] = False
 
@@ -472,18 +563,17 @@ def validate(src, out, edits, renames=None):
             report["unexpected_changes"].append(n)
             report["ok"] = False
 
-    # read edited values back
+    # read edited values back, by their final names
     wb = openpyxl.load_workbook(out, data_only=False)
     for e in edits:
-        sheet_now = renames.get(e["sheet"], e["sheet"])
-        ws = wb[sheet_now]
+        ws = wb[e["sheet"]]
         got = ws[e["cell"].upper()].value
         want = ("=" + e["formula"].lstrip("=")) if "formula" in e else e.get("value")
         ok = (str(got) == str(want)) if want is not None else (got is None)
         if ok:
             report["edits_verified"] += 1
         else:
-            report["edits_failed"].append({"cell": f'{sheet_now}!{e["cell"]}',
+            report["edits_failed"].append({"cell": f'{e["sheet"]}!{e["cell"]}',
                                            "want": want, "got": got})
             report["ok"] = False
     wb.close()
