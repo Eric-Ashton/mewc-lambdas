@@ -2,7 +2,7 @@
 is_unique(arr)
 
 === COMMENT ===
-Checks whether all values in the array are unique; returns TRUE/FALSE. Case-insensitive, so {"A","a"} is not unique. Combine with str2arr to test character by character.
+Checks whether all values in the array are unique; returns TRUE/FALSE. Case-insensitive, so {"A","a"} is not unique. Combine with str_to_arr to test character by character.
 
 === CODE ===
 =LAMBDA(Arr, LET(
@@ -24,4 +24,4 @@ Returns:
   TRUE if all values are unique, FALSE otherwise. Comparison is case-insensitive ({"A","a"} is not unique).
 
 Notes:
-  Combine with str2arr to check a string character by character.
+  Combine with str_to_arr to check a string character by character.

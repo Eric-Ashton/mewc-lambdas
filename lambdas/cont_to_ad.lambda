@@ -1,0 +1,50 @@
+=== SIGNATURE ===
+cont_to_ad(cont, arr, [str])
+
+=== COMMENT ===
+Reverse lookup: find a value in arr and return its address. Numeric address by default, A1 string when str = 1. A value appearing several times returns all its addresses in row-major order joined by ";". A value not found returns "". An array of values is evaluated element-wise.
+
+=== CODE ===
+=LAMBDA(cont, arr, [str],
+  LET(
+    want_str, IF(ISOMITTED(str), 0, str),
+    s_row, ROW(INDEX(arr, 1, 1)),
+    s_col, COLUMN(INDEX(arr, 1, 1)),
+    a_rows, ROWS(arr),
+    a_cols, COLUMNS(arr),
+    ncell, a_rows * a_cols,
+    flat, TOROW(arr),
+    idx, SEQUENCE(1, ncell),
+    abs_row, s_row + INT((idx - 1) / a_cols),
+    abs_col, s_col + MOD(idx - 1, a_cols),
+    addr, IF(want_str, ADDRESS(abs_row, abs_col, 4), 1000000 * abs_row + abs_col),
+    one_val, LAMBDA(target,
+      LET(hit, flat = target, hit_count, SUM(--hit),
+        IF(hit_count = 0, "",
+          IF(hit_count = 1, INDEX(FILTER(addr, hit), 1),
+            TEXTJOIN(";", TRUE, FILTER(addr, hit)))))),
+    IF(ROWS(cont) * COLUMNS(cont) > 1, MAP(cont, one_val), one_val(cont))
+  )
+)
+
+=== DESCRIPTION ===
+Reverse lookup: value to address. The other half of the old addr_lookup, split off so the direction is never ambiguous.
+
+arr need not start at A1, and may be on another sheet. Addresses returned are absolute sheet coordinates matching arr's real position. Scanning is row-major (left to right, then down), so the first match is the top-left-most occurrence.
+
+Matching follows Excel's = operator, i.e. the same rules as XMATCH: case-insensitive for text, and type-strict between text and numbers (searching 5 does not match the text "5").
+
+A value found once returns a single address (a number, or an A1 string when str = 1). A value found more than once returns every address in row-major order, joined by ";" into one string ("1000001;2000003" or "A1;C2") - a delimited string rather than a spilled array, so the result stays a single value even inside an array. A value not found returns "".
+
+Arguments:
+  cont  - the value to find, or an array of values.
+  arr   - the range to search.
+  [str] - 0 (default) returns numeric addresses; 1 returns A1 strings.
+
+Returns:
+  The address of the match, a ";"-joined list of addresses for multiple matches, or "" when not found; element-wise over an array of values.
+
+Example:
+  cont_to_ad(50, B2:Z10)        ->  the numeric address of the first 50
+  cont_to_ad(50, B2:Z10, 1)     ->  the A1 address of the first 50
+  cont_to_ad("x", grid)         ->  "1000001;3000004"  (two matches)

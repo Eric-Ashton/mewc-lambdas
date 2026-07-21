@@ -905,3 +905,69 @@ Public Sub clean_function_refs()
         "=BYROW(rng, min) to rebuild a clean reference.", _
         vbInformation, "clean_function_refs"
 End Sub
+
+
+' Delete every defined name whose definition is a LAMBDA. The sync path calls
+' this before re-adding the current lambdas from the Lamb sheet, so a lambda
+' that was renamed or removed does not linger as an orphan (the old per-row
+' delete only removed names that were still in Lamb). Non-lambda names -
+' repo_path, plain named ranges, add-in names such as IQ_* - are left alone,
+' since a blanket clear would break repo_export's repo_path. Returns the count
+' deleted.
+Public Function delete_all_lambda_names(ByVal wb As Workbook) As Long
+    Dim nm As Name, kill As Collection, s As Variant
+    Dim rt As String, removed As Long
+
+    Set kill = New Collection
+    For Each nm In wb.Names
+        rt = ""
+        On Error Resume Next
+        rt = nm.RefersTo            ' broken names can raise; treat as non-lambda
+        On Error GoTo 0
+        If InStr(1, rt, "LAMBDA(", vbTextCompare) > 0 Then
+            kill.Add nm.Name        ' collect first; don't delete mid-iteration
+        End If
+    Next nm
+
+    For Each s In kill
+        On Error Resume Next
+        Err.Clear
+        wb.Names(s).Delete
+        If Err.Number = 0 Then removed = removed + 1
+        On Error GoTo 0
+    Next s
+
+    delete_all_lambda_names = removed
+End Function
+
+
+' One-shot cleanup of Excel's hidden LAMBDA-internal reserved names
+' (_xleta.*, _xlop.*, _xlpm.*) that accumulate from editing lambdas. They are
+' invisible in the Name Manager, show #NAME?, and only bloat the file. Excel-
+' protected names that refuse deletion are skipped. This is NOT part of sync -
+' run it deliberately, and if anything looks wrong afterwards just close
+' without saving.
+Public Sub sweep_name_cruft()
+    Dim nm As Name, kill As Collection, s As Variant, removed As Long
+
+    Set kill = New Collection
+    For Each nm In ThisWorkbook.Names
+        If InStr(1, nm.Name, "_xleta.", vbTextCompare) = 1 _
+        Or InStr(1, nm.Name, "_xlop.", vbTextCompare) = 1 _
+        Or InStr(1, nm.Name, "_xlpm.", vbTextCompare) = 1 Then
+            kill.Add nm.Name
+        End If
+    Next nm
+
+    For Each s In kill
+        On Error Resume Next
+        Err.Clear
+        ThisWorkbook.Names(s).Delete
+        If Err.Number = 0 Then removed = removed + 1
+        On Error GoTo 0
+    Next s
+
+    MsgBox "Removed " & removed & " of " & kill.count & _
+        " hidden reserved name(s) (_xleta. / _xlop. / _xlpm.).", _
+        vbInformation, "sweep_name_cruft"
+End Sub

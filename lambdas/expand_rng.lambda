@@ -1,0 +1,53 @@
+=== SIGNATURE ===
+expand_rng(ad_or_rng, [r_down], [c_right], [r_up], [c_left])
+
+=== COMMENT ===
+Grow an address or range into a bigger rectangle and return it as a range string. Expands r_down rows down, c_right cols right, r_up rows up, c_left cols left (all 0 by default, non-negative integers). Clamps at row 1 / col 1. Output format mirrors the input (A1 or numeric). An array input, or a bad optional, returns #VALUE!.
+
+=== CODE ===
+=LAMBDA(ad_or_rng, [r_down], [c_right], [r_up], [c_left],
+  LET(
+    grow_down, IF(ISOMITTED(r_down), 0, r_down),
+    grow_right, IF(ISOMITTED(c_right), 0, c_right),
+    grow_up, IF(ISOMITTED(r_up), 0, r_up),
+    grow_left, IF(ISOMITTED(c_left), 0, c_left),
+    single, ROWS(ad_or_rng) * COLUMNS(ad_or_rng) = 1,
+    ok_int, LAMBDA(x, IFERROR(AND(ISNUMBER(x), x = INT(x), x >= 0), FALSE)),
+    args_ok, AND(ok_int(grow_down), ok_int(grow_right), ok_int(grow_up), ok_int(grow_left)),
+    box, IFERROR(z_ad_box(ad_or_rng), 0),
+    IF(OR(NOT(single), NOT(args_ok), COUNT(box) <> 4), #VALUE!,
+      LET(
+        top, MAX(1, SUM(INDEX(box, 1)) - grow_up),
+        lft, MAX(1, SUM(INDEX(box, 2)) - grow_left),
+        bot, MIN(1048576, SUM(INDEX(box, 3)) + grow_down),
+        rgt, MIN(16384, SUM(INDEX(box, 4)) + grow_right),
+        num_fmt, OR(ISNUMBER(ad_or_rng), AND(ISTEXT(ad_or_rng), NOT(REGEXTEST(ad_or_rng, "[A-Za-z]")))),
+        corner_tl, IF(num_fmt, 1000000 * top + lft, ADDRESS(top, lft, 4)),
+        corner_br, IF(num_fmt, 1000000 * bot + rgt, ADDRESS(bot, rgt, 4)),
+        corner_tl & ":" & corner_br))
+  )
+)
+
+=== DESCRIPTION ===
+Grow an address or range into a bigger rectangle, working purely on coordinates - it never reads or cares about the cell contents.
+
+Starting from the box of ad_or_rng, it extends the bottom edge down by r_down, the right edge right by c_right, the top edge up by r_up, and the left edge left by c_left. Any edge pushed past the sheet is clamped to row 1 or column 1.
+
+The result is always a range string of the form "top-left:bottom-right", and its format mirrors the input: an A1 input gives an A1 range ("F10:M12"); a numeric input gives a numeric range ("1000001:4000002"). Even a single cell with no expansion comes back as a (degenerate) range string, so downstream callers like ad_to_cont always receive a consistent range form.
+
+ad_or_rng must be a single value of any of the four supported address/range types; an array returns #VALUE!. Each optional must be a non-negative integer, or the result is #VALUE!.
+
+Arguments:
+  ad_or_rng - a single numeric address, A1 string, A1 range, or numeric range.
+  [r_down]  - rows to add below   (default 0).
+  [c_right] - columns to add right (default 0).
+  [r_up]    - rows to add above    (default 0).
+  [c_left]  - columns to add left  (default 0).
+
+Returns:
+  A range string covering the expanded rectangle, in the input's format. #VALUE! for an array input or a negative/non-integer optional.
+
+Example:
+  expand_rng("J10:K11", 1, 2, 0, 4)  ->  "F10:M12"
+  expand_rng("B3", 0, 0, 10, 0)       ->  "B1:B3"
+  expand_rng("B3", 0, 0, 0, 10)       ->  "A3:B3"

@@ -1,5 +1,5 @@
 === SIGNATURE ===
-str2arr(str_or_array, [as_row])
+str_to_arr(str_or_array, [as_row])
 
 === COMMENT ===
 Splits a string into a vertical array (horizontal if as_row=1), keeping multi-char Unicode symbols whole. 1D input splits into the unused axis; 2D concatenates row-major first. Digits become numbers.
@@ -108,4 +108,4 @@ Returns:
   One character per cell, using the \X grapheme pattern so multi-character Unicode symbols stay intact. 1D array input splits into the unused axis; 2D input is concatenated row-major first. Digit characters are returned as numbers.
 
 Example:
-  str2arr("ab1")  ->  {"a";"b";1}
+  str_to_arr("ab1")  ->  {"a";"b";1}

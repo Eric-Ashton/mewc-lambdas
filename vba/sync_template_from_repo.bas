@@ -122,12 +122,10 @@ Private Function do_sync_lambdas(ByVal wb As Workbook) As String
     Next i
 
     ' --- push into the Name Manager (multi-pass so interdependent lambdas resolve) ---
-    Dim i2 As Long
-    For i2 = 1 To n
-        On Error Resume Next
-        wb.names(nms(i2)).Delete
-        On Error GoTo 0
-    Next i2
+    ' Clear every existing lambda name first (not just the ones still present in
+    ' the repo) so a renamed or removed lambda doesn't linger as an orphan.
+    ' repo_path and other non-lambda names are preserved - see the helper.
+    Call delete_all_lambda_names(wb)
 
     Dim added() As Boolean: ReDim added(1 To n)
     Dim pass As Long, progress As Boolean, addedCount As Long

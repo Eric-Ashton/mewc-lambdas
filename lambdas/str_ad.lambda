@@ -1,37 +1,47 @@
 === SIGNATURE ===
-str_ad(arr)
+str_ad(ad_or_rng)
 
 === COMMENT ===
-Converts each valid numeric address (1e6*row+col) in arr to an A1 string. Non-addresses - strings, non-integers, out-of-range numbers - pass through. WARNING: any number in address range becomes an address; only use on known addresses.
+Convert any address or range to an A1 string address or an array of them. A numeric address becomes its A1 string; a range (A1 or numeric) expands to an array of A1 strings top-left to bottom-right; empty becomes ""; anything else passes through. Element-wise over an array (ranges inside an array pass through).
 
 === CODE ===
-=LAMBDA(arr,
+=LAMBDA(ad_or_rng,
   LET(
-    to_str, LAMBDA(one,
-      IFERROR(
-        IF(NOT(ISNUMBER(one)), one,
-          LET(
-            row_num, INT(one / 1000000),
-            col, MOD(one, 1000000),
-            ok, AND(one = INT(one), row_num >= 1, row_num <= 1048576, col >= 1, col <= 16384),
-            IF(ok, ADDRESS(row_num, col, 4), one))),
-        one)),
-    IF(ROWS(arr) * COLUMNS(arr) = 1, to_str(arr), MAP(arr, to_str))
+    to_str_1, LAMBDA(one, IF(one = "", "",
+      IFERROR(LET(num, z_numval(one), ADDRESS(INT(num / 1000000), MOD(num, 1000000), 4)), one))),
+    IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1,
+      MAP(ad_or_rng, to_str_1),
+      LET(
+        has_colon, AND(ISTEXT(ad_or_rng), ISNUMBER(SEARCH(":", ad_or_rng))),
+        box, IFERROR(z_ad_box(ad_or_rng), 0),
+        IF(AND(has_colon, COUNT(box) = 4),
+          LET(top, SUM(INDEX(box, 1)), lft, SUM(INDEX(box, 2)), bot, SUM(INDEX(box, 3)), rgt, SUM(INDEX(box, 4)),
+              MAKEARRAY(bot - top + 1, rgt - lft + 1, LAMBDA(dr, dc, ADDRESS(top + dr - 1, lft + dc - 1, 4)))),
+          to_str_1(ad_or_rng))))
   )
 )
 
 === DESCRIPTION ===
-Converts numeric addresses (1e6 * row + col) to A1 string addresses, element-wise. Inverse of num_ad.
+Convert any address or range to A1 string form - the mirror of num_ad, matching the relative A1 style used across the library.
 
-Only a valid numeric address is converted; strings, non-integers, and out-of-range numbers pass through unchanged.
+Behaviour by input:
+  valid numeric address (3000004)        -> the A1 string ("D3")
+  valid A1 range ("A1:B4")               -> an array of A1 strings, top-left first, bottom-right last
+  valid numeric range ("1000001:4000002")-> the same array of A1 strings
+  empty                                  -> "" (never coerced to 0)
+  any other single value                 -> passed through unchanged (a string address is already A1, so it is returned as is)
+  an array                               -> element-wise; numeric addresses convert, everything else (including ranges) passes through
 
-WARNING: str_ad cannot tell an "address number" from a data number - ANY integer in the valid range (row 1-1048576, col 1-16384) becomes an A1 string. Only apply it to arrays known to hold addresses (e.g. the final answer), never to arbitrary numeric data.
+A single address returns a scalar. Ranges expand only when passed as a single value; inside an array they pass through, since expanding one element into many would need a ragged result Excel cannot make. Strings are produced with ADDRESS(..., 4) for relative style. Parsing is shared with num_ad and the rest of the library via z_numval / z_ad_box.
 
 Arguments:
-  arr - a value or array. A number is converted when it is an integer with INT(n/1e6) in [1,1048576] and MOD(n,1e6) in [1,16384].
+  ad_or_rng - a numeric address, A1 string, A1 range, numeric range, or an array of these.
 
 Returns:
-  Same shape as arr; each valid numeric address replaced by its relative A1 string. A single cell returns a scalar.
+  An A1 string for a single address, an array of A1 strings for a single range, "" for empty, the input unchanged otherwise; element-wise over an array.
 
 Example:
-  str_ad(3000004) -> "D3" ; str_ad("D3") -> "D3" ; str_ad(2000000) -> 2000000
+  str_ad(3000004)             ->  "D3"
+  str_ad("1000001:2000002")   ->  {"A1", "B1"; "A2", "B2"}
+  str_ad("D3")                ->  "D3"
+  str_ad("hi")                ->  "hi"

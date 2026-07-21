@@ -1,0 +1,52 @@
+=== SIGNATURE ===
+z_ad_box(ref)
+
+=== COMMENT ===
+Helper: bounding box of any address or range, as {top; left; bottom; right} absolute row/column numbers. Accepts all four types - numeric address, A1 string, A1 range ("B2:D4"), numeric range ("1000001:4000002"). Returns #VALUE! for anything else.
+
+=== CODE ===
+=LAMBDA(ref,
+  IFERROR(
+    IF(AND(ISTEXT(ref), ISNUMBER(SEARCH(":", ref))),
+      LET(
+        clean, UPPER(SUBSTITUTE(ref, "$", "")),
+        part_a, TEXTBEFORE(clean, ":"), part_b, TEXTAFTER(clean, ":"),
+        addr_a, IFERROR(z_a1n(part_a), -1), addr_b, IFERROR(z_a1n(part_b), -1),
+        num_a, IFERROR(z_numval(part_a), -1), num_b, IFERROR(z_numval(part_b), -1),
+        IF(AND(addr_a > 0, addr_b > 0),
+          VSTACK(MIN(INT(addr_a / 1000000), INT(addr_b / 1000000)), MIN(MOD(addr_a, 1000000), MOD(addr_b, 1000000)),
+                 MAX(INT(addr_a / 1000000), INT(addr_b / 1000000)), MAX(MOD(addr_a, 1000000), MOD(addr_b, 1000000))),
+          IF(AND(num_a > 0, num_b > 0, INT(num_a / 1000000) <= INT(num_b / 1000000), MOD(num_a, 1000000) <= MOD(num_b, 1000000)),
+            VSTACK(INT(num_a / 1000000), MOD(num_a, 1000000), INT(num_b / 1000000), MOD(num_b, 1000000)),
+            #VALUE!))),
+      LET(
+        packed, IF(ISNUMBER(ref), z_numval(ref), z_a1n(ref)),
+        row_num, INT(packed / 1000000), col_num, MOD(packed, 1000000),
+        VSTACK(row_num, col_num, row_num, col_num))
+    ), #VALUE!)
+)
+
+=== DESCRIPTION ===
+Private helper - the one parser the whole address library shares, so callers do not each re-implement address/range validation. num_ad, str_ad, ad_to_rc, ad_to_cont and expand_rng all build on it.
+
+Handles every supported form:
+  numeric address (3000004)              -> degenerate box, top = bottom
+  A1 string ("D3")                       -> degenerate box
+  A1 range ("B2:D4", reversed ok)        -> normalised box, top <= bottom
+  numeric range ("1000001:4000002")      -> box, but ONLY if first <= second
+
+A1 ranges are normalised with MIN/MAX so "D4:B2" and "B2:D4" give the same box. Numeric ranges are held to the stricter rule from the spec: the first address's row and column must each be <= the second's, otherwise it is not a valid numeric range.
+
+A single cell is the degenerate box where top = bottom and left = right - that is how a caller tells a cell from a range. Parsing is delegated to z_a1n and z_numval, never to num_ad, so there is no circular reference.
+
+Arguments:
+  ref - a numeric address, an A1 string, an A1 range, or a numeric range.
+
+Returns:
+  A 4-row vertical array {top; left; bottom; right} of absolute row/column numbers, or #VALUE! if ref is not one of the four supported forms.
+
+Example:
+  z_ad_box("D3")                ->  {3; 4; 3; 4}
+  z_ad_box("B2:D4")             ->  {2; 2; 4; 4}
+  z_ad_box("1000001:4000002")   ->  {1; 1; 4; 2}
+  z_ad_box("hi")                ->  #VALUE!

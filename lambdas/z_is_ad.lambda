@@ -1,0 +1,29 @@
+=== SIGNATURE ===
+z_is_ad(ref)
+
+=== COMMENT ===
+Helper: TRUE if ref is a valid address or range of any of the four types (numeric address, A1 string, A1 range, numeric range). FALSE for plain data values.
+
+=== CODE ===
+=LAMBDA(ref, NOT(ISERROR(z_ad_box(ref))))
+
+=== DESCRIPTION ===
+Private helper. Answers "is this an address/range, or is it data?" - the yes/no needed whenever a lambda has to tell a coordinate from a value.
+
+Thin wrapper over z_ad_box, so the two can never disagree about what counts as valid. Use z_is_ad when you only need the boolean; use z_ad_box when you also need the bounds, so the parse is done once.
+
+Validity is about form, not about any particular sheet: an address well outside your data is still a valid address. A number only reads as an address if it decodes to a real cell, so ordinary small values (1, 42, 5000) are correctly seen as data.
+
+Arguments:
+  ref - the value to test. Pass a single value, not an array.
+
+Returns:
+  TRUE or FALSE.
+
+Example:
+  z_is_ad("D3")                ->  TRUE
+  z_is_ad(3000004)             ->  TRUE
+  z_is_ad("B2:D4")             ->  TRUE
+  z_is_ad("1000001:4000002")   ->  TRUE
+  z_is_ad("hi")                ->  FALSE
+  z_is_ad(42)                  ->  FALSE
