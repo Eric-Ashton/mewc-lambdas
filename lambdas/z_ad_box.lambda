@@ -9,8 +9,8 @@ Helper: bounding box of any address or range, as {top; left; bottom; right} abso
   IFERROR(
     IF(AND(ISTEXT(ref), ISNUMBER(SEARCH(":", ref))),
       LET(
-        parts, TEXTSPLIT(UPPER(SUBSTITUTE(ref, "$", "")), ":"),
-        part_a, INDEX(parts, 1), part_b, INDEX(parts, 2),
+        clean, UPPER(SUBSTITUTE(ref, "$", "")),
+        part_a, TEXTBEFORE(clean, ":"), part_b, TEXTAFTER(clean, ":"),
         addr_a, IFERROR(z_a1n(part_a), -1), addr_b, IFERROR(z_a1n(part_b), -1),
         num_a, IFERROR(z_numval(part_a), -1), num_b, IFERROR(z_numval(part_b), -1),
         IF(AND(addr_a > 0, addr_b > 0),
