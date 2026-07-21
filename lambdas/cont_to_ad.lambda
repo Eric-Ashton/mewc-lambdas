@@ -1,5 +1,5 @@
 === SIGNATURE ===
-cont2ad(cont, arr, [str])
+cont_to_ad(cont, arr, [str])
 
 === COMMENT ===
 Reverse lookup: find a value in arr and return its address. Numeric address by default, A1 string when str = 1. A value appearing several times returns all its addresses in row-major order joined by ";". A value not found returns "". An array of values is evaluated element-wise.
@@ -45,6 +45,6 @@ Returns:
   The address of the match, a ";"-joined list of addresses for multiple matches, or "" when not found; element-wise over an array of values.
 
 Example:
-  cont2ad(50, B2:Z10)        ->  the numeric address of the first 50
-  cont2ad(50, B2:Z10, 1)     ->  the A1 address of the first 50
-  cont2ad("x", grid)         ->  "1000001;3000004"  (two matches)
+  cont_to_ad(50, B2:Z10)        ->  the numeric address of the first 50
+  cont_to_ad(50, B2:Z10, 1)     ->  the A1 address of the first 50
+  cont_to_ad("x", grid)         ->  "1000001;3000004"  (two matches)

@@ -1,5 +1,5 @@
 === SIGNATURE ===
-ad2rc(ad, [as_row])
+ad_to_rc(ad, [as_row])
 
 === COMMENT ===
 Split a single address (numeric or A1 string) into its row and column numbers. Returns {row; col} vertically by default, or {row, col} horizontally when as_row = 1. A range, an array, or any non-address returns #VALUE!.
@@ -18,7 +18,7 @@ Split a single address (numeric or A1 string) into its row and column numbers. R
 )
 
 === DESCRIPTION ===
-Split one cell address into its row and column numbers. The inverse of rc2ad.
+Split one cell address into its row and column numbers. The inverse of rc_to_ad.
 
 The address is autodetected: pass a numeric address (3000004) or an A1 string ("D3"). Parsing is shared with the rest of the library via z_ad_box, so "$D$3", "Sheet1!D3" and lower case all work.
 
@@ -32,8 +32,8 @@ Returns:
   The row and column as two numbers, in that order - vertical by default, horizontal when as_row = 1. #VALUE! for a range, an array, or a non-address.
 
 Example:
-  ad2rc("D3")      ->  {3; 4}
-  ad2rc(3000004)   ->  {3; 4}
-  ad2rc("D3", 1)   ->  {3, 4}
-  ad2rc("A1:B4")   ->  #VALUE!
-  ad2rc("hi")      ->  #VALUE!
+  ad_to_rc("D3")      ->  {3; 4}
+  ad_to_rc(3000004)   ->  {3; 4}
+  ad_to_rc("D3", 1)   ->  {3, 4}
+  ad_to_rc("A1:B4")   ->  #VALUE!
+  ad_to_rc("hi")      ->  #VALUE!

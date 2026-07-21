@@ -33,7 +33,7 @@ Grow an address or range into a bigger rectangle, working purely on coordinates 
 
 Starting from the box of ad_or_rng, it extends the bottom edge down by r_down, the right edge right by c_right, the top edge up by r_up, and the left edge left by c_left. Any edge pushed past the sheet is clamped to row 1 or column 1.
 
-The result is always a range string of the form "top-left:bottom-right", and its format mirrors the input: an A1 input gives an A1 range ("F10:M12"); a numeric input gives a numeric range ("1000001:4000002"). Even a single cell with no expansion comes back as a (degenerate) range string, so downstream callers like ad2cont always receive a consistent range form.
+The result is always a range string of the form "top-left:bottom-right", and its format mirrors the input: an A1 input gives an A1 range ("F10:M12"); a numeric input gives a numeric range ("1000001:4000002"). Even a single cell with no expansion comes back as a (degenerate) range string, so downstream callers like ad_to_cont always receive a consistent range form.
 
 ad_or_rng must be a single value of any of the four supported address/range types; an array returns #VALUE!. Each optional must be a non-negative integer, or the result is #VALUE!.
 

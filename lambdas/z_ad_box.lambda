@@ -27,7 +27,7 @@ Helper: bounding box of any address or range, as {top; left; bottom; right} abso
 )
 
 === DESCRIPTION ===
-Private helper - the one parser the whole address library shares, so callers do not each re-implement address/range validation. num_ad, str_ad, ad2rc, ad2cont and expand_rng all build on it.
+Private helper - the one parser the whole address library shares, so callers do not each re-implement address/range validation. num_ad, str_ad, ad_to_rc, ad_to_cont and expand_rng all build on it.
 
 Handles every supported form:
   numeric address (3000004)              -> degenerate box, top = bottom

@@ -1,5 +1,5 @@
 === SIGNATURE ===
-rc2ad(row_n, col_n, [str])
+rc_to_ad(row_n, col_n, [str])
 
 === COMMENT ===
 Build an address from a row and column number. Returns the numeric address (1e6*row+col) by default, or an A1 string ("D3") when str = 1. Out-of-range or non-integer inputs return #VALUE!.
@@ -20,7 +20,7 @@ Build an address from a row and column number. Returns the numeric address (1e6*
 )
 
 === DESCRIPTION ===
-Build an address from a row and column number. The inverse of ad2rc.
+Build an address from a row and column number. The inverse of ad_to_rc.
 
 Numeric output is the project's standard packed address (1e6 * row + col). The string form is produced via str_ad, so it matches the relative A1 style used everywhere else in the library.
 
@@ -33,6 +33,6 @@ Returns:
   The address in the requested form. Returns #VALUE! if either coordinate is non-numeric, non-integer, or outside the sheet.
 
 Example:
-  rc2ad(3, 4)     ->  3000004
-  rc2ad(3, 4, 1)  ->  "D3"
-  rc2ad(0, 4)     ->  #VALUE!
+  rc_to_ad(3, 4)     ->  3000004
+  rc_to_ad(3, 4, 1)  ->  "D3"
+  rc_to_ad(0, 4)     ->  #VALUE!

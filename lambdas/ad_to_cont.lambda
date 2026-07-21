@@ -1,5 +1,5 @@
 === SIGNATURE ===
-ad2cont(ad_or_rng, arr)
+ad_to_cont(ad_or_rng, arr)
 
 === COMMENT ===
 Non-volatile INDIRECT: the contents of arr at an address or range. A single address gives one value; a range gives the array of contents where it overlaps arr; an array of addresses gives their contents element-wise. Empty cells return "" (never 0). No overlap, or a non-address, returns "".
@@ -53,6 +53,6 @@ Returns:
   A single value, a rectangle of values, or an element-wise array of values; "" wherever there is no valid, overlapping address.
 
 Example:
-  ad2cont("C3", B2:Z10)      ->  the value at C3
-  ad2cont("C3:D4", B2:Z10)   ->  the 2x2 block C3:D4
-  ad2cont(3000004, grid)     ->  the value at C3... (numeric form)
+  ad_to_cont("C3", B2:Z10)      ->  the value at C3
+  ad_to_cont("C3:D4", B2:Z10)   ->  the 2x2 block C3:D4
+  ad_to_cont(3000004, grid)     ->  the value at C3... (numeric form)
