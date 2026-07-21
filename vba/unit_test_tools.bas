@@ -73,7 +73,7 @@ Public Sub lambda_update()
     ReDim cmts(2 To lastRow)
     ReDim added(2 To lastRow)
 
-    ' --- collect rows; delete any existing name with the same name ---
+    ' --- collect rows from Lamb ---
     For r = 2 To lastRow
         Dim nm As String, code As String
         nm = LambdaName(CStr(ws.Cells(r, COL_SIG).Value))
@@ -84,14 +84,16 @@ Public Sub lambda_update()
             names(r) = nm
             codes(r) = code
             cmts(r) = CStr(ws.Cells(r, COL_COMMENT).Value)
-            On Error Resume Next
-            ThisWorkbook.names(nm).Delete
-            On Error GoTo 0
         Else
             names(r) = ""       ' blank/invalid row - skip
             added(r) = True
         End If
     Next r
+
+    ' Clear every existing lambda name (not just the ones still in Lamb) so a
+    ' renamed or removed lambda doesn't linger as an orphan. repo_path and other
+    ' non-lambda names are preserved - see delete_all_lambda_names.
+    Call delete_all_lambda_names(ThisWorkbook)
 
     ' --- add names; repeat passes so a lambda that calls another still resolves ---
     Dim pass As Long, progress As Boolean
