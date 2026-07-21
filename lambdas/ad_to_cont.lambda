@@ -18,7 +18,7 @@ Non-volatile INDIRECT: the contents of arr at an address or range. A single addr
             IF(OR(rel_r < 1, rel_r > a_rows, rel_c < 1, rel_c > a_cols), "",
               LET(cval, INDEX(arr, rel_r, rel_c), IF(cval = "", "", cval)))))), "")),
     box0, IFERROR(z_ad_box(ad_or_rng), 0),
-    is_rng, AND(COUNT(box0) = 4, OR(INDEX(box0, 1) <> INDEX(box0, 3), INDEX(box0, 2) <> INDEX(box0, 4))),
+    is_rng, IFERROR(AND(COUNT(box0) = 4, OR(INDEX(box0, 1) <> INDEX(box0, 3), INDEX(box0, 2) <> INDEX(box0, 4))), FALSE),
     IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1, MAP(ad_or_rng, cell_at),
       IF(is_rng,
         LET(top, INDEX(box0, 1), lft, INDEX(box0, 2), bot, INDEX(box0, 3), rgt, INDEX(box0, 4),

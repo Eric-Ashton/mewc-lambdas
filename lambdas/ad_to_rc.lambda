@@ -10,7 +10,7 @@ Split a single address (numeric or A1 string) into its row and column numbers. R
     wide, IF(ISOMITTED(as_row), 0, as_row),
     single, ROWS(ad) * COLUMNS(ad) = 1,
     box, IFERROR(z_ad_box(ad), 0),
-    ok, AND(single, COUNT(box) = 4, INDEX(box, 1) = INDEX(box, 3), INDEX(box, 2) = INDEX(box, 4)),
+    ok, IFERROR(AND(single, COUNT(box) = 4, INDEX(box, 1) = INDEX(box, 3), INDEX(box, 2) = INDEX(box, 4)), FALSE),
     IF(NOT(ok), #VALUE!,
        IF(wide, HSTACK(INDEX(box, 1), INDEX(box, 2)),
                 VSTACK(INDEX(box, 1), INDEX(box, 2))))
