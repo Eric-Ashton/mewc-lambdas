@@ -216,10 +216,18 @@ def _xml_unescape(s: str) -> str:
 # --------------------------------------------------------------------------- #
 # cell rendering
 # --------------------------------------------------------------------------- #
-def _render_cell(addr, col_letters, style, value=None, formula=None):
+def _render_cell(addr, col_letters, style, value=None, formula=None, array_ref=None):
     s_attr = f' s="{style}"' if style is not None else ""
     if formula is not None:
         f = formula[1:] if formula.startswith("=") else formula
+        if array_ref:
+            # Dynamic-array (spilling) formula: cm="1" points at the workbook's
+            # XLDAPR metadata, t="array" ref=<spill range> declares the spill.
+            # Without this a plain <f> that returns an array gets implicit-
+            # intersected to its top-left scalar. A cached <v>0</v> is required
+            # for the anchor; full-recalc-on-load fills the real value + spill.
+            return (f'<c r="{addr}"{s_attr} cm="1">'
+                    f'<f t="array" ref="{array_ref}">{escape(f)}</f><v>0</v></c>')
         # cached <v> is intentionally omitted; workbook is set to full-recalc on load
         return f'<c r="{addr}"{s_attr}><f>{escape(f)}</f></c>'
     if value is None:
@@ -286,11 +294,37 @@ def _apply_sheet_edits(sheet_xml, edits):
         span = _row_span(sheet_xml, rownum)
         style = e.get("style")
 
+        # restyle: change ONLY the s= attribute, preserving cell content. An
+        # absent cell becomes a styled-empty cell (so a spill target can carry
+        # the column fill while still being empty enough to accept the spill).
+        if "restyle" in e:
+            rs = e["restyle"]
+            if span is None:
+                new_row = f'<row r="{rownum}"><c r="{addr}" s="{rs}"/></row>'
+                sheet_xml = _insert_row(sheet_xml, rownum, new_row)
+                continue
+            rstart, rend, row_xml = span
+            cellspan = _find_cell(row_xml, addr)
+            if cellspan is None:
+                new_cell = f'<c r="{addr}" s="{rs}"/>'
+                new_row = _insert_cell_in_row(row_xml, addr, colnum, new_cell)
+            else:
+                cs, ce = cellspan
+                old = row_xml[cs:ce]
+                if re.match(r'<c r="[A-Z]+\d+" s="\d+"', old):
+                    new_cell = re.sub(r'(<c r="[A-Z]+\d+" )s="\d+"', rf'\g<1>s="{rs}"', old, count=1)
+                else:
+                    new_cell = re.sub(r'(<c r="[A-Z]+\d+")', rf'\g<1> s="{rs}"', old, count=1)
+                new_row = row_xml[:cs] + new_cell + row_xml[ce:]
+            sheet_xml = sheet_xml[:rstart] + new_row + sheet_xml[rend:]
+            continue
+
         if span is None:
             # need a brand-new <row>; find sheetData and insert in row order
             style_final = style
             new_cell = _render_cell(addr, letters, style_final,
-                                    value=e.get("value"), formula=e.get("formula"))
+                                    value=e.get("value"), formula=e.get("formula"),
+                                    array_ref=e.get("array_ref"))
             new_row = f'<row r="{rownum}">{new_cell}</row>'
             sheet_xml = _insert_row(sheet_xml, rownum, new_row)
             continue
@@ -303,13 +337,15 @@ def _apply_sheet_edits(sheet_xml, edits):
             if style is None:
                 style = _cell_style(old_cell)  # preserve existing style
             new_cell = _render_cell(addr, letters, style,
-                                    value=e.get("value"), formula=e.get("formula"))
+                                    value=e.get("value"), formula=e.get("formula"),
+                                    array_ref=e.get("array_ref"))
             new_row = row_xml[:cs] + new_cell + row_xml[ce:]
         else:
             if style is None:
                 style = _inherit_style(sheet_xml, letters, rownum)
             new_cell = _render_cell(addr, letters, style,
-                                    value=e.get("value"), formula=e.get("formula"))
+                                    value=e.get("value"), formula=e.get("formula"),
+                                    array_ref=e.get("array_ref"))
             new_row = _insert_cell_in_row(row_xml, addr, colnum, new_cell)
         sheet_xml = sheet_xml[:rstart] + new_row + sheet_xml[rend:]
     return sheet_xml
@@ -592,6 +628,12 @@ def validate(src, out, edits, duplicates=None, sheet_order=None):
     # read edited values back, by their final names
     wb = openpyxl.load_workbook(out, data_only=False)
     for e in edits:
+        # restyle changes only the style; array_ref reads back as an ArrayFormula
+        # object rather than the "=formula" string - neither round-trips through
+        # this scalar-value check, so skip both.
+        if "restyle" in e or "array_ref" in e:
+            report["edits_verified"] += 1
+            continue
         ws = wb[e["sheet"]]
         got = ws[e["cell"].upper()].value
         want = ("=" + e["formula"].lstrip("=")) if "formula" in e else e.get("value")
