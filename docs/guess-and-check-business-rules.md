@@ -291,13 +291,18 @@ the "carry the count" method — roughly half the website rounds of the old re-g
 **Eliminate `v` for game `r`:**
 
 - No block yet → `Elim Min = Elim Max = v`.
-- `v` adjacent to an edge (`= ElimMin − sig` or `= ElimMax + sig`) → extend that edge.
+- `v` adjacent to an edge (`= ElimMin − sig` or `= ElimMax + sig`) → extend that edge,
+  **then swallow any `Tried Extras` value now adjacent** (so a run tried out of order —
+  e.g. a priority probe of `20` before the block scanned up to it — collapses back into
+  one block rather than leaving `9–19` + extras `20–26`).
 - `v` already inside `[ElimMin, ElimMax]` → nothing.
 - otherwise (a non-contiguous probe, e.g. a priority value away from the block) →
   append `v` to **`Tried Extras`**.
 
 A value counts as **tried** if it's in the block **or** the extras list — both the
-outward scan and the priority check consult both.
+outward scan and the priority check consult both. So `Tried Extras` values are just as
+eliminated as the block; they're only listed separately when they aren't (yet)
+contiguous with it.
 
 ### 8.4 "Regenerate the scan" subroutine
 

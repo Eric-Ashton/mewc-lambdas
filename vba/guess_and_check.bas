@@ -630,8 +630,9 @@ Private Function gc_next_guess(ByVal ws As Worksheet, ByVal r As Long, ByVal sig
     gc_next_guess = Empty
 End Function
 
-' Fold a proven-wrong value into game r's tried state: extend the contiguous
-' block when adjacent, otherwise record it in the Tried Extras list.
+' Fold a proven-wrong value into game r's tried state: extend the contiguous block
+' when adjacent (then swallow any extras it now touches), otherwise record it in the
+' Tried Extras list.
 Private Sub gc_eliminate(ByVal ws As Worksheet, ByVal r As Long, ByVal v As Double, ByVal sig As Double)
     Dim eps As Double: eps = sig * 0.000001
     If Not gc_num(ws, r, COL_EMIN) Then
@@ -641,10 +642,48 @@ Private Sub gc_eliminate(ByVal ws As Worksheet, ByVal r As Long, ByVal v As Doub
     Dim emin As Double, emax As Double
     emin = CDbl(ws.Cells(r, COL_EMIN).Value): emax = CDbl(ws.Cells(r, COL_EMAX).Value)
     If v >= emin - eps And v <= emax + eps Then Exit Sub          ' already in block
-    If Abs(v - (emin - sig)) < eps Then ws.Cells(r, COL_EMIN).Value = v: Exit Sub
-    If Abs(v - (emax + sig)) < eps Then ws.Cells(r, COL_EMAX).Value = v: Exit Sub
-    gc_tried_add ws, r, v, sig
+    If Abs(v - (emin - sig)) < eps Then
+        ws.Cells(r, COL_EMIN).Value = v: gc_absorb_extras ws, r, sig
+    ElseIf Abs(v - (emax + sig)) < eps Then
+        ws.Cells(r, COL_EMAX).Value = v: gc_absorb_extras ws, r, sig
+    Else
+        gc_tried_add ws, r, v, sig                                ' non-adjacent -> extras
+    End If
 End Sub
+
+' Pull any Tried-Extras value now adjacent to the block's edges into the block, so
+' block + extras never leave a contiguous run split (cosmetic + keeps extras short).
+Private Sub gc_absorb_extras(ByVal ws As Worksheet, ByVal r As Long, ByVal sig As Double)
+    If Not gc_num(ws, r, COL_EMIN) Then Exit Sub
+    Dim emin As Double, emax As Double, changed As Boolean
+    emin = CDbl(ws.Cells(r, COL_EMIN).Value): emax = CDbl(ws.Cells(r, COL_EMAX).Value)
+    Do
+        changed = False
+        If gc_extra_remove(ws, r, emax + sig, sig) Then emax = emax + sig: changed = True
+        If gc_extra_remove(ws, r, emin - sig, sig) Then emin = emin - sig: changed = True
+    Loop While changed
+    ws.Cells(r, COL_EMIN).Value = emin: ws.Cells(r, COL_EMAX).Value = emax
+End Sub
+
+' Remove value v from game r's Tried Extras list; True if it was there.
+Private Function gc_extra_remove(ByVal ws As Worksheet, ByVal r As Long, ByVal v As Double, ByVal sig As Double) As Boolean
+    Dim s As String: s = CStr(ws.Cells(r, COL_TRIED).Value)
+    If Len(s) = 0 Then Exit Function
+    Dim eps As Double: eps = sig * 0.000001
+    Dim parts() As String, i As Long, out As String, found As Boolean
+    parts = Split(s, ",")
+    For i = LBound(parts) To UBound(parts)
+        If Len(Trim$(parts(i))) > 0 Then
+            If (Not found) And Abs(CDbl(parts(i)) - v) < eps Then
+                found = True
+            Else
+                If Len(out) = 0 Then out = Trim$(parts(i)) Else out = out & "," & Trim$(parts(i))
+            End If
+        End If
+    Next i
+    If found Then ws.Cells(r, COL_TRIED).Value = out
+    gc_extra_remove = found
+End Function
 
 ' Has game r already tried value v? (contiguous block OR the extras list)
 Private Function gc_tried(ByVal ws As Worksheet, ByVal r As Long, ByVal v As Double, ByVal sig As Double) As Boolean
