@@ -52,10 +52,10 @@ until every game is solved.
      half that scores `0` is eliminated wholesale, a half that scores its own size
      is solved wholesale, and only a genuinely mixed half is split again.
 
-The operator enters the **exact number correct** each round (not a `0/1/2+`
-bucket). Two one-click buttons cover the common cases — **0 correct** and **1
-correct** — and a third button reads an **exact count** the operator types in for
-`2` or more.
+The operator reports the round by **points** (what the platform shows), not a
+`0/1/2+` bucket: a grid of one-click buttons for `0…7` correct, each captioned with
+that many games' worth of points, plus a typed **8+** fallback. Either way the tool
+receives the **exact number correct**.
 
 ---
 
@@ -130,25 +130,38 @@ etc.).
 
 ---
 
-## 6. Feedback buttons + the exact-count entry
+## 6. Feedback buttons (points) + the 8+ entry
 
-The operator reports the **exact number correct** each round. Divide the level's
-points by `P` (points per game) to get that count. Three buttons are placed near
-the setup block (`E6` carries the prompt *"How many correct this round?"*):
+The platform reports **points**, so the buttons are captioned in **points**, not
+counts. Under the header *"Number of points:"* (`E6`) sits a **4×2 grid of eight
+buttons, one per number correct `0…7`**, each captioned with the points the platform
+shows for that many right — `count × P` (points per game). The operator just clicks
+the button whose number matches the score on screen.
 
-| Button | Placement | Bound macro | Meaning |
+| Button (count) | Caption (e.g. `P = 11`) | Placement | Bound macro |
 |---|---|---|---|
-| **0 correct** | `E8:F9` | `gc_fb0` | The whole submitted column scored `0`. |
-| **1 correct** | `G8:H9` | `gc_fb1` | Exactly one submitted guess was right. |
-| **N correct** | `J8:K9` | `gc_fbN` | `2` or more — reads the exact count the operator typed into the entry cell. |
+| 0 | `0` | `E8:F9` | `gc_fb0` |
+| 1 | `11` | `G8:H9` | `gc_fb1` |
+| 2 | `22` | `I8:J9` | `gc_fb2` |
+| 3 | `33` | `K8:L9` | `gc_fb3` |
+| 4 | `44` | `E10:F11` | `gc_fb4` |
+| 5 | `55` | `G10:H11` | `gc_fb5` |
+| 6 | `66` | `I10:J11` | `gc_fb6` |
+| 7 | `77` | `K10:L11` | `gc_fb7` |
 
-The **exact-count entry cell is `I8`** (labelled *"exact count:"* at `I7`). For any
-score of `2` or more, the operator types the number into `I8` and clicks
-**N correct**; `gc_fbN` validates it (numeric, `≥ 0`, and `≤` the number of guesses
-actually submitted) and hands it to the shared handler. The two single-click
-buttons are just shortcuts for the two most common counts, `0` and `1`.
+Each `gc_fbK` is a one-line wrapper that calls the shared handler `gc_feedback(K)`
+with its fixed count. Captions are computed once at build from `P` (`B3`); if `P`
+changes afterwards, rebuild the sheet to refresh them.
 
-All three call one private handler, `gc_feedback(k)`, with the exact count `k`.
+**8 or more correct** happens on early scanning rounds when many games share an
+answer. For that, the operator types the **points** shown into entry cell **`N8`**
+(labelled *"type points:"* at `N7`, under *"8 or more?"* at `N6`) and clicks the
+**`8+ pts`** button (`O8:P9`, macro `gc_fbN`). `gc_fbN` divides the points by `P` to
+recover the count and hands it to `gc_feedback`. (If `P` is unknown it treats the
+entry as a raw count.)
+
+All buttons funnel into one private handler, `gc_feedback(k)`, with the exact
+count `k`.
 
 ---
 
@@ -168,7 +181,7 @@ down to the last populated game.
 | **F** | Range Low | build + macros | Feasible **lower** bound for this game's answer. Set from a hint at build (fixed), or re-derived from solved answers for un-hinted games (adaptive). Blank = open below (the code then floors at `0`, or leaves it open when negatives are allowed). |
 | **G** | Range High | build + macros | Feasible **upper** bound. Same sourcing as `F`. Blank = open above. A guess is never generated outside `[F,G]`. |
 | **H** | Initial Guesses | formula | The seed guess for each game before any elimination. |
-| **I** | Attribution | macros | Scratch column for the attribution search: while the tool is isolating which of several guesses are right, each candidate's value is parked here so it can be re-tested in subsets. **Non-empty anywhere in this column ⇒ the tool is mid-attribution** (rather than plain scanning). Empty during normal scanning. It is also the `2+`-count entry cell's column, but the entry cell (`I8`) sits above the table. |
+| **I** | Attribution | macros | Scratch column for the attribution search: while the tool is isolating which of several guesses are right, each candidate's value is parked here so it can be re-tested in subsets. **Non-empty anywhere in this column ⇒ the tool is mid-attribution** (rather than plain scanning). Empty during normal scanning. (The 8+ points-entry cell is `N8`, well above the table, so it never collides with this column's data.) |
 
 **Initial-guess formulas (`H`)** — the first three data rows key off the three hint
 ranges; the rest use the guess center:
@@ -191,8 +204,8 @@ are pure state written and cleared by the feedback macros.
 
 ## 8. Feedback handler — exact rules
 
-All three buttons call one private handler `gc_feedback(k)` with the **exact count
-`k`** of currently-submitted guesses that scored right.
+All the points buttons (§6) call one private handler `gc_feedback(k)` with the
+**exact count `k`** of currently-submitted guesses that scored right.
 
 **Shared preamble.**
 
@@ -321,11 +334,11 @@ hint. All of `F`/`G` remain operator-editable — clearing them re-opens a game'
    any known `Hint 1/2/3` ranges (`B7:C9`) if you have them.
 2. The `Guesses` column starts at the initial guesses. **Copy it and paste into the
    platform's answer boxes for that level; submit.**
-3. Read the level's points off the scoreboard → divide by `P` to get the **exact
-   number correct** this round.
-4. Report it: click **0 correct** or **1 correct** for those counts, or for `2`+
-   type the exact number into cell `I8` and click **N correct**. The handler updates
-   state and puts the **next** guess column on the clipboard.
+3. Read the level's **points** off the scoreboard.
+4. Report it: click the **points button** whose caption matches (buttons for `0…7`
+   correct). If you scored more points than any button shows (8+ correct), type the
+   points into cell `N8` and click **`8+ pts`**. The handler updates state and puts
+   the **next** guess column on the clipboard.
 5. Paste, submit, repeat. Games move into `Correct Answers` as they're pinned down;
    when every game is solved the `Guesses` column is empty and `Correct Answers` is
    full.
@@ -510,7 +523,7 @@ know a level's answers can go negative even though the visible samples don't.
 
 `_GCN` (or `_GCN(k)`) is a standalone guess-and-check sheet: the operator confirms the
 pre-filled setup block, copies the `Guesses` column into the platform, and drives the
-loop with the three feedback buttons + the exact-count entry cell (§6, §8–§9). The
+loop with the points buttons + the 8+ points-entry cell (§6, §8–§9). The
 build also runs one cosmetic formatting pass (§11.10).
 
 Open design choices still to settle with the author:
@@ -528,7 +541,8 @@ After the layout and first guesses are written, a cosmetic pass styles the sheet
 a title row, bold shaded setup labels, a bordered setup value block, a shaded/bold
 table header, light borders over the data grid, a green `Correct Answers` column, a
 **highlighted `Guesses` column** (the one to copy) with a darker header cap, a
-bordered yellow exact-count entry cell (`I8`), and uniform column widths. None of it
+bordered yellow points-entry cell (`N8`) for the 8+ fallback, and uniform column
+widths (`A:L`, so the `0…7` button grid reads evenly). None of it
 carries state — it is purely to make the working sheet readable at a glance.
 
 ### 11.9 Special-case summary

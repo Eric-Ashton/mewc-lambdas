@@ -55,7 +55,7 @@ Private Const COL_ATTR As Long = 9          'I  candidate value held during attr
 Private Const SIG_CELL As String = "B6"     ' Level Significance
 Private Const CENTER_CELL As String = "B10" ' Guess Centre
 Private Const NEG_CELL As String = "B11"    ' Negative Allowed (0/1)
-Private Const FB_CELL As String = "I8"      ' operator types the exact count here for "N correct"
+Private Const FB_CELL As String = "N8"      ' operator types the POINTS here for the 8+ fallback button
 Private Const HEADER_TEXT As String = "Game Numbers"
 
 Private Const OPEN_LO As Double = -1E+300   ' sentinel: unbounded below
@@ -188,11 +188,14 @@ Public Sub create_gc_sheet()
     gc.Range("B10").Formula = "=CEILING.MATH(IF(COUNT(B7:C9)=0,B5,0.5*B5+0.5*AVERAGE(B7:C9)),B6)"
     gc.Range("A11").Value = "Negative Allowed":  gc.Range("B11").Value = negAllowed
 
-    ' ---- feedback caption + count-entry cells ----
-    gc.Range("E6").Value = "How many correct this round?"
-    gc.Range("I6").Value = "2 or more?"
-    gc.Range("I7").Value = "exact count:"
-    ' (buttons and the I8 entry cell are placed / styled below)
+    ' ---- feedback header + 8+ points-entry cells ----
+    '      One button per "number correct" 0..7, captioned with the POINTS the
+    '      platform shows for that many (count x points-per-game). For 8+ the
+    '      operator types the points into N8 and clicks the fallback button.
+    gc.Range("E6").Value = "Number of points:"
+    gc.Range("N6").Value = "8 or more?"
+    gc.Range("N7").Value = "type points:"
+    ' (the 0..7 point buttons + the N8 entry cell are placed / styled below)
 
     ' ---- diagnostics row (live counts) ----
     Dim col As Long
@@ -238,8 +241,8 @@ Public Sub create_gc_sheet()
     Dim firstRow As Long, lastRow As Long
     If gc_locate(gc, firstRow, lastRow) Then
         gc_scan_regenerate gc, firstRow, lastRow, sig, (negAllowed <> 0)
-        gc_place_buttons gc
         gc_format_sheet gc, firstRow, lastRow
+        gc_place_buttons gc                 ' after formatting, so column widths are final
         gc_copy_guesses gc, firstRow, lastRow
     End If
 
@@ -251,24 +254,52 @@ End Sub
 '==============================================================================
 ' Feedback subs  (button-driven; Optional arg keeps them out of Alt+F8)
 '==============================================================================
+' One thin wrapper per "number correct" 0..7. Each is button-driven; the Optional
+' argument keeps it out of Alt+F8. The button CAPTION shows the matching points.
 Public Sub gc_fb0(Optional ByVal ignore As Variant)
     gc_feedback 0
 End Sub
-
 Public Sub gc_fb1(Optional ByVal ignore As Variant)
     gc_feedback 1
 End Sub
+Public Sub gc_fb2(Optional ByVal ignore As Variant)
+    gc_feedback 2
+End Sub
+Public Sub gc_fb3(Optional ByVal ignore As Variant)
+    gc_feedback 3
+End Sub
+Public Sub gc_fb4(Optional ByVal ignore As Variant)
+    gc_feedback 4
+End Sub
+Public Sub gc_fb5(Optional ByVal ignore As Variant)
+    gc_feedback 5
+End Sub
+Public Sub gc_fb6(Optional ByVal ignore As Variant)
+    gc_feedback 6
+End Sub
+Public Sub gc_fb7(Optional ByVal ignore As Variant)
+    gc_feedback 7
+End Sub
 
+' Fallback for 8+ correct: the operator types the POINTS the platform showed into
+' the entry cell; we divide by points-per-game (B3) to recover the count.
 Public Sub gc_fbN(Optional ByVal ignore As Variant)
-    Dim v As Variant: v = ActiveSheet.Range(FB_CELL).Value
+    Dim ws As Worksheet: Set ws = ActiveSheet
+    Dim v As Variant: v = ws.Range(FB_CELL).Value
     If Not IsNumeric(v) Or Trim$(CStr(v)) = "" Then
-        MsgBox "Type the exact number correct into cell " & FB_CELL & " first, then click this.", _
-               vbExclamation, "Guess and Check"
+        MsgBox "For 8 or more correct, type the POINTS the platform showed into cell " & _
+               FB_CELL & " first, then click this.", vbExclamation, "Guess and Check"
         Exit Sub
     End If
-    Dim k As Long: k = CLng(v)
+    Dim pts As Double, k As Long
+    If IsNumeric(ws.Range("B3").Value) Then pts = CDbl(ws.Range("B3").Value)
+    If pts > 0 Then
+        k = CLng(CDbl(v) / pts)         ' points -> count
+    Else
+        k = CLng(v)                     ' no points-per-game known: treat entry as a raw count
+    End If
     If k < 0 Then
-        MsgBox "The count can't be negative.", vbExclamation, "Guess and Check"
+        MsgBox "That comes out to a negative count.", vbExclamation, "Guess and Check"
         Exit Sub
     End If
     gc_feedback k
@@ -665,11 +696,29 @@ End Sub
 '==============================================================================
 ' Buttons + formatting (Private)
 '==============================================================================
+' A 4x2 grid of buttons for 0..7 correct, each captioned with the POINTS the
+' platform shows for that many (count x points-per-game), plus an 8+ fallback.
 Private Sub gc_place_buttons(ByVal ws As Worksheet)
-    gc_add_button ws, ws.Range("E8:F9"), "gc_fb0", "0 correct"
-    gc_add_button ws, ws.Range("G8:H9"), "gc_fb1", "1 correct"
-    gc_add_button ws, ws.Range("J8:K9"), "gc_fbN", "N correct"
+    Dim pts As Double
+    If IsNumeric(ws.Range("B3").Value) Then pts = CDbl(ws.Range("B3").Value)
+
+    gc_add_button ws, ws.Range("E8:F9"),   "gc_fb0", gc_pts_caption(0, pts)
+    gc_add_button ws, ws.Range("G8:H9"),   "gc_fb1", gc_pts_caption(1, pts)
+    gc_add_button ws, ws.Range("I8:J9"),   "gc_fb2", gc_pts_caption(2, pts)
+    gc_add_button ws, ws.Range("K8:L9"),   "gc_fb3", gc_pts_caption(3, pts)
+    gc_add_button ws, ws.Range("E10:F11"), "gc_fb4", gc_pts_caption(4, pts)
+    gc_add_button ws, ws.Range("G10:H11"), "gc_fb5", gc_pts_caption(5, pts)
+    gc_add_button ws, ws.Range("I10:J11"), "gc_fb6", gc_pts_caption(6, pts)
+    gc_add_button ws, ws.Range("K10:L11"), "gc_fb7", gc_pts_caption(7, pts)
+
+    gc_add_button ws, ws.Range("O8:P9"),   "gc_fbN", "8+ pts"
 End Sub
+
+' Caption for the "k correct" button: the points the platform shows for k right,
+' i.e. k x points-per-game. Falls back to the bare count when points are unknown.
+Private Function gc_pts_caption(ByVal k As Long, ByVal pts As Double) As String
+    If pts > 0 Then gc_pts_caption = CStr(k * pts) Else gc_pts_caption = CStr(k)
+End Function
 
 Private Sub gc_add_button(ByVal ws As Worksheet, ByVal rng As Range, _
                           ByVal macro As String, ByVal caption As String)
@@ -711,8 +760,9 @@ Private Sub gc_format_sheet(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal
 
         ' feedback area
         .Range("E6").Font.Bold = True
-        .Range("I6").Font.Bold = True
-        .Range("I7").Font.Size = 9
+        .Range("E6").Font.Size = 12
+        .Range("N6").Font.Bold = True
+        .Range("N7").Font.Size = 9
         With .Range(FB_CELL)
             .Interior.Color = cInput
             .Borders.LineStyle = xlContinuous
@@ -741,8 +791,8 @@ Private Sub gc_format_sheet(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal
             .Range(.Cells(firstRow, COL_GUESS), .Cells(lastRow, COL_GUESS)).Interior.Color = cGuess
         End If
 
-        ' widths
-        .Columns("A:I").ColumnWidth = 13
+        ' widths (A:I is the table; J:L back the 0..7 button grid so it reads evenly)
+        .Columns("A:L").ColumnWidth = 13
         .Columns("A").ColumnWidth = 14
         .Rows(hdr).RowHeight = 28
     End With

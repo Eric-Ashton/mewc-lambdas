@@ -7,7 +7,7 @@ Attribute VB_Name = "button_subs"
 '
 ' Assumes the input cell is 5 rows above the yellow row (same column B).
 
-Sub what_if_on()
+Public Sub what_if_on(Optional ByVal ignore As Variant)   ' Optional arg hides it from Alt+F8; still button/Run-callable
     Dim ws As Worksheet: Set ws = ActiveSheet
     Dim yellow_cell_row_n As Long
     Dim last_what_if_row As Long
@@ -36,7 +36,7 @@ End Sub
 ' Clears the output column (B) of the What-If Data Table starting from the yellow row + 1
 ' down to the end of contiguous data.
 
-Sub what_if_off()
+Public Sub what_if_off(Optional ByVal ignore As Variant)   ' Optional arg hides it from Alt+F8; still button/Run-callable
     Dim ws As Worksheet: Set ws = ActiveSheet
     Dim yellow_cell_row_n As Long
     Dim clear_start As Range
@@ -60,7 +60,7 @@ End Sub
 ' exact same addresses. Prompts before overwrite if destination has any
 ' real values (ignores a single space " ").
 
-Sub copy_previous()
+Public Sub copy_previous(Optional ByVal ignore As Variant)   ' Optional arg hides it from Alt+F8; still button/Run-callable
     Dim ws As Worksheet: Set ws = ActiveSheet                 ' destination (current level)
     Dim ws_prev As Worksheet                                  ' source (previous level)
     Dim level_number As Long, prev_level_name As String
@@ -298,7 +298,7 @@ End Sub
 '========================
 ' Subroutine: done
 '========================
-Sub done()
+Public Sub done(Optional ByVal ignore As Variant)   ' Optional arg hides it from Alt+F8; still button/Run-callable
     Dim ws As Worksheet: Set ws = ActiveSheet
     Dim case_sheet As Worksheet
     Dim yellow_cell_row_n As Long

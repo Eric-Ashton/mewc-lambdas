@@ -41,7 +41,7 @@ Private gCaseSheets As Collection
 Private gCaseColWidths As Collection
 Private gSetupAborted As Boolean    ' a stage bailed out - stop the pipeline cleanly
 
-Sub setup_workbook()
+Public Sub setup_workbook(Optional ByVal ignore As Variant)   ' Optional arg hides it from Alt+F8; still button/Run-callable
     On Error GoTo ErrorHandler
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
@@ -980,7 +980,7 @@ Private Sub create_level_worksheets()
         '
         ' We identify the header solely by column B containing "Level N" where N is
         ' the current level_index. Whatever text is in column C is the "difficulty"
-        ' label ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ we preserve it as-is and do NOT require any specific vocabulary.
+        ' label ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã¯Â¿Â½ we preserve it as-is and do NOT require any specific vocabulary.
         ' This tolerates "easy/medium/hard", "possible", "impossible", "extreme",
         ' a blank cell, or anything else an author chooses to write.
         '
@@ -1910,7 +1910,7 @@ End Sub
 ' module-level reference. Idempotent and never raises, so it is safe to call
 ' from both the normal path and an error handler. Always SaveChanges:=False -
 ' we opened the file ReadOnly and must never write to the author's original.
-Public Sub CloseCaseWorkbook()
+Public Sub CloseCaseWorkbook(Optional ByVal ignore As Variant)   ' Optional arg hides it from Alt+F8; still Run-callable
     On Error Resume Next
     If Not case_workbook Is Nothing Then
         case_workbook.Close SaveChanges:=False
@@ -2188,7 +2188,7 @@ Private Function MakeCaseCopy(attempt_workbook As Workbook, case_worksheet As Wo
     Set MakeCaseCopy = new_ws
 End Function
 
-Public Sub zoom_all_worksheets()
+Public Sub zoom_all_worksheets(Optional ByVal ignore As Variant)   ' Optional arg hides it from Alt+F8; still button/Run-callable
 On Error GoTo ErrorHandler
     Dim ws As Worksheet
     For Each ws In ThisWorkbook.Worksheets
@@ -2208,7 +2208,7 @@ ErrorHandler:
     
 End Sub
 
-Sub safe_setup()
+Public Sub safe_setup(Optional ByVal ignore As Variant)   ' Optional arg hides it from Alt+F8; still button/Run-callable
     On Error GoTo ErrorHandler
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
