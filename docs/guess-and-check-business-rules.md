@@ -41,15 +41,21 @@ until every game is solved.
   1. **Value search (per game).** Every unsolved game holds one candidate value in
      the *Guesses* column. Each round eliminates the values that were just proven
      wrong and steps outward, so the candidate for each game marches away from a
-     central starting guess in units of the answer's significance.
-  2. **Attribution search (which game).** When a batch scores `1` or `2+` correct,
-     you know *how many* guesses in the column were right but not *which*. The tool
-     bisects the column — holding half of the guesses aside in a "Possible" bucket
-     and re-testing the other half — to isolate the winning games over several
-     rounds.
+     central starting guess in units of the answer's significance — **but never
+     outside that game's feasible range** (a hint's `[min,max]`, never below `0`
+     unless negatives are allowed, and — for un-hinted games — a range re-derived
+     from the answers already solved).
+  2. **Attribution search (which game).** When a batch scores `0 < k < (games
+     submitted)`, you know *how many* guesses in the column were right but not
+     *which*. The tool bisects the submitted set, re-testing one half at a time.
+     Because the operator enters the **exact** count, each sub-test is decisive: a
+     half that scores `0` is eliminated wholesale, a half that scores its own size
+     is solved wholesale, and only a genuinely mixed half is split again.
 
-The three feedback buttons correspond to the only three cases that matter for the
-next step: **0 correct**, **exactly 1 correct**, **2 or more correct**.
+The operator enters the **exact number correct** each round (not a `0/1/2+`
+bucket). Two one-click buttons cover the common cases — **0 correct** and **1
+correct** — and a third button reads an **exact count** the operator types in for
+`2` or more.
 
 ---
 
@@ -124,19 +130,25 @@ etc.).
 
 ---
 
-## 6. Feedback buttons (labels)
+## 6. Feedback buttons + the exact-count entry
 
-Three cells render human-readable button captions from `P` and the game count
-`G = (C4 - B4) + 1`:
+The operator reports the **exact number correct** each round. Divide the level's
+points by `P` (points per game) to get that count. Three buttons are placed near
+the setup block (`E6` carries the prompt *"How many correct this round?"*):
 
-| Cell | Formula | Renders (e.g. P=7, G=20) | Bound macro |
+| Button | Placement | Bound macro | Meaning |
 |---|---|---|---|
-| `E8` | `="0 / " & B3*((C4-B4)+1) & " Points"` | `0 / 140 Points` | `zero_right` |
-| `F8` | `=B3 & " / " & B3*((C4-B4)+1) & " Points"` | `7 / 140 Points` | `one_right` |
-| `G8` | `=2*B3 & "+ / " & B3*((C4-B4)+1) & " Points"` | `14+ / 140 Points` | `two_or_more_right` |
+| **0 correct** | `E8:F9` | `gc_fb0` | The whole submitted column scored `0`. |
+| **1 correct** | `G8:H9` | `gc_fb1` | Exactly one submitted guess was right. |
+| **N correct** | `J8:K9` | `gc_fbN` | `2` or more — reads the exact count the operator typed into the entry cell. |
 
-The captions tell the operator which button matches the score the platform just
-showed (0 points → 0 right, `P` points → 1 right, `≥2P` points → 2+ right).
+The **exact-count entry cell is `I8`** (labelled *"exact count:"* at `I7`). For any
+score of `2` or more, the operator types the number into `I8` and clicks
+**N correct**; `gc_fbN` validates it (numeric, `≥ 0`, and `≤` the number of guesses
+actually submitted) and hands it to the shared handler. The two single-click
+buttons are just shortcuts for the two most common counts, `0` and `1`.
+
+All three call one private handler, `gc_feedback(k)`, with the exact count `k`.
 
 ---
 
@@ -148,14 +160,15 @@ down to the last populated game.
 
 | Col | Header | Written by | Meaning |
 |---|---|---|---|
-| **A** | Game Numbers | formula | `=SEQUENCE(C4-B4+1, 1, B4)` — one row per game, numbered `B4…C4`. |
+| **A** | Game Numbers | formula/literal | One row per game, numbered `B4…C4`. |
 | **B** | Correct Answers | macros | The confirmed answer for a solved game. **Blank = unsolved.** A numeric value here (including `0`) means solved. |
-| **C** | Guesses | macros | The candidate value to enter on the platform **this** round, per game. The whole column is what you submit. |
+| **C** | Guesses | macros | The candidate value to enter on the platform **this** round, per game. **The whole column (blanks and all) is what you submit** — a blank game is left unanswered, i.e. scored wrong. |
 | **D** | Eliminated Min | macros | Low edge of the contiguous block of values already proven wrong for this game. |
 | **E** | Eliminated Max | macros | High edge of that eliminated block. The answer lies **outside** `[D,E]`; new guesses probe just past the edges (`D - sig` or `E + sig`). |
-| **F** | Possible A (≤ 1 Right) | macros | "Held-out" candidate bucket used by the attribution search (see §8). |
-| **G** | Possible B | macros | Second held-out bucket, used when 2+ were right. |
+| **F** | Range Low | build + macros | Feasible **lower** bound for this game's answer. Set from a hint at build (fixed), or re-derived from solved answers for un-hinted games (adaptive). Blank = open below (the code then floors at `0`, or leaves it open when negatives are allowed). |
+| **G** | Range High | build + macros | Feasible **upper** bound. Same sourcing as `F`. Blank = open above. A guess is never generated outside `[F,G]`. |
 | **H** | Initial Guesses | formula | The seed guess for each game before any elimination. |
+| **I** | Attribution | macros | Scratch column for the attribution search: while the tool is isolating which of several guesses are right, each candidate's value is parked here so it can be re-tested in subsets. **Non-empty anywhere in this column ⇒ the tool is mid-attribution** (rather than plain scanning). Empty during normal scanning. It is also the `2+`-count entry cell's column, but the entry cell (`I8`) sits above the table. |
 
 **Initial-guess formulas (`H`)** — the first three data rows key off the three hint
 ranges; the rest use the guess center:
@@ -167,93 +180,137 @@ H(row3) = IF(B9="", B10, CEILING.MATH(AVERAGE(B9:C9), B6))
 H(rowN) = IF(A(rowN)="", "", B10)          ' N >= 4
 ```
 
-`B`, `C`, `D`, `E`, `F`, `G` carry **no formulas** — they are pure state written and
-cleared by the three macros.
+**Range Low/High (`F`,`G`) at build** — a hinted game (one of the first three whose
+`Hint N Range` in `B7:C9` parsed) gets its hint's `[min,max]` written to `F`/`G` and
+never changed. Un-hinted games start blank in `F`/`G` and are (re)filled adaptively.
+
+`B`, `C`, `D`, `E`, `I` and the adaptive part of `F`/`G` carry **no formulas** — they
+are pure state written and cleared by the feedback macros.
 
 ---
 
-## 8. Feedback macros — exact rules
+## 8. Feedback handler — exact rules
 
-Shared preamble for all three:
+All three buttons call one private handler `gc_feedback(k)` with the **exact count
+`k`** of currently-submitted guesses that scored right.
 
-- `ws = ActiveSheet`; read `sig = B6`.
+**Shared preamble.**
+
+- `ws = ActiveSheet`; read `sig = B6` and `neg = (B11 ≠ 0)` (Negative Allowed).
 - Locate header row by finding `"Game Numbers"` in column A; `firstRow = header+1`,
   `lastRow =` last non-empty cell in column A.
-- Column map: A=Game, B=Correct, C=Guess, D=ElimMin, E=ElimMax, F=PossA, G=PossB,
-  H=InitGuess.
+- Column map: A=Game, B=Correct, C=Guess, D=ElimMin, E=ElimMax, F=RangeLo,
+  G=RangeHi, H=InitGuess, I=Attribution.
 - **`0` is always a valid answer** — "solved" means *numeric and non-empty*, never
   "non-zero".
-- After building the next `Guesses` column, the macro **copies** the guess range to
-  the clipboard so the operator can paste it straight into the platform.
-- A "solved" game (numeric `B`) is skipped when generating new guesses; its guess
-  stays blank.
+- After updating state, the handler **copies** the `Guesses` column to the clipboard
+  so the operator can paste-submit straight away.
 
-### 8.1 `zero_right` — batch scored 0 correct
+**Mode.** The handler first decides which search it is in:
 
-Every guess in the column was wrong. Record that, then decide what to test next.
+- **Attribution mode** iff **any** cell in the `Attribution` column (`I`) is
+  non-empty. Otherwise **Scanning mode**.
 
-1. **Snapshot** the starting counts *before* touching anything:
-   `cntA0 =` number of non-empty `Possible A` cells; `cntB0 =` number of non-empty
-   `Possible B` cells. Remember the row of the first `Possible A` (`idxSingleA0`).
-2. **Process each guess** (all now known wrong):
-   - If the game has no eliminated block yet (`D` and `E` both empty), set
-     `D = E = guess` (the guess becomes the eliminated block).
-   - Otherwise extend the block **only if the guess sits exactly one step past an
-     edge**: if `guess = D - sig` then `D = guess`; if `guess = E + sig` then
-     `E = guess`.
-   - If the guess equals the game's `Possible A` or `Possible B` value, clear that
-     bucket cell (that held-out candidate is disproven).
-   - Clear the guess cell (the column is rebuilt below).
-3. **Branch on the snapshot:**
-   - **Case A — `cntA0 = 1` and `cntB0 = 0`:** the single surviving `Possible A`
-     value is the answer for its game → copy it into `Correct Answers`, clear that
-     `Possible A`. Then **generate fresh guesses** for every still-unsolved game
-     (see §8.4). Done.
-   - **Case B — `cntA0 ≥ 2` or `cntB0 ≥ 1`:** you are mid-bisection. Move **half
-     (rounded up)** of the `Possible A` values back into `Guesses`, and if
-     `cntB0 > 0` also move half (rounded up) of `Possible B` into `Guesses`.
-     Clear those buckets' moved cells. **Generate no new guesses** — you are only
-     re-testing held-out candidates. Done.
-   - **Case C — `cntA0 = 0` and `cntB0 = 0`:** ordinary elimination round →
-     **generate fresh guesses** for every unsolved game (see §8.4). Done.
+The "window" in either mode is simply *the set of games with a non-empty `Guess`* —
+that is exactly what was submitted and scored.
 
-### 8.2 `one_right` — batch scored exactly 1 correct
+### 8.1 Scanning mode
 
-Exactly one guess in the column is right; find which by bisection.
+Let `m =` number of games submitted (non-empty `Guesses`). Reject `k > m` with a
+message. Then:
 
-1. `Possible B` is irrelevant here → clear the whole `Possible B` column.
-2. Count the guesses; remember the first guess row.
-3. **If exactly one guess was in the column:** that guess *is* the answer → copy it
-   into `Correct Answers`, clear all `Guesses` and all `Possible A`, then
-   **generate fresh guesses** for every unsolved game (§8.4). Done.
-4. **If 2+ guesses were in the column** (the normal bisection step):
-   - First, fold any existing `Possible A` into the eliminated ranges using the same
-     "one step past the edge" rule as in `zero_right` step 2 (if `possA = D - sig`
-     then `D = possA`; if `possA = E + sig` then `E = possA`).
-   - Clear the whole `Possible A` column.
-   - Move **half (rounded down)** of the current guesses into `Possible A` (holding
-     them out), leaving the rest in `Guesses` to re-test. **No new guesses.** Done.
+- **`k = 0` — all wrong.** For each submitted game, fold its guess into the
+  eliminated block (§8.3) and clear the guess. Then **regenerate** the scan (§8.4).
+- **`k = m` — all right.** For each submitted game, copy its guess into `Correct
+  Answers` and clear the guess. Then **regenerate** (§8.4) — usually the level is now
+  solved and the column comes back empty.
+- **`0 < k < m` — ambiguous → start attribution.** Copy every submitted guess into
+  its `Attribution` cell (parking the candidates), then **hold half** (§8.3): keep
+  the first half (rounded up) of the guesses active, blank the `Guesses` of the rest.
+  Only the active half is submitted next round.
 
-### 8.3 `two_or_more_right` — batch scored 2+ correct
+### 8.2 Attribution mode
 
-At least two guesses are right; hold half aside and keep testing.
+The window is the active subset (non-empty `Guesses`); its parked value for each row
+also sits in `Attribution`. Let `w =` window size, reject `k > w`. Then:
 
-1. Clear the whole `Possible A` column (unused in this path).
-2. Move **half (rounded down)** of the current guesses into `Possible B`, leaving the
-   rest in `Guesses`. **Never generate new guesses.** Done.
+- **`k = 0` — the whole window is wrong.** For each window game: fold its value into
+  the eliminated block (§8.3), clear its `Guess` **and** `Attribution` (it rejoins
+  the scan). *Resolved.*
+- **`k = w` — the whole window is right.** For each window game: copy its value into
+  `Correct Answers`, clear `Guess` and `Attribution`. *Resolved.*
+- **`0 < k < w` — mixed → split.** **Hold half** (§8.3): keep the first half of the
+  window active, blank the `Guesses` of the rest (their `Attribution` stays, so they
+  remain held candidates). *Not resolved* — the smaller window is submitted next.
 
-### 8.4 "Generate fresh guesses" subroutine
+After a **resolved** step, look at what candidates remain (`Attribution` non-empty):
 
-For each game from `firstRow` to `lastRow`:
+- **Some remain →** *re-gather*: copy every remaining candidate's `Attribution` back
+  into its `Guesses`, submitting them all as one window. The next count re-derives
+  how many are still right, and bisection continues.
+- **None remain →** attribution is finished; **regenerate** the scan (§8.4).
+
+> **Why exact counts help.** A window that scores `0` is eliminated in one shot, and
+> one that scores its full size is solved in one shot — no further probing. Only a
+> genuinely mixed window is split. With the old `2+` bucket you could not tell "all
+> of this half is right" from "some of it is", so those wholesale prunes were
+> impossible. Re-gathering all remaining candidates after each resolution keeps the
+> state to a single scratch column (no explicit stack) at the cost of a few extra
+> re-test rounds; it is deliberately robust rather than round-optimal.
+
+### 8.3 Eliminating a value / holding half
+
+**Eliminate `v` into game `r`'s block** (`D`,`E`):
+
+- No block yet (`D` empty) → `D = E = v`.
+- Else extend the adjacent edge: if `v = D - sig` then `D = v`; if `v = E + sig` then
+  `E = v`. (A non-adjacent value only ever arrives defensively; it widens the block
+  to include `v`.)
+
+**Hold half** — of the current window (non-empty `Guesses`, in row order): keep the
+first `⌈n/2⌉` active; blank the `Guesses` of the rest. Nothing else moves.
+
+### 8.4 "Regenerate the scan" subroutine
+
+Rebuild the whole `Guesses` column for a fresh scanning round. First, refresh the
+**adaptive range/centre** for un-hinted games (§8.5), and clear every `Guesses` and
+`Attribution` cell. Then, for each game from `firstRow` to `lastRow`:
 
 - If `Correct Answers` is numeric → solved, leave the guess blank.
-- Else if the game has **no** eliminated block yet (`D` empty) → guess `= Initial
-  Guesses (H)`.
-- Else → step just outside the eliminated block, choosing an edge **at random**:
-  50% `guess = D - sig`, 50% `guess = E + sig`.
+- Else compute the game's **feasible bounds** `[lo, hi]` — `lo = F` if set, else `0`
+  (or open when `neg`); `hi = G` if set, else open — and its **centre** (see §8.5),
+  then:
+  - **No eliminated block yet** → guess `=` the centre, clamped into `[lo, hi]`.
+  - **Otherwise** → step just outside the eliminated block on whichever edge is
+    **closer to the centre** (ties go low): the candidate values are `D - sig` and
+    `E + sig`; keep only those still inside `[lo, hi]`; pick the closer-to-centre of
+    the survivors. If **both** edges fall outside `[lo, hi]`, the game's range is
+    **exhausted** and its guess is left blank.
+- If, after this, every unsolved game came back blank (all exhausted), show a message
+  telling the operator to widen `Range Low`/`Range High` or check `Negative Allowed`.
 
-(`Randomize` is called once per macro; the random edge choice keeps the search from
-biasing consistently high or low.)
+This replaces the old random-edge probe: the edge choice is **deterministic**
+(closest-to-centre, ties low) and always **clamped** to the feasible range, so the
+search never wanders below `0` (unless negatives are allowed) or outside a hint.
+
+### 8.5 Adaptive range and centre (un-hinted games)
+
+Most games have no hint of their own, so their search is bounded only by what has
+already been solved. On every scan regeneration, once **≥ 2** games are solved, with
+`minS`/`maxS`/`spread = maxS − minS` over the solved answers:
+
+- **Range** (written to `F`/`G` of every un-hinted, unsolved game):
+  `half = max(3·spread, 20·sig)`, `Range Low = minS − half` (floored at `0` unless
+  negatives are allowed), `Range High = maxS + half`. The margin is deliberately
+  generous — it exists to stop runaway scanning, not to gamble that the answer sits
+  in the solved cluster.
+- **Centre** (used only to seed the first guess and to pick the closer edge): the
+  **mean of the solved answers** for un-hinted games (once ≥ 2 are solved), else the
+  game's `Initial Guesses (H)`. Hinted games always centre on their own `H` (the hint
+  midpoint) and keep their fixed hint range.
+
+Hinted games are never touched by the adaptive step; their `F`/`G` stay pinned to the
+hint. All of `F`/`G` remain operator-editable — clearing them re-opens a game's range.
 
 ---
 
@@ -264,14 +321,19 @@ biasing consistently high or low.)
    any known `Hint 1/2/3` ranges (`B7:C9`) if you have them.
 2. The `Guesses` column starts at the initial guesses. **Copy it and paste into the
    platform's answer boxes for that level; submit.**
-3. Read the level's points off the scoreboard → divide by `P` to get how many were
-   correct.
-4. Click the matching button: `0 / … Points` (`zero_right`), `P / … Points`
-   (`one_right`), or `≥2P / … Points` (`two_or_more_right`). The macro updates state
-   and puts the **next** guess column on the clipboard.
+3. Read the level's points off the scoreboard → divide by `P` to get the **exact
+   number correct** this round.
+4. Report it: click **0 correct** or **1 correct** for those counts, or for `2`+
+   type the exact number into cell `I8` and click **N correct**. The handler updates
+   state and puts the **next** guess column on the clipboard.
 5. Paste, submit, repeat. Games move into `Correct Answers` as they're pinned down;
    when every game is solved the `Guesses` column is empty and `Correct Answers` is
    full.
+
+> When a round scores `2`+, the tool enters an **attribution** pass: it re-submits
+> smaller and smaller subsets (the `Guesses` column will have fewer entries) to work
+> out which games were the right ones. Keep pasting-and-reporting exactly as before —
+> the `Guesses` column always holds precisely what to submit next.
 
 ---
 
@@ -285,19 +347,27 @@ biasing consistently high or low.)
   is set correctly (e.g. `0.01`).
 - **`[ElimMin, ElimMax]` is the eliminated block**, not the feasible range. The
   answer is strictly outside it; guesses probe the two values immediately outside.
-  Extension only happens when a guess/possible is exactly one `sig` past an edge —
-  eliminations never "jump".
-- **Possible A vs Possible B** are two independent hold-out buckets for the
-  attribution bisection. `one_right` only ever uses A; `two_or_more_right` only ever
-  uses B; `zero_right` can drain either when resuming a bisection (Case B).
-- **Rounding of the "half" moved differs by macro on purpose:** `zero_right` Case B
-  moves half **rounded up**; `one_right` and `two_or_more_right` move half **rounded
-  down**. Preserve each exactly — it controls convergence.
+  Extension only happens when a value is exactly one `sig` past an edge — the
+  contiguous scan guarantees that, so eliminations never "jump".
+- **`[RangeLo, RangeHi]` (`F`,`G`) is the feasible range** — the outer wall the scan
+  never crosses. A hinted game's is fixed; an un-hinted game's is adaptive. Blank =
+  open on that side (still floored at `0` unless negatives are allowed).
+- **`Attribution` (`I`) is the mode flag *and* the candidate scratch.** Non-empty
+  anywhere ⇒ mid-attribution. A single scratch column (plus re-gathering all
+  remaining candidates after each resolution) replaces the old two-bucket scheme and
+  needs no stack.
+- **The count is exact.** `k = 0`, `k = m` (all), and `0 < k < m` are genuinely
+  different branches — the "all right" and "all wrong" wholesale steps depend on
+  knowing the exact number, not a `2+` bucket.
+- **"Hold half" rounds up** (`⌈n/2⌉` stays active). One rule, used everywhere a
+  window is split.
 - **Header is found by text**, and the row range by the last populated game number,
   so the table can start on any row and be any length.
-- **Negative Allowed (`B11`)** is intended to bound the downward search; the current
-  macros read `sig`/center but do not yet clamp at zero — treat clamping as an
-  intended rule to (re)confirm with the author before relying on it.
+- **Negative Allowed (`B11`)** bounds the downward search: when `0`, no guess is ever
+  generated below `0`; when `1`, the low side is open (down to the adaptive/hint
+  bound). This clamp is now enforced in the scan.
+- **Formatting is cosmetic only.** Fills, borders, and widths carry no state; the
+  logic reads values, never colours. A generated sheet re-styled by hand still works.
 
 ---
 
@@ -438,18 +508,28 @@ know a level's answers can go negative even though the visible samples don't.
 
 ### 11.8 After the build
 
-`_GCN` (or `_GCN(k)`) is now a standalone guess-and-check sheet identical in
-behaviour to a standalone-workbook `L` sheet: the operator confirms the pre-filled
-setup block, copies the `Guesses` column into the platform, and drives the loop with
-the three feedback buttons (§8–§9). The three macros are unchanged and live with the
-generated sheet.
+`_GCN` (or `_GCN(k)`) is a standalone guess-and-check sheet: the operator confirms the
+pre-filled setup block, copies the `Guesses` column into the platform, and drives the
+loop with the three feedback buttons + the exact-count entry cell (§6, §8–§9). The
+build also runs one cosmetic formatting pass (§11.10).
 
 Open design choices still to settle with the author:
 
-- **Clipboard vs paste block:** the macros currently `.Copy` the guess column; the
-  template rebuild could instead maintain a contiguous paste-ready block if that
-  suits the live site better.
+- **Adaptive-range margin.** The un-hinted feasible range is `solved-cluster ±
+  max(3·spread, 20·sig)` (§8.5) — generous on purpose. If a level's answers turn out
+  to spread far wider than the first few solved, a game can exhaust its range and the
+  tool prompts to widen `F`/`G`. The multiplier is a tunable heuristic, not a proven
+  bound.
 - **Hint→game mapping** when hints are sparse or out of order (see §11.4).
+
+### 11.10 Sheet formatting
+
+After the layout and first guesses are written, a cosmetic pass styles the sheet:
+a title row, bold shaded setup labels, a bordered setup value block, a shaded/bold
+table header, light borders over the data grid, a green `Correct Answers` column, a
+**highlighted `Guesses` column** (the one to copy) with a darker header cap, a
+bordered yellow exact-count entry cell (`I8`), and uniform column widths. None of it
+carries state — it is purely to make the working sheet readable at a glance.
 
 ### 11.9 Special-case summary
 
