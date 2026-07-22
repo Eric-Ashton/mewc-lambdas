@@ -3,40 +3,81 @@ Attribute VB_Name = "guess_and_check"
 '==============================================================================
 ' guess_and_check  -  build and drive a guess-and-check sheet for a level.
 '
-' Strategy: the live MEWC platform scores a whole level at once, telling you HOW
-' MANY of your answers are right but not WHICH. For levels whose answers are
-' small integers it can be faster to guess and check against that feedback than
-' to solve the case. See docs/guess-and-check-business-rules.md for the full
-' spec; this module implements it.
+' The live MEWC platform scores a whole level at once (points = correct x P),
+' telling you HOW MANY answers are right, not WHICH. For levels whose answers are
+' small numbers it can be faster to guess and check against that feedback than to
+' solve the case. See docs/guess-and-check-business-rules.md for the full spec.
 '
-'   create_gc_sheet   PUBLIC. The only sub shown in Alt+F8. Run it FROM a level
-'                     tab (_L1.._L7): it reads the active sheet's name to pick
-'                     the level, parses that level's example / hints / points /
-'                     game numbers, infers significance and whether negatives
-'                     are allowed, and builds a new "_GCn" sheet (or _GCn(2),
-'                     _GCn(3), ... if one already exists) wired up with three
-'                     feedback buttons.
+' create_gc_sheet is the one Alt+F8-visible entry point. Run it FROM a level tab
+' (_L1.._L7); it builds a "_GCn" sheet wired to feedback buttons (in module
+' gc_buttons) and drives two interleaved searches, both from the per-round count:
 '
-' The feedback subs (gc_zero_right / gc_one_right / gc_two_plus_right) are driven
-' by the buttons create_gc_sheet places on the sheet. They are Public only so the
-' buttons can call them, but each takes an Optional argument, which keeps them
-' OUT of the Alt+F8 list (Excel hides any sub that takes arguments). Everything
-' else is Private.
+'   Value search  - each unsolved game tries its next candidate. Order: values
+'                   already CONFIRMED elsewhere on the level (most frequent first),
+'                   then the example answer, then an outward scan from a centre
+'                   that re-derives from solved answers (mode/median). Hinted games
+'                   are walled to their hint; un-hinted games are unbounded (only
+'                   floored at 0 unless negatives are allowed) - the search never
+'                   declares a value permanently impossible.
+'
+'   Attribution   - when a submission scores 0 < k < (active games), the exact
+'                   count is CARRIED through a bisection: a parent group of known
+'                   count k is split, one half tested, and the sibling's count is
+'                   inferred as k - (tested count) for free. A sheet-persisted
+'                   stack of (group, known-count) means all-right / all-wrong
+'                   subsets resolve entirely inside Excel with no re-test.
+'
+' Confirmed answers stay in the submitted column, so the leaderboard banks points
+' continuously; the buttons show the ABSOLUTE score the platform will display.
+' Every feedback snapshots state first, so one bad click can be undone.
 '==============================================================================
 Option Explicit
 
-' ---- columns on the generated guess-and-check sheet ----
-Private Const COL_GAME As Long = 1          'A  game numbers
-Private Const COL_CORRECT As Long = 2       'B  confirmed answers (blank = unsolved)
-Private Const COL_GUESS As Long = 3         'C  guesses to submit this round
-Private Const COL_ELIM_MIN As Long = 4      'D  low edge of the eliminated block
-Private Const COL_ELIM_MAX As Long = 5      'E  high edge of the eliminated block
-Private Const COL_POSS_A As Long = 6        'F  held-out bucket A (<= 1 right)
-Private Const COL_POSS_B As Long = 7        'G  held-out bucket B (2+ right)
-Private Const COL_INIT_GUESS As Long = 8    'H  seed guess per game
+' ---- working-table columns ----
+Private Const COL_GAME As Long = 1        'A  game numbers
+Private Const COL_CORRECT As Long = 2     'B  confirmed answers (blank = unsolved)
+Private Const COL_GUESS As Long = 3       'C  active candidate this round (unsolved only)
+Private Const COL_SUBMIT As Long = 4      'D  =IF(ISNUMBER(B),B,C) - THE column to copy
+Private Const COL_EMIN As Long = 5        'E  low edge of the contiguous eliminated block
+Private Const COL_EMAX As Long = 6        'F  high edge of that block
+Private Const COL_TRIED As Long = 7       'G  extra (non-contiguous) tried values, comma list
+Private Const COL_HLO As Long = 8         'H  hard lower bound (hint) - blank if none
+Private Const COL_HHI As Long = 9         'I  hard upper bound (hint) - blank if none
+Private Const COL_INIT As Long = 10       'J  seed guess per game
+Private Const COL_ATTR As Long = 11       'K  parked candidate value during attribution
+Private Const COL_GRP As Long = 12        'L  attribution group tag (see below)
+Private Const LAST_COL As Long = 12
 
-Private Const SIG_CELL As String = "B6"     ' Level Significance on the GC sheet
+' Group tags in COL_GRP: blank = not a candidate; >0 = pending stacked group id;
+' GRP_ACTIVE = the half submitted now; GRP_SIB = its held sibling.
+Private Const GRP_ACTIVE As Long = -1
+Private Const GRP_SIB As Long = -2
+
+' ---- setup-block / feedback cells ----
+Private Const PTS_CELL As String = "B3"
+Private Const GLO_CELL As String = "B4"
+Private Const GHI_CELL As String = "C4"
+Private Const EX_CELL As String = "B5"
+Private Const SIG_CELL As String = "B6"
+Private Const CENTER_CELL As String = "B10"
+Private Const NEG_CELL As String = "B11"
+Public Const FB_CELL As String = "N8"     ' operator types the platform POINTS here for the "8+" fallback
+
+' ---- resolver state (scalars + LIFO stack), kept out to the right ----
+Private Const ST_DEPTH As String = "T1"   ' stack depth
+Private Const ST_SEQ As String = "T2"     ' next group id
+Private Const ST_PARENTK As String = "T3" ' known count of the parent of the current split
+Private Const ST_ROUND As String = "T4"   ' round counter
+Private Const ST_LAST As String = "T5"    ' last button press (surfaced via the C5 formula)
+Private Const STK_ID_COL As Long = 21     'U  stack: group id per level
+Private Const STK_CNT_COL As Long = 22    'V  stack: known count per level
+
+' ---- undo backup (values only; laid out to the far right) ----
+Private Const BAK_DATA_COL As Long = 40   ' backup of B..L starts here (col 40 = B, 41 = C, ...)
+Private Const BAK_STATE_COL As Long = 52  ' backup of T..V starts here
+
 Private Const HEADER_TEXT As String = "Game Numbers"
+Private Const OPEN_HI As Double = 1E+300
 
 
 '==============================================================================
@@ -54,7 +95,6 @@ Public Sub create_gc_sheet()
         Exit Sub
     End If
 
-    ' ---- locate the level's data table header ("Game #" in column B) ----
     Dim hdrRow As Long
     hdrRow = gc_find_text_row(src, 2, "Game #", 1, 200)
     If hdrRow = 0 Then
@@ -63,23 +103,21 @@ Public Sub create_gc_sheet()
         Exit Sub
     End If
 
-    ' ---- example answer(s): rows just under the header whose Game # is ExampleN ----
+    ' ---- example answer(s) ----
     Dim exVals() As Double, exN As Long
     ReDim exVals(1 To 16): exN = 0
     Dim r As Long, gnum As String, ans As Variant
     For r = hdrRow + 1 To hdrRow + 20
-        gnum = UCase$(Trim$(CStr(src.Cells(r, 2).Value)))       ' col B = Game #
+        gnum = UCase$(Trim$(CStr(src.Cells(r, 2).Value)))
         If Left$(gnum, 7) = "EXAMPLE" Then
-            ans = src.Cells(r, 5).Value                          ' col E = Answer
+            ans = src.Cells(r, 5).Value
             If Not IsEmpty(ans) And Trim$(CStr(ans)) <> "" Then
-                ' PRE-FLIGHT GUARD: guess-and-check only works on numeric answers
                 If Not gc_is_plain_number(ans) Then
                     MsgBox "Guess and Check only works on numeric answers.", _
                            vbExclamation, "Guess and Check"
                     Exit Sub
                 End If
-                exN = exN + 1
-                exVals(exN) = CDbl(ans)
+                exN = exN + 1: exVals(exN) = CDbl(ans)
             End If
         End If
     Next r
@@ -89,7 +127,6 @@ Public Sub create_gc_sheet()
         Exit Sub
     End If
 
-    ' ---- game numbers (column A, below the table) ----
     Dim firstGame As Long, lastGame As Long
     If Not gc_game_range(src, firstGame, lastGame) Then
         MsgBox "Could not find the game numbers (column A) for level " & lvl & ".", _
@@ -97,30 +134,23 @@ Public Sub create_gc_sheet()
         Exit Sub
     End If
 
-    ' ---- hints: parse the "Game #g Hint: ... between X and Y" lines above the table.
-    '      Assumption (long-stable): hints are exactly the level's first three
-    '      games, or none. Each hint is placed against its own game's slot; a hint
-    '      that is not in "between X and Y" form is ignored (that slot stays blank).
+    ' ---- hints (top three games, or none): "Game #g ... between X and Y" ----
     Dim hMin(1 To 3) As Variant, hMax(1 To 3) As Variant
-    Dim mn As Double, mx As Double, hg As Long, pos As Long
+    Dim mn As Double, mx As Double, hg As Long, pos As Long, ctext As String
     For r = 1 To hdrRow - 1
-        Dim ctext As String
-        ctext = CStr(src.Cells(r, 3).Value)                     ' col C = hint text
+        ctext = CStr(src.Cells(r, 3).Value)
         If InStr(1, ctext, "Hint:", vbTextCompare) > 0 Then
             hg = gc_parse_gamenum(ctext)
             If hg > 0 And gc_parse_between(ctext, mn, mx) Then
                 pos = hg - firstGame + 1
-                If pos >= 1 And pos <= 3 Then
-                    hMin(pos) = mn: hMax(pos) = mx
-                End If
+                If pos >= 1 And pos <= 3 Then hMin(pos) = mn: hMax(pos) = mx
             End If
         End If
     Next r
 
-    ' ---- inferences over every numeric sample (examples + usable hint bounds) ----
-    Dim samples() As Double, sN As Long
+    ' ---- inferences ----
+    Dim samples() As Double, sN As Long, i As Long
     ReDim samples(1 To exN + 6): sN = 0
-    Dim i As Long
     For i = 1 To exN
         sN = sN + 1: samples(sN) = exVals(i)
     Next i
@@ -135,15 +165,10 @@ Public Sub create_gc_sheet()
     For i = 1 To sN
         If samples(i) < 0 Then negAllowed = 1: Exit For
     Next i
-
-    ' ---- points per game (display only, for the button captions) ----
     Dim pts As Double: pts = gc_points_for_level(src.Parent, lvl)
 
     ' ==========================================================================
-    ' Build the sheet
-    ' ==========================================================================
     Application.ScreenUpdating = False
-
     Dim gc As Worksheet
     Set gc = src.Parent.Worksheets.Add(After:=src)
     gc.Name = gc_unique_name(src.Parent, "_GC" & lvl)
@@ -164,289 +189,843 @@ Public Sub create_gc_sheet()
     gc.Range("A10").Value = "Guess Center"
     gc.Range("B10").Formula = "=CEILING.MATH(IF(COUNT(B7:C9)=0,B5,0.5*B5+0.5*AVERAGE(B7:C9)),B6)"
     gc.Range("A11").Value = "Negative Allowed":  gc.Range("B11").Value = negAllowed
+    ' last-button-press indicator (helps the operator see if they already reported a round)
+    gc.Range("C5").Formula = "=IF(T5="""",""(no button pressed yet)"",""Last: ""&T5)"
 
-    ' ---- feedback caption cells ----
-    gc.Range("E6").Value = "Feedback Buttons"
-    gc.Range("E8").Formula = "=""0 / ""&B3*((C4-B4)+1)&"" Points"""
-    gc.Range("F8").Formula = "=B3&"" / ""&B3*((C4-B4)+1)&"" Points"""
-    gc.Range("G8").Formula = "=2*B3&""+ / ""&B3*((C4-B4)+1)&"" Points"""
+    ' ---- feedback labels ----
+    gc.Range("E6").Value = "Points on the platform (banked answers included):"
+    gc.Range("N6").Value = "platform points"
+    gc.Range("N7").Value = "(8+ / re-eval):"
 
-    ' ---- diagnostics row (live counts) ----
-    Dim col As Long
-    For col = 1 To 8
-        gc.Cells(12, col).Formula = "=COUNT(" & Cells(14, col).Address(False, False) & ":" & _
-                                     Cells(1000, col).Address(False, False) & ")"
-    Next col
+    ' ---- diagnostics ----
+    gc.Range("A12").Formula = "=COUNT(A14:A1000)"
+    gc.Range("B12").Formula = "=COUNT(B14:B1000)"
+    gc.Range("C12").Formula = "=COUNT(C14:C1000)"
+    gc.Range("K12").Formula = "=COUNT(K14:K1000)"
 
     ' ---- table header ----
     gc.Range("A13").Value = HEADER_TEXT
     gc.Range("B13").Value = "Correct Answers"
-    gc.Range("C13").Value = "Guesses"
-    gc.Range("D13").Value = "Eliminated Min"
-    gc.Range("E13").Value = "Eliminated Max"
-    gc.Range("F13").Value = "Possible A"
-    gc.Range("G13").Value = "Possible B"
-    gc.Range("H13").Value = "Initial Guesses"
+    gc.Range("C13").Value = "Guess"
+    gc.Range("D13").Value = "Submit  (copy this)"
+    gc.Range("E13").Value = "Elim Min"
+    gc.Range("F13").Value = "Elim Max"
+    gc.Range("G13").Value = "Tried Extras"
+    gc.Range("H13").Value = "Hint Lo"
+    gc.Range("I13").Value = "Hint Hi"
+    gc.Range("J13").Value = "Initial Guess"
+    gc.Range("K13").Value = "Attribution"
+    gc.Range("L13").Value = "Grp"
 
-    ' ---- game numbers + per-game initial-guess formulas ----
-    Dim nGames As Long: nGames = lastGame - firstGame + 1
-    Dim rr As Long
+    ' ---- one row per game ----
+    Dim nGames As Long, rr As Long
+    nGames = lastGame - firstGame + 1
     For i = 1 To nGames
         rr = 13 + i
         gc.Cells(rr, COL_GAME).Value = firstGame + i - 1
+        ' solved -> banked answer; else the active guess; else BLANK (not 0 - blank C
+        ' coerces to 0, and 0 is a valid answer we must not submit for a held game)
+        gc.Cells(rr, COL_SUBMIT).Formula = _
+            "=IF(ISNUMBER(B" & rr & "),B" & rr & ",IF(C" & rr & "="""","""",C" & rr & "))"
         Select Case i
-            Case 1: gc.Cells(rr, COL_INIT_GUESS).Formula = "=IF(B7="""",$B$10,CEILING.MATH(AVERAGE(B7:C7),$B$6))"
-            Case 2: gc.Cells(rr, COL_INIT_GUESS).Formula = "=IF(B8="""",$B$10,CEILING.MATH(AVERAGE(B8:C8),$B$6))"
-            Case 3: gc.Cells(rr, COL_INIT_GUESS).Formula = "=IF(B9="""",$B$10,CEILING.MATH(AVERAGE(B9:C9),$B$6))"
-            Case Else: gc.Cells(rr, COL_INIT_GUESS).Formula = "=IF(A" & rr & "="""","""",$B$10)"
+            Case 1: gc.Cells(rr, COL_INIT).Formula = "=IF(B7="""",$B$10,CEILING.MATH(AVERAGE(B7:C7),$B$6))"
+            Case 2: gc.Cells(rr, COL_INIT).Formula = "=IF(B8="""",$B$10,CEILING.MATH(AVERAGE(B8:C8),$B$6))"
+            Case 3: gc.Cells(rr, COL_INIT).Formula = "=IF(B9="""",$B$10,CEILING.MATH(AVERAGE(B9:C9),$B$6))"
+            Case Else: gc.Cells(rr, COL_INIT).Formula = "=IF(A" & rr & "="""","""",$B$10)"
         End Select
+        If i <= 3 Then
+            If Not IsEmpty(hMin(i)) Then gc.Cells(rr, COL_HLO).Value = CDbl(hMin(i))
+            If Not IsEmpty(hMax(i)) Then gc.Cells(rr, COL_HHI).Value = CDbl(hMax(i))
+        End If
     Next i
 
-    gc.Columns("A:H").AutoFit
+    ' ---- resolver state = empty ----
+    gc.Range(ST_DEPTH).Value = 0
+    gc.Range(ST_SEQ).Value = 1
+    gc.Range(ST_PARENTK).Value = 0
+    gc.Range(ST_ROUND).Value = 0
+    gc.Range(ST_LAST).Value = ""
+
+    gc.Columns("A:L").AutoFit
     gc.Calculate
 
-    ' ---- seed the first round of guesses from the initial guesses, and copy ----
     Dim firstRow As Long, lastRow As Long
     If gc_locate(gc, firstRow, lastRow) Then
-        gc_generate_guesses gc, firstRow, lastRow, sig
+        gc_scan_regenerate gc, firstRow, lastRow, sig, (negAllowed <> 0)
+        gc_format_sheet gc, firstRow, lastRow
         gc_place_buttons gc
-        gc_copy_guesses gc, firstRow, lastRow
+        gc_recaption gc
+        gc_copy_submit gc, firstRow, lastRow
     End If
 
     Application.ScreenUpdating = True
     gc.Activate
+    On Error Resume Next
+    ActiveWindow.Zoom = 130
+    On Error GoTo 0
 End Sub
 
 
 '==============================================================================
-' Feedback subs  (button-driven; Optional arg keeps them out of Alt+F8)
+' PUBLIC feedback handler (called by gc_buttons; the required argument keeps it
+' out of Alt+F8). activeHits = number of the currently-SUBMITTED active guesses
+' that were correct (confirmed answers are excluded - the caller already did
+' points/P - confirmed, or a fixed 0..7 button).
 '==============================================================================
+Public Sub gc_feedback(ByVal activeHits As Long)
+    Dim ws As Worksheet, firstRow As Long, lastRow As Long, sig As Double, neg As Boolean
+    If Not gc_prep(ws, firstRow, lastRow, sig, neg) Then Exit Sub
 
-' 0 correct this round.
-Public Sub gc_zero_right(Optional ByVal ignore As Variant)
-    Dim ws As Worksheet, firstRow As Long, lastRow As Long, sig As Double
-    If Not gc_prep(ws, firstRow, lastRow, sig) Then Exit Sub
-    Application.ScreenUpdating = False
-    Randomize
+    Dim attrib As Boolean: attrib = (gc_count(ws, firstRow, lastRow, COL_ATTR) > 0)
+    Dim subCount As Long: subCount = gc_count(ws, firstRow, lastRow, COL_GUESS)
 
-    Dim r As Long
-    Dim cntA0 As Long, cntB0 As Long, idxSingleA0 As Long
-    Dim g As Variant, pa As String, pb As String, gn As Double
-    Dim emn As Variant, emx As Variant, mv As Long
-
-    ' snapshot the possibles before touching anything
-    For r = firstRow To lastRow
-        If Trim$(CStr(ws.Cells(r, COL_POSS_A).Value)) <> "" Then
-            cntA0 = cntA0 + 1
-            If idxSingleA0 = 0 Then idxSingleA0 = r
+    ' ---- validation (protect state from a mis-read) ----
+    If subCount = 0 Then
+        MsgBox "There is nothing submitted to score right now.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    If activeHits < 0 Or activeHits > subCount Then
+        MsgBox "That score implies " & activeHits & " correct among " & subCount & _
+               " submitted guesses, which is impossible. Nothing was changed.", _
+               vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    If attrib Then
+        Dim aSize As Long, bSize As Long, parentK As Long
+        aSize = gc_count_tag(ws, firstRow, lastRow, GRP_ACTIVE)
+        bSize = gc_count_tag(ws, firstRow, lastRow, GRP_SIB)
+        parentK = CLng(ws.Range(ST_PARENTK).Value)
+        If activeHits > parentK Or (parentK - activeHits) > bSize Then
+            MsgBox "That count is inconsistent with the group being resolved " & _
+                   "(parent had " & parentK & " correct). Nothing was changed.", _
+                   vbExclamation, "Guess and Check"
+            Exit Sub
         End If
-        If Trim$(CStr(ws.Cells(r, COL_POSS_B).Value)) <> "" Then cntB0 = cntB0 + 1
-    Next r
-
-    ' every guess was wrong: extend the eliminated block, drop matching possibles
-    For r = firstRow To lastRow
-        If Trim$(CStr(ws.Cells(r, COL_GUESS).Value)) <> "" Then
-            gn = CDbl(ws.Cells(r, COL_GUESS).Value)
-            emn = ws.Cells(r, COL_ELIM_MIN).Value
-            emx = ws.Cells(r, COL_ELIM_MAX).Value
-            If IsEmpty(emn) And IsEmpty(emx) Then
-                ws.Cells(r, COL_ELIM_MIN).Value = gn
-                ws.Cells(r, COL_ELIM_MAX).Value = gn
-            Else
-                If Not IsEmpty(emn) Then If gn = CDbl(emn) - sig Then ws.Cells(r, COL_ELIM_MIN).Value = gn
-                If Not IsEmpty(emx) Then If gn = CDbl(emx) + sig Then ws.Cells(r, COL_ELIM_MAX).Value = gn
-            End If
-            g = CStr(ws.Cells(r, COL_GUESS).Value)
-            If CStr(ws.Cells(r, COL_POSS_A).Value) = g Then ws.Cells(r, COL_POSS_A).ClearContents
-            If CStr(ws.Cells(r, COL_POSS_B).Value) = g Then ws.Cells(r, COL_POSS_B).ClearContents
-        End If
-        ws.Cells(r, COL_GUESS).ClearContents
-    Next r
-
-    If cntA0 = 1 And cntB0 = 0 Then
-        ' the lone survivor in A is the answer -> promote, then fresh guesses
-        ws.Cells(idxSingleA0, COL_CORRECT).Value = ws.Cells(idxSingleA0, COL_POSS_A).Value
-        ws.Cells(idxSingleA0, COL_POSS_A).ClearContents
-        gc_generate_guesses ws, firstRow, lastRow, sig
-    ElseIf cntA0 >= 2 Or cntB0 >= 1 Then
-        ' mid-bisection: retest half (rounded up) of each held-out bucket, no new guesses
-        gc_move_half ws, firstRow, lastRow, COL_POSS_A, COL_GUESS, (cntA0 + 1) \ 2
-        gc_move_half ws, firstRow, lastRow, COL_POSS_B, COL_GUESS, (cntB0 + 1) \ 2
-    Else
-        ' ordinary elimination round -> fresh guesses
-        gc_generate_guesses ws, firstRow, lastRow, sig
     End If
 
-    gc_copy_guesses ws, firstRow, lastRow
-    Application.ScreenUpdating = True
-End Sub
+    ' the platform score the operator just clicked = (already-confirmed + activeHits) x P
+    Dim confBefore As Long: confBefore = Application.WorksheetFunction.Count(ws.Range("B14:B100000"))
+    Dim p As Double
+    If IsNumeric(ws.Range(PTS_CELL).Value) Then p = CDbl(ws.Range(PTS_CELL).Value)
 
-' exactly 1 correct this round.
-Public Sub gc_one_right(Optional ByVal ignore As Variant)
-    Dim ws As Worksheet, firstRow As Long, lastRow As Long, sig As Double
-    If Not gc_prep(ws, firstRow, lastRow, sig) Then Exit Sub
     Application.ScreenUpdating = False
-    Randomize
+    gc_snapshot ws, firstRow, lastRow                 ' undo point BEFORE any change
 
-    ' one_right ignores bucket B
-    ws.Range(ws.Cells(firstRow, COL_POSS_B), ws.Cells(lastRow, COL_POSS_B)).ClearContents
-
-    Dim r As Long, cntGuess As Long, firstGuessRow As Long
-    For r = firstRow To lastRow
-        If Trim$(CStr(ws.Cells(r, COL_GUESS).Value)) <> "" Then
-            cntGuess = cntGuess + 1
-            If firstGuessRow = 0 Then firstGuessRow = r
-        End If
-    Next r
-
-    If cntGuess = 1 Then
-        ' the single guess is the answer -> promote, fresh guesses
-        ws.Cells(firstGuessRow, COL_CORRECT).Value = ws.Cells(firstGuessRow, COL_GUESS).Value
-        ws.Range(ws.Cells(firstRow, COL_GUESS), ws.Cells(lastRow, COL_GUESS)).ClearContents
-        ws.Range(ws.Cells(firstRow, COL_POSS_A), ws.Cells(lastRow, COL_POSS_A)).ClearContents
-        gc_generate_guesses ws, firstRow, lastRow, sig
+    If attrib Then
+        gc_attrib_step ws, firstRow, lastRow, sig, neg, activeHits
     Else
-        ' fold bucket A into the eliminated ranges, then bisect the guesses
-        Dim pa As Variant, emn As Variant, emx As Variant, pn As Double
-        For r = firstRow To lastRow
-            If Trim$(CStr(ws.Cells(r, COL_POSS_A).Value)) <> "" Then
-                pn = CDbl(ws.Cells(r, COL_POSS_A).Value)
-                emn = ws.Cells(r, COL_ELIM_MIN).Value
-                emx = ws.Cells(r, COL_ELIM_MAX).Value
-                If Not IsEmpty(emn) Then If pn = CDbl(emn) - sig Then ws.Cells(r, COL_ELIM_MIN).Value = pn
-                If Not IsEmpty(emx) Then If pn = CDbl(emx) + sig Then ws.Cells(r, COL_ELIM_MAX).Value = pn
-            End If
-        Next r
-        ws.Range(ws.Cells(firstRow, COL_POSS_A), ws.Cells(lastRow, COL_POSS_A)).ClearContents
-
-        cntGuess = gc_count(ws, firstRow, lastRow, COL_GUESS)
-        gc_move_half ws, firstRow, lastRow, COL_GUESS, COL_POSS_A, cntGuess \ 2
+        gc_scan_step ws, firstRow, lastRow, sig, neg, activeHits
     End If
 
-    gc_copy_guesses ws, firstRow, lastRow
+    ws.Range(ST_ROUND).Value = CLng(ws.Range(ST_ROUND).Value) + 1
+    If p > 0 Then
+        gc_log ws, "Scored " & (confBefore + activeHits) * p & " pts  (" & activeHits & " new correct)"
+    Else
+        gc_log ws, activeHits & " new correct"
+    End If
+    gc_recaption ws
+    gc_copy_submit ws, firstRow, lastRow
     Application.ScreenUpdating = True
 End Sub
 
-' 2 or more correct this round.
-Public Sub gc_two_plus_right(Optional ByVal ignore As Variant)
-    Dim ws As Worksheet, firstRow As Long, lastRow As Long, sig As Double
-    If Not gc_prep(ws, firstRow, lastRow, sig) Then Exit Sub
-    Application.ScreenUpdating = False
-
-    ' unused here
-    ws.Range(ws.Cells(firstRow, COL_POSS_A), ws.Cells(lastRow, COL_POSS_A)).ClearContents
-
-    ' hold half (rounded down) of the guesses in bucket B, retest the rest; no new guesses
-    Dim cntGuess As Long: cntGuess = gc_count(ws, firstRow, lastRow, COL_GUESS)
-    gc_move_half ws, firstRow, lastRow, COL_GUESS, COL_POSS_B, cntGuess \ 2
-
-    gc_copy_guesses ws, firstRow, lastRow
-    Application.ScreenUpdating = True
-End Sub
-
-
-'==============================================================================
-' Shared engine (Private)
-'==============================================================================
-
-' Locate the working table on a GC sheet and read the significance. Returns False
-' (with a message) if the sheet is not a guess-and-check sheet.
-Private Function gc_prep(ByRef ws As Worksheet, ByRef firstRow As Long, _
-                         ByRef lastRow As Long, ByRef sig As Double) As Boolean
-    Set ws = ActiveSheet
+' PUBLIC undo (arg keeps it out of Alt+F8) - restore the pre-feedback snapshot.
+Public Sub gc_apply_undo(ByVal ws As Worksheet)
+    Dim firstRow As Long, lastRow As Long
     If Not gc_locate(ws, firstRow, lastRow) Then
         MsgBox "This doesn't look like a guess-and-check sheet.", vbExclamation, "Guess and Check"
-        gc_prep = False: Exit Function
+        Exit Sub
+    End If
+    If Trim$(CStr(ws.Cells(13, BAK_DATA_COL).Value)) = "" And _
+       Trim$(CStr(ws.Cells(14, BAK_DATA_COL).Value)) = "" Then
+        MsgBox "There is no snapshot to undo yet.", vbInformation, "Guess and Check"
+        Exit Sub
+    End If
+    Application.ScreenUpdating = False
+
+    ' restore B,C (cols 2,3) and E..L (cols 5..12); D is a formula, leave it
+    ws.Range(ws.Cells(13, 2), ws.Cells(lastRow, 3)).Value = _
+        ws.Range(ws.Cells(13, BAK_DATA_COL), ws.Cells(lastRow, BAK_DATA_COL + 1)).Value
+    ws.Range(ws.Cells(13, 5), ws.Cells(lastRow, LAST_COL)).Value = _
+        ws.Range(ws.Cells(13, BAK_DATA_COL + 3), ws.Cells(lastRow, BAK_DATA_COL + LAST_COL - 2)).Value
+    ' restore scalars + stack (T..V)
+    ws.Range(ws.Cells(1, 20), ws.Cells(60, 22)).Value = _
+        ws.Range(ws.Cells(1, BAK_STATE_COL), ws.Cells(60, BAK_STATE_COL + 2)).Value
+
+    gc_log ws, "Undo"
+    gc_recaption ws
+    gc_copy_submit ws, firstRow, lastRow
+    Application.ScreenUpdating = True
+    MsgBox "Reverted to before the last feedback.", vbInformation, "Guess and Check"
+End Sub
+
+' PUBLIC recovery from operator error (arg keeps it out of Alt+F8). Forgets which
+' submitted answers were "confirmed" vs merely guessed, and re-derives purely from
+' the fact that the CURRENT Submit column scored `truePoints`. It re-parks the whole
+' current submission as one attribution group of known count truePoints/P, so a
+' wrongly-confirmed answer is found and dropped. Solved-value / elimination history
+' is kept, so the re-derivation is cheap.
+Public Sub gc_do_reeval(ByVal ws As Worksheet, ByVal truePoints As Double)
+    Dim fr As Long, lr As Long, sig As Double
+    If Not gc_locate(ws, fr, lr) Then
+        MsgBox "This doesn't look like a guess-and-check sheet.", vbExclamation, "Guess and Check"
+        Exit Sub
     End If
     sig = CDbl(ws.Range(SIG_CELL).Value)
+    Dim nv As Variant: nv = ws.Range(NEG_CELL).Value
+    Dim neg As Boolean: neg = (IsNumeric(nv) And Val(CStr(nv)) <> 0)
+    Dim p As Double
+    If IsNumeric(ws.Range(PTS_CELL).Value) Then p = CDbl(ws.Range(PTS_CELL).Value)
+    If p <= 0 Then
+        MsgBox "Points Per Game (B3) is not set.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    Dim tc As Double: tc = truePoints / p
+    If Abs(tc - CLng(tc)) > 0.000001 Then
+        MsgBox truePoints & " points is not a whole multiple of " & p & ".", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    Dim trueCorrect As Long: trueCorrect = CLng(tc)
+
+    ' count the current submission (non-blank Submit) before touching anything
+    Dim r As Long, subN As Long
+    For r = fr To lr
+        If gc_num(ws, r, COL_SUBMIT) Then subN = subN + 1
+    Next r
+    If subN = 0 Then
+        MsgBox "Nothing is currently in the Submit column to re-evaluate.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    If trueCorrect < 0 Or trueCorrect > subN Then
+        MsgBox trueCorrect & " correct is impossible for the " & subN & " values now submitted.", _
+               vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    gc_snapshot ws, fr, lr                       ' undo point
+
+    ' abandon any in-flight attribution stack, then re-park the whole submission
+    Dim gid As Long: gid = gc_new_gid(ws)
+    ws.Range(ws.Cells(1, STK_ID_COL), ws.Cells(1000, STK_CNT_COL)).ClearContents
+    ws.Range(ST_DEPTH).Value = 0
+    ws.Range(ST_PARENTK).Value = 0
+    Dim dv As Variant
+    For r = fr To lr
+        dv = ws.Cells(r, COL_SUBMIT).Value       ' read D BEFORE clearing B/C
+        ws.Cells(r, COL_CORRECT).ClearContents   ' un-confirm
+        ws.Cells(r, COL_GUESS).ClearContents
+        If IsNumeric(dv) And Trim$(CStr(dv)) <> "" Then
+            ws.Cells(r, COL_ATTR).Value = CDbl(dv)
+            ws.Cells(r, COL_GRP).Value = gid
+        Else
+            ws.Cells(r, COL_ATTR).ClearContents
+            ws.Cells(r, COL_GRP).ClearContents
+        End If
+    Next r
+
+    gc_push ws, gid, trueCorrect
+    gc_pump ws, fr, lr, sig, neg                 ' handles all/none/mixed
+
+    ws.Range(ST_ROUND).Value = CLng(ws.Range(ST_ROUND).Value) + 1
+    gc_log ws, "Re-evaluate from " & truePoints & " pts"
+    gc_recaption ws
+    gc_copy_submit ws, fr, lr
+    Application.ScreenUpdating = True
+    MsgBox "Re-evaluated from " & truePoints & " points (" & trueCorrect & " of " & subN & _
+           " correct). Paste the Submit column and carry on.", vbInformation, "Guess and Check"
+End Sub
+
+
+'==============================================================================
+' Scan step / attribution step (Private)
+'==============================================================================
+Private Sub gc_scan_step(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, _
+                         ByVal sig As Double, ByVal neg As Boolean, ByVal k As Long)
+    Dim m As Long: m = gc_count(ws, fr, lr, COL_GUESS)
+    Dim r As Long
+    If k = 0 Then
+        For r = fr To lr
+            If gc_has(ws, r, COL_GUESS) Then
+                gc_eliminate ws, r, CDbl(ws.Cells(r, COL_GUESS).Value), sig
+                ws.Cells(r, COL_GUESS).ClearContents
+            End If
+        Next r
+        gc_scan_regenerate ws, fr, lr, sig, neg
+    ElseIf k = m Then
+        For r = fr To lr
+            If gc_has(ws, r, COL_GUESS) Then
+                ws.Cells(r, COL_CORRECT).Value = ws.Cells(r, COL_GUESS).Value
+                ws.Cells(r, COL_GUESS).ClearContents
+            End If
+        Next r
+        gc_scan_regenerate ws, fr, lr, sig, neg
+    Else
+        ' park the whole submitted set as one group of known count k, then resolve
+        Dim gid As Long: gid = gc_new_gid(ws)
+        For r = fr To lr
+            If gc_has(ws, r, COL_GUESS) Then
+                ws.Cells(r, COL_ATTR).Value = ws.Cells(r, COL_GUESS).Value
+                ws.Cells(r, COL_GRP).Value = gid
+                ws.Cells(r, COL_GUESS).ClearContents
+            End If
+        Next r
+        gc_push ws, gid, k
+        gc_pump ws, fr, lr, sig, neg
+    End If
+End Sub
+
+Private Sub gc_attrib_step(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, _
+                           ByVal sig As Double, ByVal neg As Boolean, ByVal a As Long)
+    Dim parentK As Long: parentK = CLng(ws.Range(ST_PARENTK).Value)
+    gc_absorb ws, fr, lr, GRP_ACTIVE, a, sig          ' tested half
+    gc_absorb ws, fr, lr, GRP_SIB, parentK - a, sig   ' sibling, count carried for free
+    gc_pump ws, fr, lr, sig, neg
+End Sub
+
+' Resolve every row tagged `tag`, whose known correct-count is `cnt`:
+'   0        -> all wrong  (eliminate, free)
+'   size     -> all right  (solve)
+'   mixed    -> becomes a fresh pending group on the stack
+Private Sub gc_absorb(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, _
+                      ByVal tag As Long, ByVal cnt As Long, ByVal sig As Double)
+    Dim rows() As Long, n As Long
+    gc_collect_tag ws, fr, lr, tag, rows, n
+    If n = 0 Then Exit Sub
+    Dim i As Long, r As Long
+    If cnt <= 0 Then
+        For i = 1 To n
+            r = rows(i)
+            gc_eliminate ws, r, CDbl(ws.Cells(r, COL_ATTR).Value), sig
+            ws.Cells(r, COL_ATTR).ClearContents
+            ws.Cells(r, COL_GRP).ClearContents
+            ws.Cells(r, COL_GUESS).ClearContents
+        Next i
+    ElseIf cnt >= n Then
+        For i = 1 To n
+            r = rows(i)
+            ws.Cells(r, COL_CORRECT).Value = ws.Cells(r, COL_ATTR).Value
+            ws.Cells(r, COL_ATTR).ClearContents
+            ws.Cells(r, COL_GRP).ClearContents
+            ws.Cells(r, COL_GUESS).ClearContents
+        Next i
+    Else
+        Dim gid As Long: gid = gc_new_gid(ws)
+        For i = 1 To n
+            r = rows(i)
+            ws.Cells(r, COL_GRP).Value = gid
+            ws.Cells(r, COL_GUESS).ClearContents
+        Next i
+        gc_push ws, gid, cnt
+    End If
+End Sub
+
+' Process the stack until a group must be tested (submission set) or it is empty
+' (attribution done -> back to scanning).
+Private Sub gc_pump(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, _
+                    ByVal sig As Double, ByVal neg As Boolean)
+    Do
+        If gc_depth(ws) = 0 Then
+            gc_scan_regenerate ws, fr, lr, sig, neg
+            Exit Sub
+        End If
+        Dim gid As Long, cnt As Long
+        gc_pop ws, gid, cnt
+        Dim rows() As Long, n As Long
+        gc_collect_tag ws, fr, lr, gid, rows, n
+        Dim i As Long, r As Long
+        If cnt <= 0 Or n = 0 Then
+            For i = 1 To n
+                r = rows(i)
+                gc_eliminate ws, r, CDbl(ws.Cells(r, COL_ATTR).Value), sig
+                ws.Cells(r, COL_ATTR).ClearContents: ws.Cells(r, COL_GRP).ClearContents
+            Next i
+        ElseIf cnt >= n Then
+            For i = 1 To n
+                r = rows(i)
+                ws.Cells(r, COL_CORRECT).Value = ws.Cells(r, COL_ATTR).Value
+                ws.Cells(r, COL_ATTR).ClearContents: ws.Cells(r, COL_GRP).ClearContents
+            Next i
+        Else
+            ' Split into an active half (submitted) and a held sibling. If the group
+            ' mixes hinted and un-hinted games, split along THAT boundary - the hinted
+            ' games are few and have tight ranges, so isolating them resolves them (and
+            ' frees the whole un-hinted bulk when they account for the count) without
+            ' dragging every un-hinted game through the bisection. Otherwise split in
+            ' half by row order.
+            Dim nHinted As Long
+            For i = 1 To n
+                If gc_is_hinted_row(ws, rows(i)) Then nHinted = nHinted + 1
+            Next i
+            Dim byHint As Boolean: byHint = (nHinted > 0 And nHinted < n)
+            Dim keep As Long: keep = (n + 1) \ 2
+            Dim goActive As Boolean
+            For i = 1 To n
+                r = rows(i)
+                If byHint Then goActive = gc_is_hinted_row(ws, r) Else goActive = (i <= keep)
+                If goActive Then
+                    ws.Cells(r, COL_GRP).Value = GRP_ACTIVE
+                    ws.Cells(r, COL_GUESS).Value = ws.Cells(r, COL_ATTR).Value
+                Else
+                    ws.Cells(r, COL_GRP).Value = GRP_SIB
+                    ws.Cells(r, COL_GUESS).ClearContents
+                End If
+            Next i
+            ws.Range(ST_PARENTK).Value = cnt
+            Exit Sub                                   ' wait for the operator to report A's count
+        End If
+    Loop
+End Sub
+
+
+'==============================================================================
+' Value scan (Private)
+'==============================================================================
+
+' Rebuild the Guess column for a fresh scanning round. Solved games stay blank;
+' every unsolved game gets its next candidate (priority values, then outward
+' scan). Also clears any attribution scratch (we are back in scan mode).
+Private Sub gc_scan_regenerate(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, _
+                               ByVal sig As Double, ByVal neg As Boolean)
+    Dim r As Long
+    For r = fr To lr
+        ws.Cells(r, COL_GUESS).ClearContents
+        ws.Cells(r, COL_ATTR).ClearContents
+        ws.Cells(r, COL_GRP).ClearContents
+    Next r
+
+    ' solved values -> centre + priority list
+    Dim sv() As Double, ns As Long
+    gc_gather_solved ws, fr, lr, sv, ns
+    Dim baseCenter As Double: baseCenter = CDbl(ws.Range(CENTER_CELL).Value)
+    Dim center As Double: center = gc_center(sv, ns, baseCenter)
+    Dim prio() As Double, np As Long
+    gc_priority_values sv, ns, sig, prio, np
+
+    Dim nUnsolved As Long, nGuess As Long, g As Variant
+    For r = fr To lr
+        If Not gc_is_solved(ws, r) Then
+            nUnsolved = nUnsolved + 1
+            g = gc_next_guess(ws, r, sig, neg, center, prio, np)
+            If Not IsEmpty(g) Then ws.Cells(r, COL_GUESS).Value = CDbl(g): nGuess = nGuess + 1
+        End If
+    Next r
+
+    If nUnsolved > 0 And nGuess = 0 Then
+        MsgBox "Every remaining game is a hinted game whose hint range is fully " & _
+               "eliminated. Check the hints / significance (" & SIG_CELL & ").", _
+               vbExclamation, "Guess and Check"
+    End If
+End Sub
+
+' Next value to try for game r. Priority values first (confirmed elsewhere, then
+' example) if untried & in-bounds, else the nearest-to-centre untried value.
+' Returns Empty only when a HINTED game's hard range is exhausted.
+Private Function gc_next_guess(ByVal ws As Worksheet, ByVal r As Long, ByVal sig As Double, _
+                               ByVal neg As Boolean, ByVal center As Double, _
+                               ByRef prio() As Double, ByVal np As Long) As Variant
+    Dim hardLo As Boolean, hardHi As Boolean, lo As Double, hi As Double
+    hardLo = gc_num(ws, r, COL_HLO): If hardLo Then lo = CDbl(ws.Cells(r, COL_HLO).Value)
+    hardHi = gc_num(ws, r, COL_HHI): If hardHi Then hi = CDbl(ws.Cells(r, COL_HHI).Value)
+    Dim eps As Double: eps = sig * 0.000001
+
+    Dim i As Long, v As Double
+    For i = 1 To np
+        v = prio(i)
+        If gc_in_bounds(v, hardLo, lo, hardHi, hi, neg, eps) Then
+            If Not gc_tried(ws, r, v, sig) Then gc_next_guess = v: Exit Function
+        End If
+    Next i
+
+    ' outward scan from the (grid-snapped) centre. A candidate is only returned if
+    ' it is inside BOTH bounds (gc_in_bounds); the single-sided loPast/hiPast tests
+    ' are only for deciding a hinted range is exhausted (never fires when unbounded).
+    Dim c As Double: c = gc_snap(center, sig)
+    Dim k As Long, vlo As Double, vhi As Double, loPast As Boolean, hiPast As Boolean
+    For k = 0 To 200000
+        vlo = c - k * sig: vhi = c + k * sig
+        If gc_in_bounds(vlo, hardLo, lo, hardHi, hi, neg, eps) Then
+            If Not gc_tried(ws, r, vlo, sig) Then gc_next_guess = vlo: Exit Function
+        End If
+        If k > 0 Then
+            If gc_in_bounds(vhi, hardLo, lo, hardHi, hi, neg, eps) Then
+                If Not gc_tried(ws, r, vhi, sig) Then gc_next_guess = vhi: Exit Function
+            End If
+        End If
+        loPast = (hardLo And vlo < lo - eps) Or ((Not neg) And vlo < -eps)
+        hiPast = (hardHi And vhi > hi + eps)
+        If loPast And hiPast Then Exit For         ' hinted game: whole range tried -> exhausted
+    Next k
+    gc_next_guess = Empty
+End Function
+
+' Fold a proven-wrong value into game r's tried state: extend the contiguous block
+' when adjacent (then swallow any extras it now touches), otherwise record it in the
+' Tried Extras list.
+Private Sub gc_eliminate(ByVal ws As Worksheet, ByVal r As Long, ByVal v As Double, ByVal sig As Double)
+    Dim eps As Double: eps = sig * 0.000001
+    If Not gc_num(ws, r, COL_EMIN) Then
+        ws.Cells(r, COL_EMIN).Value = v: ws.Cells(r, COL_EMAX).Value = v
+        Exit Sub
+    End If
+    Dim emin As Double, emax As Double
+    emin = CDbl(ws.Cells(r, COL_EMIN).Value): emax = CDbl(ws.Cells(r, COL_EMAX).Value)
+    If v >= emin - eps And v <= emax + eps Then Exit Sub          ' already in block
+    If Abs(v - (emin - sig)) < eps Then
+        ws.Cells(r, COL_EMIN).Value = v: gc_absorb_extras ws, r, sig
+    ElseIf Abs(v - (emax + sig)) < eps Then
+        ws.Cells(r, COL_EMAX).Value = v: gc_absorb_extras ws, r, sig
+    Else
+        gc_tried_add ws, r, v, sig                                ' non-adjacent -> extras
+    End If
+End Sub
+
+' Pull any Tried-Extras value now adjacent to the block's edges into the block, so
+' block + extras never leave a contiguous run split (cosmetic + keeps extras short).
+Private Sub gc_absorb_extras(ByVal ws As Worksheet, ByVal r As Long, ByVal sig As Double)
+    If Not gc_num(ws, r, COL_EMIN) Then Exit Sub
+    Dim emin As Double, emax As Double, changed As Boolean
+    emin = CDbl(ws.Cells(r, COL_EMIN).Value): emax = CDbl(ws.Cells(r, COL_EMAX).Value)
+    Do
+        changed = False
+        If gc_extra_remove(ws, r, emax + sig, sig) Then emax = emax + sig: changed = True
+        If gc_extra_remove(ws, r, emin - sig, sig) Then emin = emin - sig: changed = True
+    Loop While changed
+    ws.Cells(r, COL_EMIN).Value = emin: ws.Cells(r, COL_EMAX).Value = emax
+End Sub
+
+' Remove value v from game r's Tried Extras list; True if it was there.
+Private Function gc_extra_remove(ByVal ws As Worksheet, ByVal r As Long, ByVal v As Double, ByVal sig As Double) As Boolean
+    Dim s As String: s = CStr(ws.Cells(r, COL_TRIED).Value)
+    If Len(s) = 0 Then Exit Function
+    Dim eps As Double: eps = sig * 0.000001
+    Dim parts() As String, i As Long, out As String, found As Boolean
+    parts = Split(s, ",")
+    For i = LBound(parts) To UBound(parts)
+        If Len(Trim$(parts(i))) > 0 Then
+            If (Not found) And Abs(CDbl(parts(i)) - v) < eps Then
+                found = True
+            Else
+                If Len(out) = 0 Then out = Trim$(parts(i)) Else out = out & "," & Trim$(parts(i))
+            End If
+        End If
+    Next i
+    If found Then ws.Cells(r, COL_TRIED).Value = out
+    gc_extra_remove = found
+End Function
+
+' Has game r already tried value v? (contiguous block OR the extras list)
+Private Function gc_tried(ByVal ws As Worksheet, ByVal r As Long, ByVal v As Double, ByVal sig As Double) As Boolean
+    Dim eps As Double: eps = sig * 0.000001
+    If gc_num(ws, r, COL_EMIN) Then
+        If v >= CDbl(ws.Cells(r, COL_EMIN).Value) - eps And _
+           v <= CDbl(ws.Cells(r, COL_EMAX).Value) + eps Then gc_tried = True: Exit Function
+    End If
+    Dim s As String: s = CStr(ws.Cells(r, COL_TRIED).Value)
+    If Len(s) = 0 Then Exit Function
+    Dim parts() As String, i As Long
+    parts = Split(s, ",")
+    For i = LBound(parts) To UBound(parts)
+        If Len(Trim$(parts(i))) > 0 Then
+            If Abs(CDbl(parts(i)) - v) < eps Then gc_tried = True: Exit Function
+        End If
+    Next i
+End Function
+
+Private Sub gc_tried_add(ByVal ws As Worksheet, ByVal r As Long, ByVal v As Double, ByVal sig As Double)
+    If gc_tried(ws, r, v, sig) Then Exit Sub
+    Dim s As String: s = CStr(ws.Cells(r, COL_TRIED).Value)
+    If Len(s) = 0 Then s = CStr(v) Else s = s & "," & CStr(v)
+    ws.Cells(r, COL_TRIED).Value = s
+End Sub
+
+Private Function gc_in_bounds(ByVal v As Double, ByVal hardLo As Boolean, ByVal lo As Double, _
+                              ByVal hardHi As Boolean, ByVal hi As Double, _
+                              ByVal neg As Boolean, ByVal eps As Double) As Boolean
+    If hardLo And v < lo - eps Then Exit Function
+    If hardHi And v > hi + eps Then Exit Function
+    If (Not neg) And v < -eps Then Exit Function
+    gc_in_bounds = True
+End Function
+
+Private Function gc_snap(ByVal x As Double, ByVal sig As Double) As Double
+    gc_snap = CDbl(CLng(x / sig)) * sig
+End Function
+
+
+'==============================================================================
+' Centre + priority values (Private)
+'==============================================================================
+Private Sub gc_gather_solved(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, _
+                             ByRef sv() As Double, ByRef n As Long)
+    ReDim sv(1 To (lr - fr + 1)): n = 0
+    Dim r As Long, v As Variant
+    For r = fr To lr
+        v = ws.Cells(r, COL_CORRECT).Value
+        If IsNumeric(v) And Trim$(CStr(v)) <> "" Then n = n + 1: sv(n) = CDbl(v)
+    Next r
+End Sub
+
+' Search centre: mode of solved answers if one repeats, else their median, else
+' the (example/hint-blended) build centre. Solved data beats the seed once it exists.
+Private Function gc_center(ByRef sv() As Double, ByVal n As Long, ByVal fallback As Double) As Double
+    If n = 0 Then gc_center = fallback: Exit Function
+    Dim a() As Double: a = gc_sorted(sv, n)
+    Dim bestV As Double, bestF As Long, curV As Double, curF As Long, i As Long
+    bestF = 0: curF = 0
+    For i = 1 To n
+        If i = 1 Or a(i) <> curV Then curV = a(i): curF = 1 Else curF = curF + 1
+        If curF > bestF Then bestF = curF: bestV = curV
+    Next i
+    If bestF > 1 Then gc_center = bestV Else gc_center = a((n + 1) \ 2)   ' mode, else median
+End Function
+
+' Priority list: the distinct CONFIRMED values on this level, most frequent first
+' (ties low). These are the values worth re-testing across the other games first,
+' because a level's answers tend to repeat. The example answer is deliberately NOT
+' here - it is a different game's answer and already feeds the centre (B10); round 1
+' (nothing solved) therefore probes the centre, not the example.
+Private Sub gc_priority_values(ByRef sv() As Double, ByVal n As Long, _
+                               ByVal sig As Double, ByRef prio() As Double, ByRef np As Long)
+    np = 0
+    If n = 0 Then ReDim prio(1 To 1): Exit Sub
+    ReDim prio(1 To n)
+    Dim eps As Double: eps = sig * 0.000001
+    Dim a() As Double: a = gc_sorted(sv, n)
+    ' distinct values + frequency
+    Dim vals() As Double, fq() As Long, d As Long, i As Long, isNew As Boolean
+    ReDim vals(1 To n): ReDim fq(1 To n): d = 0
+    For i = 1 To n
+        If d = 0 Then                          ' VBA has no short-circuit: guard vals(d) separately
+            isNew = True
+        Else
+            isNew = (Abs(a(i) - vals(d)) > eps)
+        End If
+        If isNew Then
+            d = d + 1: vals(d) = a(i): fq(d) = 1
+        Else
+            fq(d) = fq(d) + 1
+        End If
+    Next i
+    ' selection-sort distinct by freq desc (ties keep ascending value)
+    Dim j As Long, bi As Long
+    For i = 1 To d
+        bi = i
+        For j = i + 1 To d
+            If fq(j) > fq(bi) Then bi = j
+        Next j
+        If bi <> i Then
+            Dim tv As Double, tf As Long
+            tv = vals(i): vals(i) = vals(bi): vals(bi) = tv
+            tf = fq(i): fq(i) = fq(bi): fq(bi) = tf
+        End If
+        np = np + 1: prio(np) = vals(i)
+    Next i
+End Sub
+
+Private Function gc_sorted(ByRef src() As Double, ByVal n As Long) As Double()
+    Dim a() As Double: ReDim a(1 To n)
+    Dim i As Long: For i = 1 To n: a(i) = src(i): Next i
+    Dim j As Long, key As Double
+    For i = 2 To n
+        key = a(i): j = i - 1
+        Do While j >= 1
+            If a(j) <= key Then Exit Do
+            a(j + 1) = a(j): j = j - 1
+        Loop
+        a(j + 1) = key
+    Next i
+    gc_sorted = a
+End Function
+
+
+'==============================================================================
+' Resolver stack + small utilities (Private)
+'==============================================================================
+Private Function gc_depth(ByVal ws As Worksheet) As Long
+    gc_depth = CLng(ws.Range(ST_DEPTH).Value)
+End Function
+Private Function gc_new_gid(ByVal ws As Worksheet) As Long
+    gc_new_gid = CLng(ws.Range(ST_SEQ).Value)
+    ws.Range(ST_SEQ).Value = gc_new_gid + 1
+End Function
+Private Sub gc_push(ByVal ws As Worksheet, ByVal gid As Long, ByVal cnt As Long)
+    Dim d As Long: d = gc_depth(ws) + 1
+    ws.Cells(d, STK_ID_COL).Value = gid
+    ws.Cells(d, STK_CNT_COL).Value = cnt
+    ws.Range(ST_DEPTH).Value = d
+End Sub
+Private Sub gc_pop(ByVal ws As Worksheet, ByRef gid As Long, ByRef cnt As Long)
+    Dim d As Long: d = gc_depth(ws)
+    gid = CLng(ws.Cells(d, STK_ID_COL).Value)
+    cnt = CLng(ws.Cells(d, STK_CNT_COL).Value)
+    ws.Cells(d, STK_ID_COL).ClearContents: ws.Cells(d, STK_CNT_COL).ClearContents
+    ws.Range(ST_DEPTH).Value = d - 1
+End Sub
+
+Private Function gc_prep(ByRef ws As Worksheet, ByRef fr As Long, ByRef lr As Long, _
+                         ByRef sig As Double, ByRef neg As Boolean) As Boolean
+    Set ws = ActiveSheet
+    If Not gc_locate(ws, fr, lr) Then
+        MsgBox "This doesn't look like a guess-and-check sheet.", vbExclamation, "Guess and Check"
+        Exit Function
+    End If
+    sig = CDbl(ws.Range(SIG_CELL).Value)
+    Dim nv As Variant: nv = ws.Range(NEG_CELL).Value
+    neg = (IsNumeric(nv) And Val(CStr(nv)) <> 0)
     gc_prep = True
 End Function
 
-Private Function gc_locate(ByVal ws As Worksheet, ByRef firstRow As Long, ByRef lastRow As Long) As Boolean
-    firstRow = 0
+Private Function gc_locate(ByVal ws As Worksheet, ByRef fr As Long, ByRef lr As Long) As Boolean
+    fr = 0
     Dim r As Long
     For r = 1 To 100
-        If LCase$(Trim$(CStr(ws.Cells(r, COL_GAME).Value))) = LCase$(HEADER_TEXT) Then
-            firstRow = r + 1: Exit For
-        End If
+        If LCase$(Trim$(CStr(ws.Cells(r, COL_GAME).Value))) = LCase$(HEADER_TEXT) Then fr = r + 1: Exit For
     Next r
-    If firstRow = 0 Then gc_locate = False: Exit Function
-    lastRow = ws.Cells(ws.Rows.Count, COL_GAME).End(xlUp).Row
-    gc_locate = (lastRow >= firstRow)
+    If fr = 0 Then Exit Function
+    lr = ws.Cells(ws.Rows.Count, COL_GAME).End(xlUp).Row
+    gc_locate = (lr >= fr)
 End Function
 
-' Build the next Guesses column: solved games stay blank; a game with no eliminated
-' block yet uses its Initial Guess; otherwise probe one step past a random edge.
-Private Sub gc_generate_guesses(ByVal ws As Worksheet, ByVal firstRow As Long, _
-                                ByVal lastRow As Long, ByVal sig As Double)
-    Dim r As Long, cv As Variant, emn As Variant, emx As Variant
-    For r = firstRow To lastRow
-        cv = ws.Cells(r, COL_CORRECT).Value
-        If Not IsEmpty(cv) And IsNumeric(cv) Then
-            ' solved (0 counts) -> no guess
-        Else
-            emn = ws.Cells(r, COL_ELIM_MIN).Value
-            emx = ws.Cells(r, COL_ELIM_MAX).Value
-            If IsEmpty(emn) Then
-                ws.Cells(r, COL_GUESS).Value = ws.Cells(r, COL_INIT_GUESS).Value
-            ElseIf Rnd < 0.5 Then
-                ws.Cells(r, COL_GUESS).Value = CDbl(emn) - sig
-            Else
-                ws.Cells(r, COL_GUESS).Value = CDbl(emx) + sig
-            End If
-        End If
-    Next r
-End Sub
-
-' Move the first `howMany` non-empty cells from column `fromCol` into `toCol`.
-Private Sub gc_move_half(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long, _
-                         ByVal fromCol As Long, ByVal toCol As Long, ByVal howMany As Long)
-    If howMany <= 0 Then Exit Sub
+Private Function gc_has(ByVal ws As Worksheet, ByVal r As Long, ByVal col As Long) As Boolean
+    gc_has = (Trim$(CStr(ws.Cells(r, col).Value)) <> "")
+End Function
+Private Function gc_num(ByVal ws As Worksheet, ByVal r As Long, ByVal col As Long) As Boolean
+    Dim v As Variant: v = ws.Cells(r, col).Value
+    gc_num = (IsNumeric(v) And Trim$(CStr(v)) <> "")
+End Function
+Private Function gc_is_solved(ByVal ws As Worksheet, ByVal r As Long) As Boolean
+    gc_is_solved = gc_num(ws, r, COL_CORRECT)
+End Function
+' A game with a hard hint bound (small, walled search space).
+Private Function gc_is_hinted_row(ByVal ws As Worksheet, ByVal r As Long) As Boolean
+    gc_is_hinted_row = (gc_num(ws, r, COL_HLO) Or gc_num(ws, r, COL_HHI))
+End Function
+Private Function gc_count(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, ByVal col As Long) As Long
     Dim r As Long
-    For r = firstRow To lastRow
-        If howMany = 0 Then Exit For
-        If Trim$(CStr(ws.Cells(r, fromCol).Value)) <> "" Then
-            ws.Cells(r, toCol).Value = ws.Cells(r, fromCol).Value
-            ws.Cells(r, fromCol).ClearContents
-            howMany = howMany - 1
-        End If
-    Next r
-End Sub
-
-Private Function gc_count(ByVal ws As Worksheet, ByVal firstRow As Long, _
-                          ByVal lastRow As Long, ByVal col As Long) As Long
-    Dim r As Long
-    For r = firstRow To lastRow
-        If Trim$(CStr(ws.Cells(r, col).Value)) <> "" Then gc_count = gc_count + 1
+    For r = fr To lr
+        If gc_has(ws, r, col) Then gc_count = gc_count + 1
     Next r
 End Function
-
-' Copy the Guesses column to the clipboard so the operator can paste-submit,
-' then click a feedback button, then paste again next round.
-Private Sub gc_copy_guesses(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long)
-    ws.Range(ws.Cells(firstRow, COL_GUESS), ws.Cells(lastRow, COL_GUESS)).Copy
+Private Function gc_count_tag(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, ByVal tag As Long) As Long
+    Dim r As Long
+    For r = fr To lr
+        If gc_num(ws, r, COL_GRP) Then If CLng(ws.Cells(r, COL_GRP).Value) = tag Then gc_count_tag = gc_count_tag + 1
+    Next r
+End Function
+Private Sub gc_collect_tag(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, _
+                           ByVal tag As Long, ByRef rows() As Long, ByRef n As Long)
+    ReDim rows(1 To (lr - fr + 1)): n = 0
+    Dim r As Long
+    For r = fr To lr
+        If gc_num(ws, r, COL_GRP) Then If CLng(ws.Cells(r, COL_GRP).Value) = tag Then n = n + 1: rows(n) = r
+    Next r
 End Sub
 
+' Copy the Submit column (confirmed answers + active guesses) for the operator.
+Private Sub gc_copy_submit(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
+    ws.Range(ws.Cells(fr, COL_SUBMIT), ws.Cells(lr, COL_SUBMIT)).Copy
+End Sub
+
+' Record the last button press (with a timestamp) for the C5 indicator.
+Private Sub gc_log(ByVal ws As Worksheet, ByVal msg As String)
+    ws.Range(ST_LAST).Value = msg & "   @ " & Format$(Now, "h:mm:ss AM/PM")
+End Sub
+
+' Snapshot mutable state (values only, no clipboard) for one-level undo.
+Private Sub gc_snapshot(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
+    ws.Range(ws.Cells(13, BAK_DATA_COL), ws.Cells(lr, BAK_DATA_COL + LAST_COL - 2)).Value = _
+        ws.Range(ws.Cells(13, 2), ws.Cells(lr, LAST_COL)).Value
+    ws.Range(ws.Cells(1, BAK_STATE_COL), ws.Cells(60, BAK_STATE_COL + 2)).Value = _
+        ws.Range(ws.Cells(1, 20), ws.Cells(60, 22)).Value
+End Sub
+
+
+'==============================================================================
+' Buttons + formatting (Private)
+'==============================================================================
 Private Sub gc_place_buttons(ByVal ws As Worksheet)
-    gc_add_button ws, ws.Range("E9"), "gc_zero_right", "0 right"
-    gc_add_button ws, ws.Range("F9"), "gc_one_right", "1 right"
-    gc_add_button ws, ws.Range("G9"), "gc_two_plus_right", "2+ right"
+    gc_add_button ws, ws.Range("E8:F9"), "gc_fb0", "gc_btn0"
+    gc_add_button ws, ws.Range("G8:H9"), "gc_fb1", "gc_btn1"
+    gc_add_button ws, ws.Range("I8:J9"), "gc_fb2", "gc_btn2"
+    gc_add_button ws, ws.Range("K8:L9"), "gc_fb3", "gc_btn3"
+    gc_add_button ws, ws.Range("E10:F11"), "gc_fb4", "gc_btn4"
+    gc_add_button ws, ws.Range("G10:H11"), "gc_fb5", "gc_btn5"
+    gc_add_button ws, ws.Range("I10:J11"), "gc_fb6", "gc_btn6"
+    gc_add_button ws, ws.Range("K10:L11"), "gc_fb7", "gc_btn7"
+    gc_add_button ws, ws.Range("O8:P9"), "gc_fbN", "gc_btnN"
+    gc_add_button ws, ws.Range("O10:P11"), "gc_undo", "gc_btnUndo"
+    gc_add_button ws, ws.Range("Q8:R11"), "gc_reeval", "gc_btnReeval"
 End Sub
 
-Private Sub gc_add_button(ByVal ws As Worksheet, ByVal cel As Range, _
-                          ByVal macro As String, ByVal caption As String)
+Private Sub gc_add_button(ByVal ws As Worksheet, ByVal rng As Range, ByVal macro As String, ByVal nm As String)
     Dim b As Object
-    Set b = ws.Buttons.Add(cel.Left, cel.Top, cel.Width, cel.Height * 2)
+    Set b = ws.Buttons.Add(rng.Left, rng.Top, rng.Width, rng.Height)
+    b.Name = nm
     b.OnAction = macro
-    b.Caption = caption
+End Sub
+
+' Re-label the buttons to the ABSOLUTE score the platform will show: a button for
+' "j more correct" reads (confirmed + j) * P. Refreshed after every feedback.
+Private Sub gc_recaption(ByVal ws As Worksheet)
+    Dim p As Double, confirmed As Long
+    If IsNumeric(ws.Range(PTS_CELL).Value) Then p = CDbl(ws.Range(PTS_CELL).Value)
+    confirmed = Application.WorksheetFunction.Count(ws.Range("B14:B100000"))
+    Dim j As Long
+    On Error Resume Next
+    For j = 0 To 7
+        ws.Buttons("gc_btn" & j).Caption = gc_pts_caption(confirmed + j, p)
+    Next j
+    ws.Buttons("gc_btnN").Caption = "8+ pts"
+    ws.Buttons("gc_btnUndo").Caption = "Undo"
+    ws.Buttons("gc_btnReeval").Caption = "Re-evaluate" & vbLf & "(from N8 points)"
+    On Error GoTo 0
+End Sub
+
+Private Function gc_pts_caption(ByVal correctTotal As Long, ByVal p As Double) As String
+    If p > 0 Then gc_pts_caption = CStr(correctTotal * p) Else gc_pts_caption = CStr(correctTotal)
+End Function
+
+Private Sub gc_format_sheet(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
+    Dim hdr As Long: hdr = fr - 1
+    Dim cNavy As Long, cLabel As Long, cGreen As Long, cSubmitH As Long, cSubmit As Long, cHead As Long, cInput As Long, cGrid As Long
+    cNavy = RGB(31, 78, 120): cLabel = RGB(221, 235, 247): cGreen = RGB(226, 239, 218)
+    cSubmitH = RGB(191, 143, 0): cSubmit = RGB(255, 242, 204): cHead = RGB(47, 117, 181)
+    cInput = RGB(255, 255, 204): cGrid = RGB(200, 200, 200)
+    With ws
+        .Range("A1").Value = "Guess & Check  -  Level " & .Range("B2").Value
+        .Range("A1").Font.Bold = True: .Range("A1").Font.Size = 14: .Range("A1").Font.Color = cNavy
+        .Range("A2:A11").Font.Bold = True: .Range("A2:A11").Interior.Color = cLabel
+        With .Range("B2:C11")
+            .Interior.Color = RGB(255, 255, 255): .Borders.LineStyle = xlContinuous: .Borders.Color = cGrid
+        End With
+        .Range("E6").Font.Bold = True: .Range("N6").Font.Bold = True: .Range("N7").Font.Size = 9
+        With .Range(FB_CELL)
+            .Interior.Color = cInput: .Borders.LineStyle = xlContinuous: .Borders.Weight = xlMedium: .HorizontalAlignment = xlCenter
+        End With
+        With .Range(.Cells(hdr, COL_GAME), .Cells(hdr, LAST_COL))
+            .Interior.Color = cHead: .Font.Color = RGB(255, 255, 255): .Font.Bold = True
+            .HorizontalAlignment = xlCenter: .WrapText = True
+        End With
+        .Cells(hdr, COL_SUBMIT).Interior.Color = cSubmitH
+        If lr >= fr Then
+            With .Range(.Cells(fr, COL_GAME), .Cells(lr, LAST_COL)).Borders
+                .LineStyle = xlContinuous: .Color = cGrid
+            End With
+            .Range(.Cells(fr, COL_GAME), .Cells(lr, LAST_COL)).HorizontalAlignment = xlCenter
+            .Range(.Cells(fr, COL_CORRECT), .Cells(lr, COL_CORRECT)).Interior.Color = cGreen
+            .Range(.Cells(fr, COL_SUBMIT), .Cells(lr, COL_SUBMIT)).Interior.Color = cSubmit
+        End If
+        .Columns("A:L").ColumnWidth = 11
+        .Columns("A").ColumnWidth = 13
+        .Rows(hdr).RowHeight = 28
+        .Columns("T:BB").Hidden = True                ' resolver state + undo backup
+    End With
 End Sub
 
 
 '==============================================================================
 ' Parsing / inference helpers (Private)
 '==============================================================================
-
-' "_L6" -> 6 ; anything else -> 0
 Private Function gc_level_from_name(ByVal nm As String) As Long
     nm = Trim$(nm)
     If UCase$(Left$(nm, 2)) <> "_L" Then Exit Function
@@ -459,18 +1038,14 @@ Private Function gc_level_from_name(ByVal nm As String) As Long
     gc_level_from_name = CLng(tail)
 End Function
 
-' First row at/after startRow (in the given column) whose text = `text`, else 0.
 Private Function gc_find_text_row(ByVal ws As Worksheet, ByVal col As Long, ByVal text As String, _
                                   ByVal startRow As Long, ByVal endRow As Long) As Long
     Dim r As Long
     For r = startRow To endRow
-        If LCase$(Trim$(CStr(ws.Cells(r, col).Value))) = LCase$(text) Then
-            gc_find_text_row = r: Exit Function
-        End If
+        If LCase$(Trim$(CStr(ws.Cells(r, col).Value))) = LCase$(text) Then gc_find_text_row = r: Exit Function
     Next r
 End Function
 
-' Min/max game number from the numeric cells in column A.
 Private Function gc_game_range(ByVal ws As Worksheet, ByRef firstGame As Long, ByRef lastGame As Long) As Boolean
     Dim r As Long, lastR As Long, v As Variant, found As Boolean
     lastR = ws.Cells(ws.Rows.Count, COL_GAME).End(xlUp).Row
@@ -488,37 +1063,29 @@ Private Function gc_game_range(ByVal ws As Worksheet, ByRef firstGame As Long, B
     gc_game_range = found
 End Function
 
-' Game number out of "Game #91 Hint: ..." -> 91 (0 if none).
 Private Function gc_parse_gamenum(ByVal s As String) As Long
     Static re As Object
     If re Is Nothing Then
-        Set re = CreateObject("VBScript.RegExp")
-        re.IgnoreCase = True
-        re.Pattern = "Game\s*#\s*(\d+)"
+        Set re = CreateObject("VBScript.RegExp"): re.IgnoreCase = True: re.Pattern = "Game\s*#\s*(\d+)"
     End If
     If re.Test(s) Then gc_parse_gamenum = CLng(re.Execute(s)(0).SubMatches(0))
 End Function
 
-' Extract the two numbers from "... between X and Y ..." -> True on success.
 Private Function gc_parse_between(ByVal s As String, ByRef mn As Double, ByRef mx As Double) As Boolean
     Static re As Object
     If re Is Nothing Then
-        Set re = CreateObject("VBScript.RegExp")
-        re.IgnoreCase = True
+        Set re = CreateObject("VBScript.RegExp"): re.IgnoreCase = True
         re.Pattern = "between\s+(-?\d+(?:\.\d+)?)\s+and\s+(-?\d+(?:\.\d+)?)"
     End If
     If re.Test(s) Then
-        Dim m As Object: Set m = re.Execute(s)(0)
-        mn = CDbl(m.SubMatches(0)): mx = CDbl(m.SubMatches(1))
-        gc_parse_between = True
+        Dim mch As Object: Set mch = re.Execute(s)(0)
+        mn = CDbl(mch.SubMatches(0)): mx = CDbl(mch.SubMatches(1)): gc_parse_between = True
     End If
 End Function
 
-' A single plain number: rejects text, cell refs, and delimited series like "3;7".
 Private Function gc_is_plain_number(ByVal v As Variant) As Boolean
     If IsEmpty(v) Then Exit Function
     If IsNumeric(v) Then
-        ' IsNumeric accepts things like "1,000" / "$5"; require a clean number too
         Dim s As String: s = Trim$(CStr(v))
         If InStr(s, ",") > 0 Or InStr(s, ";") > 0 Or InStr(s, " ") > 0 Then Exit Function
         gc_is_plain_number = True
@@ -531,31 +1098,29 @@ Private Function gc_mean(ByRef vals() As Double, ByVal n As Long) As Double
     If n > 0 Then gc_mean = t / n
 End Function
 
-' Coarsest power of ten (1e-6 .. 1e6) that divides EVERY sample exactly.
+' Significance = the FINEST step the samples justify, never coarser than 1.
+' All-integer samples -> 1 (do NOT infer a coarse step just because 20 divides by
+' 10). Decimal samples -> the smallest decimal unit that divides them exactly.
 Private Function gc_significance(ByRef vals() As Double, ByVal n As Long) As Double
-    Dim i As Long, s As Double, best As Double
+    Dim i As Long, s As Double, best As Double: best = 1
     For i = 1 To n
-        s = gc_indiv_sig(vals(i))
-        If i = 1 Or s < best Then best = s
+        s = gc_decimal_sig(vals(i))
+        If s < best Then best = s
     Next i
-    If best = 0 Then best = 1
     gc_significance = best
 End Function
 
-Private Function gc_indiv_sig(ByVal x As Double) As Double
+Private Function gc_decimal_sig(ByVal x As Double) As Double
     Dim ax As Double: ax = Abs(x)
-    If ax = 0 Then gc_indiv_sig = 1: Exit Function
+    If ax = 0 Then gc_decimal_sig = 1: Exit Function
     Dim k As Long, s As Double, q As Double
-    For k = 6 To -6 Step -1
-        s = 10 ^ k
-        q = ax / s
-        If Abs(q - CDbl(CLng(q))) < 0.0000001 Then gc_indiv_sig = s: Exit Function
+    For k = 0 To -6 Step -1                    ' 1, 0.1, 0.01, ... (never > 1)
+        s = 10 ^ k: q = ax / s
+        If Abs(q - CDbl(CLng(q))) < 0.0000001 Then gc_decimal_sig = s: Exit Function
     Next k
-    gc_indiv_sig = 0.000001
+    gc_decimal_sig = 0.000001
 End Function
 
-' Best-effort points-per-game for a level, read from the imported case table.
-' Display only (drives the button captions); returns 0 if not found.
 Private Function gc_points_for_level(ByVal wb As Workbook, ByVal lvl As Long) As Double
     Dim cand As Variant, nm As Variant, ws As Worksheet, r As Long, lastR As Long
     cand = Array("Case", "case copy", "Answers", "case data")
@@ -565,13 +1130,11 @@ Private Function gc_points_for_level(ByVal wb As Workbook, ByVal lvl As Long) As
         Set ws = wb.Worksheets(CStr(nm))
         On Error GoTo 0
         If Not ws Is Nothing Then
-            lastR = ws.Cells(ws.Rows.Count, 2).End(xlUp).Row     ' col B = Game #
+            lastR = ws.Cells(ws.Rows.Count, 2).End(xlUp).Row
             For r = 1 To lastR
                 If IsNumeric(ws.Cells(r, 2).Value) And ws.Cells(r, 3).Value = lvl Then
                     If IsNumeric(ws.Cells(r, 4).Value) Then
-                        If CDbl(ws.Cells(r, 4).Value) > 0 Then
-                            gc_points_for_level = CDbl(ws.Cells(r, 4).Value): Exit Function
-                        End If
+                        If CDbl(ws.Cells(r, 4).Value) > 0 Then gc_points_for_level = CDbl(ws.Cells(r, 4).Value): Exit Function
                     End If
                 End If
             Next r
@@ -587,14 +1150,11 @@ Private Function gc_sheet_exists(ByVal wb As Workbook, ByVal nm As String) As Bo
     gc_sheet_exists = Not ws Is Nothing
 End Function
 
-' "_GC6" if free, else "_GC6(2)", "_GC6(3)", ...
 Private Function gc_unique_name(ByVal wb As Workbook, ByVal base As String) As String
     If Not gc_sheet_exists(wb, base) Then gc_unique_name = base: Exit Function
     Dim k As Long
     For k = 2 To 999
-        If Not gc_sheet_exists(wb, base & "(" & k & ")") Then
-            gc_unique_name = base & "(" & k & ")": Exit Function
-        End If
+        If Not gc_sheet_exists(wb, base & "(" & k & ")") Then gc_unique_name = base & "(" & k & ")": Exit Function
     Next k
     gc_unique_name = base & "(x)"
 End Function

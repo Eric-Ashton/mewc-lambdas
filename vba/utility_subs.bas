@@ -875,7 +875,7 @@ Public Sub convert_cse_to_dynamic()
 End Sub
 
 
-Public Sub clean_function_refs()
+Private Sub clean_function_refs()   ' Private -> hidden from Alt+F8; run from the VBE (F5) when needed
     Dim nm As Name
     Dim kill As Collection
     Dim s As Variant
@@ -947,7 +947,7 @@ End Function
 ' protected names that refuse deletion are skipped. This is NOT part of sync -
 ' run it deliberately, and if anything looks wrong afterwards just close
 ' without saving.
-Public Sub sweep_name_cruft()
+Private Sub sweep_name_cruft()   ' Private -> hidden from Alt+F8; run from the VBE (F5) when needed
     Dim nm As Name, kill As Collection, s As Variant, removed As Long
 
     Set kill = New Collection

@@ -38,18 +38,24 @@ until every game is solved.
   attribution to specific games.
 - The tool therefore runs **two nested searches at once**, both driven only by that
   count:
-  1. **Value search (per game).** Every unsolved game holds one candidate value in
-     the *Guesses* column. Each round eliminates the values that were just proven
-     wrong and steps outward, so the candidate for each game marches away from a
-     central starting guess in units of the answer's significance.
-  2. **Attribution search (which game).** When a batch scores `1` or `2+` correct,
-     you know *how many* guesses in the column were right but not *which*. The tool
-     bisects the column — holding half of the guesses aside in a "Possible" bucket
-     and re-testing the other half — to isolate the winning games over several
-     rounds.
+  1. **Value search (per game).** Each unsolved game tries its next candidate. Order:
+     values already **confirmed elsewhere on the level** (most frequent first) — since
+     a level's answers often repeat, testing a known value across all games is the
+     fastest route — then an outward scan from a centre that re-derives from solved
+     answers (mode/median). Hinted games are walled to their
+     hint; un-hinted games are floored at `0` (unless negatives are allowed) and
+     otherwise **unbounded**, so the search never declares a value impossible.
+  2. **Attribution search (which game).** When a batch scores `0 < k < (games
+     submitted)`, the tool bisects the submitted set — but it **carries the exact
+     count through the split**: a parent group of known count `k` splits into a tested
+     half (count `a`) and a sibling whose count is `k − a` *for free*. A sheet-persisted
+     stack of `(group, known-count)` means all-right and all-wrong sub-sets are settled
+     **inside Excel** with no re-test; only genuinely mixed sub-sets cost a round.
 
-The three feedback buttons correspond to the only three cases that matter for the
-next step: **0 correct**, **exactly 1 correct**, **2 or more correct**.
+The operator reports each round by the **absolute points** the platform shows. Because
+confirmed answers stay in the submitted column, points bank on the leaderboard as you
+go, and the `0…7` buttons are captioned with the exact platform total each round (plus
+a typed `8+` fallback and an `Undo`).
 
 ---
 
@@ -103,40 +109,65 @@ of live formulas, but the meaning is identical.
 | `B10` | Guess Center | 50/50 of example(s) and hints — see §11.6 | The starting guess for games that have no hint of their own. **Half the mean of the example answer(s) plus half the mean of the usable hint boundaries**, rounded with `CEILING.MATH(…, sig)`; with no usable hints it is just the mean of the example(s). |
 | `B11` | Negative Allowed | `0`/`1` | Whether answers may be negative (bounds the downward search). **Inferred, user-overridable** (§11). |
 
-**Significance formula (`B6`)** — derive the smallest power of ten by which the
-example answer is exactly divisible, i.e. its significance:
+**Significance rule (`B6`) — the FINEST step the samples justify, never coarser than
+`1`.** Take, per sample, the smallest power of ten `≤ 1` that divides it exactly
+(`1` for any integer, `0.1`/`0.01`/… for decimals), and use the **finest** (smallest)
+across all samples:
 
-```
-=LET(
-  x, B5, x_abs, ABS(x),
-  power_list, SEQUENCE(21, , -10, 1),      ' powers -10..10
-  sig_list, 10 ^ power_list,               ' 1e-10 .. 1e10
-  ceil_list, IFERROR(CEILING.MATH(x_abs, sig_list), NA()),
-  matches, IF(ceil_list = x_abs, sig_list, ""),
-  MAX(matches))                            ' largest step that divides x exactly
-```
+- all-integer samples → **`sig = 1`** — e.g. `20`, `439`, `90` all give `1`.
+- any decimal sample → the smallest decimal unit — `0.05 → 0.01`.
 
-So `B5 = 20 → sig = 1`; `B5 = 439 → sig = 1`; `B5 = 0.05 → sig = 0.01`.
+> **Important (was a bug):** never infer a step *coarser* than `1` just because a
+> sample happens to divide by 10 (e.g. `20`). An earlier version returned the
+> *largest* dividing power of ten, so a level whose example and hints were all round
+> numbers (say example `20`, hint "between `90` and `100`") got `sig = 10` and the
+> search stepped `90, 100, 110…`, never testing `91–99` — an unsolvable level. Getting
+> `sig` too *large* silently loses answers; too *small* only costs rounds, so we bias
+> to `1`. Only override to a coarser step when the case explicitly says answers are
+> multiples of 10/100/…
 
-**Row 12** is a diagnostics row: each of `A12:H12` is `=COUNT(<col>14:<col>1000)`,
-i.e. the live count of numbers in that column (games, correct answers, guesses,
-etc.).
+**Row 12** is a diagnostics row: `A12/B12/C12/K12` are `=COUNT(…14:…1000)` — the live
+count of games, solved answers, active guesses, and parked attribution candidates.
+
+**`C5`** shows the **last button press** and its time (e.g. *"Last: Scored 120 pts
+(5 new correct) @ 12:34:56 PM"*) — so if the operator gets distracted they can tell
+whether the current round was already reported. Each handler writes it (with `Undo` /
+`Re-evaluate` logged too); `C5` is a formula reading the hidden log cell `T5`.
 
 ---
 
-## 6. Feedback buttons (labels)
+## 6. Feedback buttons — captioned with the platform's ABSOLUTE score
 
-Three cells render human-readable button captions from `P` and the game count
-`G = (C4 - B4) + 1`:
+Confirmed answers stay in the submitted column (§7, `Submit`), so the platform score
+always includes them: **`points = (confirmed + active-hits) × P`**, where *active
+hits* = how many of the guesses still being tested this round are right. The buttons
+report **active hits** but are **captioned with the absolute score** the platform will
+show, so the operator just clicks the number that matches the screen.
 
-| Cell | Formula | Renders (e.g. P=7, G=20) | Bound macro |
-|---|---|---|---|
-| `E8` | `="0 / " & B3*((C4-B4)+1) & " Points"` | `0 / 140 Points` | `zero_right` |
-| `F8` | `=B3 & " / " & B3*((C4-B4)+1) & " Points"` | `7 / 140 Points` | `one_right` |
-| `G8` | `=2*B3 & "+ / " & B3*((C4-B4)+1) & " Points"` | `14+ / 140 Points` | `two_or_more_right` |
+Under *"Points on the platform…"* (`E6`) is a **4×2 grid of eight buttons for `0…7`
+more correct**, plus an **`8+ pts`** fallback and an **`Undo`** button:
 
-The captions tell the operator which button matches the score the platform just
-showed (0 points → 0 right, `P` points → 1 right, `≥2P` points → 2+ right).
+| Button | Reports active hits | Caption (dynamic) | Placement | Macro |
+|---|---|---|---|---|
+| 0…7 | `0…7` | `(confirmed + j) × P` | `E8…L11` (4×2) | `gc_fb0…gc_fb7` |
+| `8+ pts` | typed | — | `O8:P9` | `gc_fbN` |
+| `Undo` | — | — | `O10:P11` | `gc_undo` |
+| `Re-evaluate` | typed | — | `Q8:R11` | `gc_reeval` (§8.7) |
+
+- **Captions are recomputed after every round** (via `gc_recaption`), because
+  `confirmed` grows as games are solved — a button for "`j` more" always shows the
+  exact platform total `(confirmed + j) × P`. (Named form-control buttons `gc_btn0…7`
+  hold the captions; they can't hold formulas, hence the refresh.)
+- **`8+ pts`** — for 8 or more more-correct (common on the first scan): type the
+  **absolute points** into cell **`N8`** and click. `gc_fbN` computes
+  `active-hits = points/P − confirmed`, rejecting a points value that isn't a whole
+  multiple of `P`.
+- **`Undo`** reverts the last feedback (§8.6).
+
+All buttons live in the `gc_buttons` module (`Option Private Module`, so they stay out
+of Alt+F8) and forward the **active-hit count** to the one public handler
+`gc_feedback(activeHits)` in `guess_and_check` (its required argument also keeps it out
+of Alt+F8). `create_gc_sheet` is the only Alt+F8-visible entry point.
 
 ---
 
@@ -148,130 +179,230 @@ down to the last populated game.
 
 | Col | Header | Written by | Meaning |
 |---|---|---|---|
-| **A** | Game Numbers | formula | `=SEQUENCE(C4-B4+1, 1, B4)` — one row per game, numbered `B4…C4`. |
-| **B** | Correct Answers | macros | The confirmed answer for a solved game. **Blank = unsolved.** A numeric value here (including `0`) means solved. |
-| **C** | Guesses | macros | The candidate value to enter on the platform **this** round, per game. The whole column is what you submit. |
-| **D** | Eliminated Min | macros | Low edge of the contiguous block of values already proven wrong for this game. |
-| **E** | Eliminated Max | macros | High edge of that eliminated block. The answer lies **outside** `[D,E]`; new guesses probe just past the edges (`D - sig` or `E + sig`). |
-| **F** | Possible A (≤ 1 Right) | macros | "Held-out" candidate bucket used by the attribution search (see §8). |
-| **G** | Possible B | macros | Second held-out bucket, used when 2+ were right. |
-| **H** | Initial Guesses | formula | The seed guess for each game before any elimination. |
+| **A** | Game Numbers | literal | One row per game, numbered `B4…C4`. |
+| **B** | Correct Answers | macros | The confirmed answer for a solved game. **Blank = unsolved.** Numeric (incl. `0`) = solved. |
+| **C** | Guess | macros | The candidate value being **tested** this round, per unsolved game. Blank for solved games and for held/idle games. |
+| **D** | Submit  *(copy this)* | **formula** | `=IF(ISNUMBER(B),B,IF(C="","",C))` — confirmed answer if solved, else the active guess, else **blank** (a bare `C` reference would coerce a blank to `0`, and `0` is a valid answer we must not submit for a held game). **This is the column the operator copies**, so confirmed answers are always resubmitted and the leaderboard banks points continuously. |
+| **E** | Elim Min | macros | Low edge of the contiguous block of values already proven wrong for this game. |
+| **F** | Elim Max | macros | High edge of that block. |
+| **G** | Tried Extras | macros | Comma-list of **non-contiguous** values already tried (e.g. a priority-value probe of `12` while `9–11` are still untested). Needed because `[Elim Min, Elim Max]` alone can't represent gaps. |
+| **H** | Hint Lo | build | **Hard** lower bound — a hint's min. Blank = no hard lower wall. Never changes. |
+| **I** | Hint Hi | build | **Hard** upper bound — a hint's max. Blank = no hard upper wall. Never changes. |
+| **J** | Initial Guess | formula | The seed centre for each game before any solved data. |
+| **K** | Attribution | macros | Parked candidate value during attribution. **Non-empty anywhere ⇒ mid-attribution** (else scanning). |
+| **L** | Grp | macros | Attribution group tag: a positive id = member of that pending group on the stack; `-1` = the half submitted now; `-2` = its held sibling; blank = not a candidate. |
 
-**Initial-guess formulas (`H`)** — the first three data rows key off the three hint
-ranges; the rest use the guess center:
+A value is **"tried"** for a game iff it is inside `[Elim Min, Elim Max]` **or** listed
+in `Tried Extras`. The answer is whichever untried value the search reaches.
+
+**Initial-guess formulas (`J`)** — first three rows use their hint midpoint, the rest
+the guess centre (`B10`); this seeds round 1 only (later rounds re-centre on solved
+data, §8.5):
 
 ```
-H(row1) = IF(B7="", B10, CEILING.MATH(AVERAGE(B7:C7), B6))
-H(row2) = IF(B8="", B10, CEILING.MATH(AVERAGE(B8:C8), B6))
-H(row3) = IF(B9="", B10, CEILING.MATH(AVERAGE(B9:C9), B6))
-H(rowN) = IF(A(rowN)="", "", B10)          ' N >= 4
+J(row1) = IF(B7="", B10, CEILING.MATH(AVERAGE(B7:C7), B6))   ' rows 2,3 use B8/B9
+J(rowN) = IF(A(rowN)="", "", B10)                            ' N >= 4
 ```
 
-`B`, `C`, `D`, `E`, `F`, `G` carry **no formulas** — they are pure state written and
-cleared by the three macros.
+**Hard bounds (`H`,`I`) at build** — a hinted game (first three, whose `Hint N Range`
+parsed) gets its hint's `[min,max]`; these are **walls the search never crosses**.
+Un-hinted games leave `H`/`I` blank: they are **unbounded above** and floored at `0`
+(unless *Negative Allowed*), and the "learned" cluster only affects search *order*, so
+they **never declare a value permanently impossible** and never "run out of range".
+
+**Resolver state** lives off-screen (hidden columns `T:BB`): scalars in `T1:T4` (stack
+depth, next group id, parent count, round) and the LIFO group stack in `U:V`; `AN:BB`
+hold the one-level undo snapshot.
+
+`B`, `C`, `E`, `F`, `G`, `K`, `L` carry **no formulas** — pure state written by the
+handler. `D` and `J` are formulas; `A`, `H`, `I` are set once at build.
 
 ---
 
-## 8. Feedback macros — exact rules
+## 8. Feedback handler — exact rules
 
-Shared preamble for all three:
+The buttons (§6) call one public handler `gc_feedback(activeHits)` with the **exact
+number of the currently-tested guesses that were right** (confirmed answers excluded).
 
-- `ws = ActiveSheet`; read `sig = B6`.
-- Locate header row by finding `"Game Numbers"` in column A; `firstRow = header+1`,
-  `lastRow =` last non-empty cell in column A.
-- Column map: A=Game, B=Correct, C=Guess, D=ElimMin, E=ElimMax, F=PossA, G=PossB,
-  H=InitGuess.
-- **`0` is always a valid answer** — "solved" means *numeric and non-empty*, never
-  "non-zero".
-- After building the next `Guesses` column, the macro **copies** the guess range to
-  the clipboard so the operator can paste it straight into the platform.
-- A "solved" game (numeric `B`) is skipped when generating new guesses; its guess
-  stays blank.
+**Shared preamble.**
 
-### 8.1 `zero_right` — batch scored 0 correct
+- `ws = ActiveSheet`; read `sig = B6`, `neg = (B11 ≠ 0)`; locate the header by finding
+  `"Game Numbers"` in column A; `firstRow = header+1`, `lastRow =` last game in A.
+- Column map: A=Game, B=Correct, C=Guess, D=Submit, E=ElimMin, F=ElimMax, G=Tried,
+  H=HintLo, I=HintHi, J=Init, K=Attribution, L=Grp.
+- **`0` is always a valid answer** — "solved" means *numeric and non-empty*.
+- **Validate first (no state change on a bad number).** Let `sub =` count of active
+  guesses (`C` non-empty). Reject unless `0 ≤ activeHits ≤ sub`; in attribution also
+  reject if `activeHits > parentK` or `parentK − activeHits > (sibling size)`. A
+  mis-read score is refused rather than corrupting state.
+- **Snapshot then act.** Copy the mutable state to the hidden backup (one-level undo,
+  §8.6) *before* changing anything.
+- After acting, refresh `D` (a formula, automatic), **re-caption** the buttons, and
+  **copy the `Submit` column** to the clipboard.
 
-Every guess in the column was wrong. Record that, then decide what to test next.
+**Mode.** **Attribution** iff any `Attribution` (`K`) cell is non-empty, else
+**Scanning**. The submitted set is *the games with a non-empty `Guess`*.
 
-1. **Snapshot** the starting counts *before* touching anything:
-   `cntA0 =` number of non-empty `Possible A` cells; `cntB0 =` number of non-empty
-   `Possible B` cells. Remember the row of the first `Possible A` (`idxSingleA0`).
-2. **Process each guess** (all now known wrong):
-   - If the game has no eliminated block yet (`D` and `E` both empty), set
-     `D = E = guess` (the guess becomes the eliminated block).
-   - Otherwise extend the block **only if the guess sits exactly one step past an
-     edge**: if `guess = D - sig` then `D = guess`; if `guess = E + sig` then
-     `E = guess`.
-   - If the guess equals the game's `Possible A` or `Possible B` value, clear that
-     bucket cell (that held-out candidate is disproven).
-   - Clear the guess cell (the column is rebuilt below).
-3. **Branch on the snapshot:**
-   - **Case A — `cntA0 = 1` and `cntB0 = 0`:** the single surviving `Possible A`
-     value is the answer for its game → copy it into `Correct Answers`, clear that
-     `Possible A`. Then **generate fresh guesses** for every still-unsolved game
-     (see §8.4). Done.
-   - **Case B — `cntA0 ≥ 2` or `cntB0 ≥ 1`:** you are mid-bisection. Move **half
-     (rounded up)** of the `Possible A` values back into `Guesses`, and if
-     `cntB0 > 0` also move half (rounded up) of `Possible B` into `Guesses`.
-     Clear those buckets' moved cells. **Generate no new guesses** — you are only
-     re-testing held-out candidates. Done.
-   - **Case C — `cntA0 = 0` and `cntB0 = 0`:** ordinary elimination round →
-     **generate fresh guesses** for every unsolved game (see §8.4). Done.
+### 8.1 Scanning step
 
-### 8.2 `one_right` — batch scored exactly 1 correct
+Let `m =` games submitted. With `k = activeHits`:
 
-Exactly one guess in the column is right; find which by bisection.
+- **`k = 0`** — fold every guess into its tried state (§8.3), clear guesses,
+  **regenerate** the scan (§8.4).
+- **`k = m`** — copy every guess into `Correct Answers`, clear, **regenerate**.
+- **`0 < k < m`** — **park the whole submitted set as one attribution group** of known
+  count `k`: write each guess into its `Attribution`, tag all rows with a fresh group
+  id, push `(id, k)` on the stack, clear the guesses. Then **pump** (§8.2).
 
-1. `Possible B` is irrelevant here → clear the whole `Possible B` column.
-2. Count the guesses; remember the first guess row.
-3. **If exactly one guess was in the column:** that guess *is* the answer → copy it
-   into `Correct Answers`, clear all `Guesses` and all `Possible A`, then
-   **generate fresh guesses** for every unsolved game (§8.4). Done.
-4. **If 2+ guesses were in the column** (the normal bisection step):
-   - First, fold any existing `Possible A` into the eliminated ranges using the same
-     "one step past the edge" rule as in `zero_right` step 2 (if `possA = D - sig`
-     then `D = possA`; if `possA = E + sig` then `E = possA`).
-   - Clear the whole `Possible A` column.
-   - Move **half (rounded down)** of the current guesses into `Possible A` (holding
-     them out), leaving the rest in `Guesses` to re-test. **No new guesses.** Done.
+### 8.2 Attribution step — carrying the known count (no re-gather)
 
-### 8.3 `two_or_more_right` — batch scored 2+ correct
+Attribution resolves a **stack of groups, each with a KNOWN correct-count**, so a
+sub-set that is all-right or all-wrong is settled *inside Excel* with no extra
+submission. Only a genuinely mixed group costs a website round.
 
-At least two guesses are right; hold half aside and keep testing.
+**On feedback** (the submitted half — the rows tagged `Grp = -1` — scored `a`):
 
-1. Clear the whole `Possible A` column (unused in this path).
-2. Move **half (rounded down)** of the current guesses into `Possible B`, leaving the
-   rest in `Guesses`. **Never generate new guesses.** Done.
+1. The held sibling (`Grp = -2`) then contains `parentK − a` correct **for free**
+   (`parentK` is the split's parent count, kept in state).
+2. **Absorb** each of the two halves by its now-known count (§ below).
+3. **Pump** the stack.
 
-### 8.4 "Generate fresh guesses" subroutine
+**Absorb a set of rows whose known count is `c`:**
 
-For each game from `firstRow` to `lastRow`:
+- `c = 0` → all wrong: eliminate each (§8.3), free them.
+- `c = size` → all right: copy each into `Correct Answers`.
+- `0 < c < size` → still mixed: give it a fresh group id and **push `(id, c)`**.
 
-- If `Correct Answers` is numeric → solved, leave the guess blank.
-- Else if the game has **no** eliminated block yet (`D` empty) → guess `= Initial
-  Guesses (H)`.
-- Else → step just outside the eliminated block, choosing an edge **at random**:
-  50% `guess = D - sig`, 50% `guess = E + sig`.
+**Pump** — repeat until a group must be tested or the stack is empty:
 
-(`Randomize` is called once per macro; the random edge choice keeps the search from
-biasing consistently high or low.)
+- **Stack empty** → attribution done; **regenerate** the scan (§8.4).
+- **Pop** the top `(id, c)`. Its members are the rows tagged `id`. (`c = 0` / `c =
+  size` are settled immediately as above — but only mixed groups are ever pushed.)
+- **Mixed** → split the members into an active half (`Grp = -1`, `Guess =
+  Attribution`, i.e. submitted) and a sibling (`Grp = -2`, guess blank); record
+  `parentK = c` and **stop** for the operator to submit and report `a`. The split is:
+  - **hinted/un-hinted boundary** if the group mixes both — the (few) hinted games
+    become the active half. They have tight ranges and tend to resolve together, so
+    isolating them settles them in a round or two and, when they account for the whole
+    count, frees the entire un-hinted bulk at once — instead of dragging all the
+    un-hinted games through the bisection.
+  - otherwise **first `⌈n/2⌉` by row order** (a homogeneous group).
+
+So a scan of `M` games scoring `k` parks once and thereafter each **mixed** group
+takes exactly one submission to split; all-right/all-wrong halves are free. This is
+the "carry the count" method — roughly half the website rounds of the old re-gather.
+
+> **Worked step.** Scan of 20 scores `k = 2`. Park all 20 as `(g1, 2)`. Pump splits
+> `g1` → submit rows 1–10. They score `a = 1` ⇒ rows 11–20 hold `2 − 1 = 1` (free).
+> Absorb: rows 1–10 → `(g2, 1)` pushed; rows 11–20 → `(g3, 1)` pushed. Pump pops `g3`,
+> splits it, submits rows 11–15… and so on, never re-testing a settled subset.
+
+### 8.3 Eliminating a value (contiguous block + tried-extras)
+
+**Eliminate `v` for game `r`:**
+
+- No block yet → `Elim Min = Elim Max = v`.
+- `v` adjacent to an edge (`= ElimMin − sig` or `= ElimMax + sig`) → extend that edge,
+  **then swallow any `Tried Extras` value now adjacent** (so a run tried out of order —
+  e.g. a priority probe of `20` before the block scanned up to it — collapses back into
+  one block rather than leaving `9–19` + extras `20–26`).
+- `v` already inside `[ElimMin, ElimMax]` → nothing.
+- otherwise (a non-contiguous probe, e.g. a priority value away from the block) →
+  append `v` to **`Tried Extras`**.
+
+A value counts as **tried** if it's in the block **or** the extras list — both the
+outward scan and the priority check consult both. So `Tried Extras` values are just as
+eliminated as the block; they're only listed separately when they aren't (yet)
+contiguous with it.
+
+### 8.4 "Regenerate the scan" subroutine
+
+Clear every `Guess`, `Attribution`, and `Grp`; compute the **centre** and **priority
+values** from the solved answers (§8.5). Then for each unsolved game, set its `Guess`
+to the first candidate that is **untried and in-bounds**, tried in this order:
+
+1. **Priority values** — values already confirmed elsewhere on the level (most
+   frequent first, ties low). *This is the big lever on clustered levels: once `12` is
+   a known answer, every unsolved game tests `12` next, and §8.2 attributes the whole
+   cluster cheaply.*
+2. **Outward scan** from the (grid-snapped) centre — nearest value to the centre,
+   ties low — skipping tried values.
+
+**Bounds.** Hinted games are walled to `[Hint Lo, Hint Hi]`. Un-hinted games are
+floored at `0` (unless `neg`) and **unbounded above** — the outward scan simply keeps
+going, so an un-hinted game never "exhausts". Only a **hinted** game can run out (its
+whole hint range tried) — then its guess is blank and a message flags it (bad hint or
+wrong `sig`). The learned cluster changes *order*, never possibility.
+
+### 8.5 Centre and priority values (from solved answers)
+
+Recomputed every regeneration from the confirmed answers (`B`):
+
+- **Centre** = the **mode** of solved answers if any value repeats, else their
+  **median**; with nothing solved yet, the build centre `B10` (the example/hint blend
+  — a useful level-wide prior for round 1). Solved data supersedes the seed as soon as
+  it exists. Hinted games still centre on their own hint midpoint.
+- **Priority values** = the **distinct** solved values, most-frequent first (ties
+  low). (The example answer is *not* a priority value — it feeds the centre only, so
+  round 1 probes the centre rather than a single other game's answer.)
+
+> This keeps ChatGPT's intent (drive centring and probe order from real solved data)
+> while keeping the hint-informed seed for round 1 — in the Level-5 recording the
+> blended seed (`10`) sat on the answers (`11–13`) whereas the bare example (`4`)
+> would have been worse.
+
+### 8.6 Undo and recovery
+
+Every `gc_feedback` **snapshots the mutable state first** (values of `B,C,E:L` and the
+resolver scalars/stack) into hidden backup columns — one level deep. The **`Undo`**
+button (`gc_undo` → `gc_apply_undo`) restores that snapshot, so a single mis-clicked
+or mis-read score is fully reversible. Combined with the up-front validation (§8
+preamble), one stale leaderboard reading can't silently corrupt a long solve.
+
+### 8.7 Re-evaluate (recover from a deeper error)
+
+`Undo` only steps back one round. If a mis-click happened several rounds ago and left
+a **wrongly-confirmed answer**, the honest platform score drops below what the sheet
+expects and *no button matches*. **`Re-evaluate`** (`gc_reeval` → `gc_do_reeval`)
+recovers from a single fact: type the **current platform points** into `N8` and click.
+It then:
+
+1. Reads the whole **current `Submit` column** (confirmed answers + active guesses) and
+   its true count `truePoints / P`.
+2. **Forgets the confirmed/guessed distinction** — un-confirms everything, abandons the
+   attribution stack — but **keeps** each game's `Elim`/`Tried` history (so no known-
+   wrong value is re-tried).
+3. Re-parks the entire submission as **one attribution group of that known count** and
+   resolves it by the normal carry-count bisection (§8.2).
+
+Because the count is ground truth, a wrongly-confirmed answer lands in a sub-set that
+scores short and is dropped (its value folded into `Tried`); the genuinely-correct
+answers are re-confirmed. It "starts from the knowledge of that one score" rather than
+restarting the level. (The platform total dips while the confirmed set is re-verified,
+then climbs back as answers re-confirm — the price of certainty after an error.)
 
 ---
 
 ## 9. Operator workflow (the loop)
 
-1. Open the `L` sheet for the level; confirm `B2` is the level number and the setup
-   block populated (games, points, center, significance) from `case data`. Fill in
-   any known `Hint 1/2/3` ranges (`B7:C9`) if you have them.
-2. The `Guesses` column starts at the initial guesses. **Copy it and paste into the
-   platform's answer boxes for that level; submit.**
-3. Read the level's points off the scoreboard → divide by `P` to get how many were
-   correct.
-4. Click the matching button: `0 / … Points` (`zero_right`), `P / … Points`
-   (`one_right`), or `≥2P / … Points` (`two_or_more_right`). The macro updates state
-   and puts the **next** guess column on the clipboard.
-5. Paste, submit, repeat. Games move into `Correct Answers` as they're pinned down;
-   when every game is solved the `Guesses` column is empty and `Correct Answers` is
-   full.
+1. Confirm the setup block (level, points, significance, hints). The build already
+   put the first submission on the clipboard.
+2. **Copy the `Submit` column (`D`) and paste it into the platform; submit.** `Submit`
+   always carries your confirmed answers plus the current guesses, so the leaderboard
+   banks every solved game as you go.
+3. Read the level's **points** off the scoreboard.
+4. **Click the button whose caption equals that number** (buttons `0…7` more correct,
+   re-captioned to the absolute total each round). If the score is higher than any
+   button shows, type the **points** into `N8` and click **`8+ pts`**. The handler
+   updates state and puts the next `Submit` column on the clipboard. Mis-clicked?
+   **`Undo`** reverts it.
+5. Paste, submit, repeat. Games flow into `Correct Answers`; when all are solved the
+   `Submit` column is exactly your answer key and the leaderboard already has them.
+
+> When a round leaves some games ambiguous, the tool enters an **attribution** pass:
+> the `Submit` column carries your banked answers plus a shrinking subset of test
+> guesses. Keep pasting-and-reporting exactly as before — `Submit` always holds
+> precisely what to send next, and the button captions always match the platform total.
 
 ---
 
@@ -283,21 +414,29 @@ biasing consistently high or low.)
 - **Significance `sig` is the step unit.** All probing moves by `± sig`, and initial
   guesses are rounded with `CEILING.MATH(…, sig)`. Non-integer answers work if `sig`
   is set correctly (e.g. `0.01`).
-- **`[ElimMin, ElimMax]` is the eliminated block**, not the feasible range. The
-  answer is strictly outside it; guesses probe the two values immediately outside.
-  Extension only happens when a guess/possible is exactly one `sig` past an edge —
-  eliminations never "jump".
-- **Possible A vs Possible B** are two independent hold-out buckets for the
-  attribution bisection. `one_right` only ever uses A; `two_or_more_right` only ever
-  uses B; `zero_right` can drain either when resuming a bisection (Case B).
-- **Rounding of the "half" moved differs by macro on purpose:** `zero_right` Case B
-  moves half **rounded up**; `one_right` and `two_or_more_right` move half **rounded
-  down**. Preserve each exactly — it controls convergence.
-- **Header is found by text**, and the row range by the last populated game number,
-  so the table can start on any row and be any length.
-- **Negative Allowed (`B11`)** is intended to bound the downward search; the current
-  macros read `sig`/center but do not yet clamp at zero — treat clamping as an
-  intended rule to (re)confirm with the author before relying on it.
+- **"Tried" = block ∪ extras.** A value is ruled out for a game if it is inside
+  `[Elim Min, Elim Max]` or listed in `Tried Extras`. The contiguous block compresses
+  the swept-from-centre region; the extras list holds one-off priority-value probes.
+  The search returns the nearest untried in-bounds value.
+- **Hard bounds vs. order.** `Hint Lo`/`Hint Hi` (`H`,`I`) are the only *walls* — set
+  once from a hint. Everything else (the learned centre, priority values, the
+  unbounded un-hinted scan) shapes the *order* of guesses, never forbids a value. So
+  an un-hinted game can't "exhaust"; only a hinted game can (its hint range fully
+  tried), which flags a bad hint / wrong `sig`.
+- **`Attribution` (`K`) is the mode flag; `Grp` (`L`) is the stack tag.** Non-empty
+  `Attribution` ⇒ mid-attribution. Resolution is a proper LIFO stack of
+  `(group, known-count)` (state in hidden `T:V`): the exact count is *carried* into
+  each split, so all-right / all-wrong sub-sets never cost a re-test. `⌈n/2⌉` stays
+  active on every split.
+- **Confirmed answers are always submitted** (`Submit = IF(ISNUMBER(B),B,C)`), so the
+  platform total is `(confirmed + active-hits) × P`; the handler and buttons work in
+  that absolute frame, and the leaderboard banks continuously.
+- **Every feedback is validated and snapshotted** — an impossible count is refused
+  (§8 preamble) and `Undo` reverts the last applied round.
+- **`0` is a valid answer**; **`sig` is the step unit** (all probing moves by `± sig`);
+  **header is found by text** so the table can start on any row.
+- **Formatting is cosmetic only.** Fills, borders, widths carry no state; the logic
+  reads values, never colours.
 
 ---
 
@@ -394,13 +533,13 @@ shortcut.
 
 ### 11.5 Inferring significance (`B6`) — user-overridable
 
-Compute `sig` = the largest power of ten (from `1e-10` to `1e10`) that divides the
-sample values **exactly**, using the §5 significance formula. Feed it the example
-answer(s) and, for robustness, the usable hint `min`/`max` values: take the
-**coarsest common significance** across all of them (the largest step that divides
-every sample). E.g. `87, 90, 100, 350 → sig = 1`; `0.05, 0.10 → sig = 0.01`. Write
-the inferred value to `B6` but leave it editable — the operator confirms/overrides
-before the first submission.
+Compute `sig` by the **§5 rule — the finest step the samples justify, never coarser
+than `1`**: per sample take the smallest power of ten `≤ 1` that divides it exactly
+(integers → `1`), and use the finest across the example answer(s) and usable hint
+`min`/`max`. E.g. `87, 90, 100, 350 → 1`; `20, 90, 100 → 1` (**not** `10`); `0.05,
+0.10 → 0.01`. Write it to `B6`, editable — override to a coarser step only when the
+case explicitly says answers are multiples of 10/100/…. (See the §5 note on why a
+too-coarse `sig` silently loses answers.)
 
 ### 11.6 Initial guess / Guess Center (`B10`)
 
@@ -438,18 +577,28 @@ know a level's answers can go negative even though the visible samples don't.
 
 ### 11.8 After the build
 
-`_GCN` (or `_GCN(k)`) is now a standalone guess-and-check sheet identical in
-behaviour to a standalone-workbook `L` sheet: the operator confirms the pre-filled
-setup block, copies the `Guesses` column into the platform, and drives the loop with
-the three feedback buttons (§8–§9). The three macros are unchanged and live with the
-generated sheet.
+`_GCN` (or `_GCN(k)`) is a standalone guess-and-check sheet: the operator confirms the
+pre-filled setup block, copies the **`Submit` column** into the platform, and drives
+the loop with the points buttons + the 8+ entry + `Undo` (§6, §8–§9). The build also
+runs one cosmetic formatting pass (§11.10).
 
 Open design choices still to settle with the author:
 
-- **Clipboard vs paste block:** the macros currently `.Copy` the guess column; the
-  template rebuild could instead maintain a contiguous paste-ready block if that
-  suits the live site better.
+- **Priority-value probing** front-loads confirmed answer values across all games
+  (§8.4–8.5); if a level's answers are all distinct it wastes a few probes (each
+  recorded in `Tried Extras`) before the outward scan takes over — a cheap bet given
+  how often MEWC answers repeat.
 - **Hint→game mapping** when hints are sparse or out of order (see §11.4).
+
+### 11.10 Sheet formatting
+
+After the layout and first guesses are written, a cosmetic pass styles the sheet:
+a title row, bold shaded setup labels, a bordered setup value block, a shaded/bold
+table header, light borders over the data grid, a green `Correct Answers` column, a
+**highlighted `Submit` column** (the one to copy) with a darker header cap, a bordered
+yellow points-entry cell (`N8`), uniform column widths (`A:L`), and the resolver /
+backup columns (`T:BB`) hidden. None of it carries state — it is purely to make the
+working sheet readable at a glance.
 
 ### 11.9 Special-case summary
 

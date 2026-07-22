@@ -1,5 +1,6 @@
 Attribute VB_Name = "button_subs"
 ' deploy: shared
+Option Private Module   ' keep this module's subs out of the Alt+F8 list (still button / Call callable)
 '========================
 ' Subroutine: what_if_on
 '========================

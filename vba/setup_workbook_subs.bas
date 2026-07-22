@@ -1,5 +1,6 @@
 Attribute VB_Name = "setup_workbook_subs"
 ' deploy: shared
+Option Private Module   ' keep this module's subs out of the Alt+F8 list (still button / Call callable; its Public functions stay callable cross-module)
 ' Module-level declarations
 
 ' Workbooks
@@ -980,7 +981,7 @@ Private Sub create_level_worksheets()
         '
         ' We identify the header solely by column B containing "Level N" where N is
         ' the current level_index. Whatever text is in column C is the "difficulty"
-        ' label ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ we preserve it as-is and do NOT require any specific vocabulary.
+        ' label ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ we preserve it as-is and do NOT require any specific vocabulary.
         ' This tolerates "easy/medium/hard", "possible", "impossible", "extreme",
         ' a blank cell, or anything else an author chooses to write.
         '
