@@ -71,3 +71,22 @@ End Sub
 Public Sub gc_undo()
     gc_apply_undo ActiveSheet
 End Sub
+
+' Recovery: re-derive everything from the CURRENT platform score (typed into
+' FB_CELL), forgetting which answers were "confirmed". Use after a mis-click.
+Public Sub gc_reeval()
+    Dim ws As Worksheet: Set ws = ActiveSheet
+    Dim v As Variant: v = ws.Range(FB_CELL).Value
+    If Not IsNumeric(v) Or Trim$(CStr(v)) = "" Then
+        MsgBox "Type the CURRENT platform points into cell " & FB_CELL & _
+               " first, then click Re-evaluate.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    If MsgBox("Re-evaluate from " & CDbl(v) & " points?" & vbLf & vbLf & _
+              "This forgets which submitted answers were 'confirmed' vs guessed and " & _
+              "re-derives which are right from that one score, so a wrongly-confirmed " & _
+              "answer gets corrected. Solved-value history is kept.", _
+              vbQuestion + vbYesNo, "Guess and Check") = vbYes Then
+        gc_do_reeval ws, CDbl(v)
+    End If
+End Sub

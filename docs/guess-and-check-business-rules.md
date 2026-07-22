@@ -147,6 +147,7 @@ more correct**, plus an **`8+ pts`** fallback and an **`Undo`** button:
 | 0…7 | `0…7` | `(confirmed + j) × P` | `E8…L11` (4×2) | `gc_fb0…gc_fb7` |
 | `8+ pts` | typed | — | `O8:P9` | `gc_fbN` |
 | `Undo` | — | — | `O10:P11` | `gc_undo` |
+| `Re-evaluate` | typed | — | `Q8:R11` | `gc_reeval` (§8.7) |
 
 - **Captions are recomputed after every round** (via `gc_recaption`), because
   `confirmed` grows as games are solved — a button for "`j` more" always shows the
@@ -341,6 +342,28 @@ resolver scalars/stack) into hidden backup columns — one level deep. The **`Un
 button (`gc_undo` → `gc_apply_undo`) restores that snapshot, so a single mis-clicked
 or mis-read score is fully reversible. Combined with the up-front validation (§8
 preamble), one stale leaderboard reading can't silently corrupt a long solve.
+
+### 8.7 Re-evaluate (recover from a deeper error)
+
+`Undo` only steps back one round. If a mis-click happened several rounds ago and left
+a **wrongly-confirmed answer**, the honest platform score drops below what the sheet
+expects and *no button matches*. **`Re-evaluate`** (`gc_reeval` → `gc_do_reeval`)
+recovers from a single fact: type the **current platform points** into `N8` and click.
+It then:
+
+1. Reads the whole **current `Submit` column** (confirmed answers + active guesses) and
+   its true count `truePoints / P`.
+2. **Forgets the confirmed/guessed distinction** — un-confirms everything, abandons the
+   attribution stack — but **keeps** each game's `Elim`/`Tried` history (so no known-
+   wrong value is re-tried).
+3. Re-parks the entire submission as **one attribution group of that known count** and
+   resolves it by the normal carry-count bisection (§8.2).
+
+Because the count is ground truth, a wrongly-confirmed answer lands in a sub-set that
+scores short and is dropped (its value folded into `Tried`); the genuinely-correct
+answers are re-confirmed. It "starts from the knowledge of that one score" rather than
+restarting the level. (The platform total dips while the confirmed set is re-verified,
+then climbs back as answers re-confirm — the price of certainty after an error.)
 
 ---
 

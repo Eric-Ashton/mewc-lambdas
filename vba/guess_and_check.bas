@@ -191,8 +191,8 @@ Public Sub create_gc_sheet()
 
     ' ---- feedback labels ----
     gc.Range("E6").Value = "Points on the platform (banked answers included):"
-    gc.Range("N6").Value = "8+ more?"
-    gc.Range("N7").Value = "type points:"
+    gc.Range("N6").Value = "platform points"
+    gc.Range("N7").Value = "(8+ / re-eval):"
 
     ' ---- diagnostics ----
     gc.Range("A12").Formula = "=COUNT(A14:A1000)"
@@ -341,6 +341,82 @@ Public Sub gc_apply_undo(ByVal ws As Worksheet)
     gc_copy_submit ws, firstRow, lastRow
     Application.ScreenUpdating = True
     MsgBox "Reverted to before the last feedback.", vbInformation, "Guess and Check"
+End Sub
+
+' PUBLIC recovery from operator error (arg keeps it out of Alt+F8). Forgets which
+' submitted answers were "confirmed" vs merely guessed, and re-derives purely from
+' the fact that the CURRENT Submit column scored `truePoints`. It re-parks the whole
+' current submission as one attribution group of known count truePoints/P, so a
+' wrongly-confirmed answer is found and dropped. Solved-value / elimination history
+' is kept, so the re-derivation is cheap.
+Public Sub gc_do_reeval(ByVal ws As Worksheet, ByVal truePoints As Double)
+    Dim fr As Long, lr As Long, sig As Double
+    If Not gc_locate(ws, fr, lr) Then
+        MsgBox "This doesn't look like a guess-and-check sheet.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    sig = CDbl(ws.Range(SIG_CELL).Value)
+    Dim nv As Variant: nv = ws.Range(NEG_CELL).Value
+    Dim neg As Boolean: neg = (IsNumeric(nv) And Val(CStr(nv)) <> 0)
+    Dim p As Double
+    If IsNumeric(ws.Range(PTS_CELL).Value) Then p = CDbl(ws.Range(PTS_CELL).Value)
+    If p <= 0 Then
+        MsgBox "Points Per Game (B3) is not set.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    Dim tc As Double: tc = truePoints / p
+    If Abs(tc - CLng(tc)) > 0.000001 Then
+        MsgBox truePoints & " points is not a whole multiple of " & p & ".", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    Dim trueCorrect As Long: trueCorrect = CLng(tc)
+
+    ' count the current submission (non-blank Submit) before touching anything
+    Dim r As Long, subN As Long
+    For r = fr To lr
+        If gc_num(ws, r, COL_SUBMIT) Then subN = subN + 1
+    Next r
+    If subN = 0 Then
+        MsgBox "Nothing is currently in the Submit column to re-evaluate.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    If trueCorrect < 0 Or trueCorrect > subN Then
+        MsgBox trueCorrect & " correct is impossible for the " & subN & " values now submitted.", _
+               vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    gc_snapshot ws, fr, lr                       ' undo point
+
+    ' abandon any in-flight attribution stack, then re-park the whole submission
+    Dim gid As Long: gid = gc_new_gid(ws)
+    ws.Range(ws.Cells(1, STK_ID_COL), ws.Cells(1000, STK_CNT_COL)).ClearContents
+    ws.Range(ST_DEPTH).Value = 0
+    ws.Range(ST_PARENTK).Value = 0
+    Dim dv As Variant
+    For r = fr To lr
+        dv = ws.Cells(r, COL_SUBMIT).Value       ' read D BEFORE clearing B/C
+        ws.Cells(r, COL_CORRECT).ClearContents   ' un-confirm
+        ws.Cells(r, COL_GUESS).ClearContents
+        If IsNumeric(dv) And Trim$(CStr(dv)) <> "" Then
+            ws.Cells(r, COL_ATTR).Value = CDbl(dv)
+            ws.Cells(r, COL_GRP).Value = gid
+        Else
+            ws.Cells(r, COL_ATTR).ClearContents
+            ws.Cells(r, COL_GRP).ClearContents
+        End If
+    Next r
+
+    gc_push ws, gid, trueCorrect
+    gc_pump ws, fr, lr, sig, neg                 ' handles all/none/mixed
+
+    ws.Range(ST_ROUND).Value = CLng(ws.Range(ST_ROUND).Value) + 1
+    gc_recaption ws
+    gc_copy_submit ws, fr, lr
+    Application.ScreenUpdating = True
+    MsgBox "Re-evaluated from " & truePoints & " points (" & trueCorrect & " of " & subN & _
+           " correct). Paste the Submit column and carry on.", vbInformation, "Guess and Check"
 End Sub
 
 
@@ -802,6 +878,7 @@ Private Sub gc_place_buttons(ByVal ws As Worksheet)
     gc_add_button ws, ws.Range("K10:L11"), "gc_fb7", "gc_btn7"
     gc_add_button ws, ws.Range("O8:P9"), "gc_fbN", "gc_btnN"
     gc_add_button ws, ws.Range("O10:P11"), "gc_undo", "gc_btnUndo"
+    gc_add_button ws, ws.Range("Q8:R11"), "gc_reeval", "gc_btnReeval"
 End Sub
 
 Private Sub gc_add_button(ByVal ws As Worksheet, ByVal rng As Range, ByVal macro As String, ByVal nm As String)
@@ -824,6 +901,7 @@ Private Sub gc_recaption(ByVal ws As Worksheet)
     Next j
     ws.Buttons("gc_btnN").Caption = "8+ pts"
     ws.Buttons("gc_btnUndo").Caption = "Undo"
+    ws.Buttons("gc_btnReeval").Caption = "Re-evaluate" & vbLf & "(from N8 points)"
     On Error GoTo 0
 End Sub
 
