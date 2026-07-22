@@ -215,10 +215,6 @@ Public Sub create_gc_sheet()
 
     Application.ScreenUpdating = True
     gc.Activate
-    MsgBox "Built '" & gc.Name & "' for level " & lvl & "." & vbLf & vbLf & _
-           "First guesses are on the clipboard — paste them into the platform, " & _
-           "submit, then click the button matching your score.", _
-           vbInformation, "Guess and Check"
 End Sub
 
 
