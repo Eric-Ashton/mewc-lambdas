@@ -33,11 +33,12 @@ Attribute VB_Name = "guess_and_check"
 '                      solved wholesale, otherwise it is split again. This uses
 '                      the EXACT count, so zero halves are pruned immediately.
 '
-' The feedback subs (gc_fb0 / gc_fb1 / gc_fbN) are driven by the buttons that
-' create_gc_sheet places on the sheet. They are Public only so the buttons can
-' call them, but each takes an Optional argument, which keeps them OUT of the
-' Alt+F8 list (Excel hides any sub that takes arguments). Everything else is
-' Private.
+' The feedback buttons (0..7 points, plus an 8+ fallback) are driven by wrapper
+' subs (gc_fb0..gc_fb7, gc_fbN) that live in the companion module gc_buttons; that
+' module is Option Private Module, which keeps them OUT of the Alt+F8 list while
+' still letting their buttons call them. They forward to gc_feedback here.
+' create_gc_sheet is the one Alt+F8-visible entry point; everything else is Private
+' or (like gc_feedback, which has a required argument) otherwise hidden.
 '==============================================================================
 Option Explicit
 
@@ -55,7 +56,7 @@ Private Const COL_ATTR As Long = 9          'I  candidate value held during attr
 Private Const SIG_CELL As String = "B6"     ' Level Significance
 Private Const CENTER_CELL As String = "B10" ' Guess Centre
 Private Const NEG_CELL As String = "B11"    ' Negative Allowed (0/1)
-Private Const FB_CELL As String = "N8"      ' operator types the POINTS here for the 8+ fallback button
+Public Const FB_CELL As String = "N8"       ' operator types the POINTS here for the 8+ fallback button (used by gc_buttons)
 Private Const HEADER_TEXT As String = "Game Numbers"
 
 Private Const OPEN_LO As Double = -1E+300   ' sentinel: unbounded below
@@ -248,69 +249,23 @@ Public Sub create_gc_sheet()
 
     Application.ScreenUpdating = True
     gc.Activate
+    On Error Resume Next
+    ActiveWindow.Zoom = 130          ' default zoom for the GC sheet
+    On Error GoTo 0
 End Sub
+
+
+' The button wrappers (gc_fb0..gc_fb7, gc_fbN) live in module gc_buttons, which is
+' Option Private Module so they stay OUT of the Alt+F8 list while remaining callable
+' by their buttons. They forward the exact count to gc_feedback below.
 
 
 '==============================================================================
-' Feedback subs  (button-driven; Optional arg keeps them out of Alt+F8)
-'==============================================================================
-' One thin wrapper per "number correct" 0..7. Each is button-driven; the Optional
-' argument keeps it out of Alt+F8. The button CAPTION shows the matching points.
-Public Sub gc_fb0(Optional ByVal ignore As Variant)
-    gc_feedback 0
-End Sub
-Public Sub gc_fb1(Optional ByVal ignore As Variant)
-    gc_feedback 1
-End Sub
-Public Sub gc_fb2(Optional ByVal ignore As Variant)
-    gc_feedback 2
-End Sub
-Public Sub gc_fb3(Optional ByVal ignore As Variant)
-    gc_feedback 3
-End Sub
-Public Sub gc_fb4(Optional ByVal ignore As Variant)
-    gc_feedback 4
-End Sub
-Public Sub gc_fb5(Optional ByVal ignore As Variant)
-    gc_feedback 5
-End Sub
-Public Sub gc_fb6(Optional ByVal ignore As Variant)
-    gc_feedback 6
-End Sub
-Public Sub gc_fb7(Optional ByVal ignore As Variant)
-    gc_feedback 7
-End Sub
-
-' Fallback for 8+ correct: the operator types the POINTS the platform showed into
-' the entry cell; we divide by points-per-game (B3) to recover the count.
-Public Sub gc_fbN(Optional ByVal ignore As Variant)
-    Dim ws As Worksheet: Set ws = ActiveSheet
-    Dim v As Variant: v = ws.Range(FB_CELL).Value
-    If Not IsNumeric(v) Or Trim$(CStr(v)) = "" Then
-        MsgBox "For 8 or more correct, type the POINTS the platform showed into cell " & _
-               FB_CELL & " first, then click this.", vbExclamation, "Guess and Check"
-        Exit Sub
-    End If
-    Dim pts As Double, k As Long
-    If IsNumeric(ws.Range("B3").Value) Then pts = CDbl(ws.Range("B3").Value)
-    If pts > 0 Then
-        k = CLng(CDbl(v) / pts)         ' points -> count
-    Else
-        k = CLng(v)                     ' no points-per-game known: treat entry as a raw count
-    End If
-    If k < 0 Then
-        MsgBox "That comes out to a negative count.", vbExclamation, "Guess and Check"
-        Exit Sub
-    End If
-    gc_feedback k
-End Sub
-
-
-'==============================================================================
-' Unified feedback handler (Private)
+' Unified feedback handler
 '   k = the EXACT number of currently-submitted guesses that were correct.
+'   Public so gc_buttons can call it; the required argument keeps it out of Alt+F8.
 '==============================================================================
-Private Sub gc_feedback(ByVal k As Long)
+Public Sub gc_feedback(ByVal k As Long)
     Dim ws As Worksheet, firstRow As Long, lastRow As Long, sig As Double, neg As Boolean
     If Not gc_prep(ws, firstRow, lastRow, sig, neg) Then Exit Sub
     Application.ScreenUpdating = False
