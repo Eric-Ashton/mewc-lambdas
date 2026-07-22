@@ -546,11 +546,23 @@ Private Sub gc_pump(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, _
                 ws.Cells(r, COL_ATTR).ClearContents: ws.Cells(r, COL_GRP).ClearContents
             Next i
         Else
-            ' split: first half active (submit), rest sibling (held)
+            ' Split into an active half (submitted) and a held sibling. If the group
+            ' mixes hinted and un-hinted games, split along THAT boundary - the hinted
+            ' games are few and have tight ranges, so isolating them resolves them (and
+            ' frees the whole un-hinted bulk when they account for the count) without
+            ' dragging every un-hinted game through the bisection. Otherwise split in
+            ' half by row order.
+            Dim nHinted As Long
+            For i = 1 To n
+                If gc_is_hinted_row(ws, rows(i)) Then nHinted = nHinted + 1
+            Next i
+            Dim byHint As Boolean: byHint = (nHinted > 0 And nHinted < n)
             Dim keep As Long: keep = (n + 1) \ 2
+            Dim goActive As Boolean
             For i = 1 To n
                 r = rows(i)
-                If i <= keep Then
+                If byHint Then goActive = gc_is_hinted_row(ws, r) Else goActive = (i <= keep)
+                If goActive Then
                     ws.Cells(r, COL_GRP).Value = GRP_ACTIVE
                     ws.Cells(r, COL_GUESS).Value = ws.Cells(r, COL_ATTR).Value
                 Else
@@ -883,6 +895,10 @@ Private Function gc_num(ByVal ws As Worksheet, ByVal r As Long, ByVal col As Lon
 End Function
 Private Function gc_is_solved(ByVal ws As Worksheet, ByVal r As Long) As Boolean
     gc_is_solved = gc_num(ws, r, COL_CORRECT)
+End Function
+' A game with a hard hint bound (small, walled search space).
+Private Function gc_is_hinted_row(ByVal ws As Worksheet, ByVal r As Long) As Boolean
+    gc_is_hinted_row = (gc_num(ws, r, COL_HLO) Or gc_num(ws, r, COL_HHI))
 End Function
 Private Function gc_count(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long, ByVal col As Long) As Long
     Dim r As Long

@@ -278,9 +278,15 @@ submission. Only a genuinely mixed group costs a website round.
 - **Stack empty** → attribution done; **regenerate** the scan (§8.4).
 - **Pop** the top `(id, c)`. Its members are the rows tagged `id`. (`c = 0` / `c =
   size` are settled immediately as above — but only mixed groups are ever pushed.)
-- **Mixed** → split the members: first `⌈n/2⌉` become the active half (`Grp = -1`,
-  `Guess = Attribution`, i.e. submitted); the rest the sibling (`Grp = -2`, guess
-  blank). Record `parentK = c`. **Stop** — the operator submits and reports `a`.
+- **Mixed** → split the members into an active half (`Grp = -1`, `Guess =
+  Attribution`, i.e. submitted) and a sibling (`Grp = -2`, guess blank); record
+  `parentK = c` and **stop** for the operator to submit and report `a`. The split is:
+  - **hinted/un-hinted boundary** if the group mixes both — the (few) hinted games
+    become the active half. They have tight ranges and tend to resolve together, so
+    isolating them settles them in a round or two and, when they account for the whole
+    count, frees the entire un-hinted bulk at once — instead of dragging all the
+    un-hinted games through the bisection.
+  - otherwise **first `⌈n/2⌉` by row order** (a homogeneous group).
 
 So a scan of `M` games scoring `k` parks once and thereafter each **mixed** group
 takes exactly one submission to split; all-right/all-wrong halves are free. This is
