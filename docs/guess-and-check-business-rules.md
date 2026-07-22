@@ -176,7 +176,7 @@ down to the last populated game.
 | **A** | Game Numbers | literal | One row per game, numbered `B4…C4`. |
 | **B** | Correct Answers | macros | The confirmed answer for a solved game. **Blank = unsolved.** Numeric (incl. `0`) = solved. |
 | **C** | Guess | macros | The candidate value being **tested** this round, per unsolved game. Blank for solved games and for held/idle games. |
-| **D** | Submit  *(copy this)* | **formula** | `=IF(ISNUMBER(B),B,C)` — confirmed answer if solved, else the active guess. **This is the column the operator copies**, so confirmed answers are always resubmitted and the leaderboard banks points continuously. |
+| **D** | Submit  *(copy this)* | **formula** | `=IF(ISNUMBER(B),B,IF(C="","",C))` — confirmed answer if solved, else the active guess, else **blank** (a bare `C` reference would coerce a blank to `0`, and `0` is a valid answer we must not submit for a held game). **This is the column the operator copies**, so confirmed answers are always resubmitted and the leaderboard banks points continuously. |
 | **E** | Elim Min | macros | Low edge of the contiguous block of values already proven wrong for this game. |
 | **F** | Elim Max | macros | High edge of that block. |
 | **G** | Tried Extras | macros | Comma-list of **non-contiguous** values already tried (e.g. a priority-value probe of `12` while `9–11` are still untested). Needed because `[Elim Min, Elim Max]` alone can't represent gaps. |

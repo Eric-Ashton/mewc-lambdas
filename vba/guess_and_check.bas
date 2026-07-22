@@ -220,7 +220,10 @@ Public Sub create_gc_sheet()
     For i = 1 To nGames
         rr = 13 + i
         gc.Cells(rr, COL_GAME).Value = firstGame + i - 1
-        gc.Cells(rr, COL_SUBMIT).Formula = "=IF(ISNUMBER(B" & rr & "),B" & rr & ",C" & rr & ")"
+        ' solved -> banked answer; else the active guess; else BLANK (not 0 - blank C
+        ' coerces to 0, and 0 is a valid answer we must not submit for a held game)
+        gc.Cells(rr, COL_SUBMIT).Formula = _
+            "=IF(ISNUMBER(B" & rr & "),B" & rr & ",IF(C" & rr & "="""","""",C" & rr & "))"
         Select Case i
             Case 1: gc.Cells(rr, COL_INIT).Formula = "=IF(B7="""",$B$10,CEILING.MATH(AVERAGE(B7:C7),$B$6))"
             Case 2: gc.Cells(rr, COL_INIT).Formula = "=IF(B8="""",$B$10,CEILING.MATH(AVERAGE(B8:C8),$B$6))"
@@ -646,10 +649,19 @@ Private Sub gc_priority_values(ByRef sv() As Double, ByVal n As Long, _
     Dim eps As Double: eps = sig * 0.000001
     Dim a() As Double: a = gc_sorted(sv, n)
     ' distinct values + frequency
-    Dim vals() As Double, fq() As Long, d As Long, i As Long
+    Dim vals() As Double, fq() As Long, d As Long, i As Long, isNew As Boolean
     ReDim vals(1 To n): ReDim fq(1 To n): d = 0
     For i = 1 To n
-        If d = 0 Or Abs(a(i) - vals(d)) > eps Then d = d + 1: vals(d) = a(i): fq(d) = 1 Else fq(d) = fq(d) + 1
+        If d = 0 Then                          ' VBA has no short-circuit: guard vals(d) separately
+            isNew = True
+        Else
+            isNew = (Abs(a(i) - vals(d)) > eps)
+        End If
+        If isNew Then
+            d = d + 1: vals(d) = a(i): fq(d) = 1
+        Else
+            fq(d) = fq(d) + 1
+        End If
     Next i
     ' selection-sort distinct by freq desc (ties keep ascending value)
     Dim j As Long, bi As Long
