@@ -129,6 +129,11 @@ across all samples:
 **Row 12** is a diagnostics row: `A12/B12/C12/K12` are `=COUNT(…14:…1000)` — the live
 count of games, solved answers, active guesses, and parked attribution candidates.
 
+**`C5`** shows the **last button press** and its time (e.g. *"Last: Scored 120 pts
+(5 new correct) @ 12:34:56 PM"*) — so if the operator gets distracted they can tell
+whether the current round was already reported. Each handler writes it (with `Undo` /
+`Re-evaluate` logged too); `C5` is a formula reading the hidden log cell `T5`.
+
 ---
 
 ## 6. Feedback buttons — captioned with the platform's ABSOLUTE score

@@ -68,6 +68,7 @@ Private Const ST_DEPTH As String = "T1"   ' stack depth
 Private Const ST_SEQ As String = "T2"     ' next group id
 Private Const ST_PARENTK As String = "T3" ' known count of the parent of the current split
 Private Const ST_ROUND As String = "T4"   ' round counter
+Private Const ST_LAST As String = "T5"    ' last button press (surfaced via the C5 formula)
 Private Const STK_ID_COL As Long = 21     'U  stack: group id per level
 Private Const STK_CNT_COL As Long = 22    'V  stack: known count per level
 
@@ -188,6 +189,8 @@ Public Sub create_gc_sheet()
     gc.Range("A10").Value = "Guess Center"
     gc.Range("B10").Formula = "=CEILING.MATH(IF(COUNT(B7:C9)=0,B5,0.5*B5+0.5*AVERAGE(B7:C9)),B6)"
     gc.Range("A11").Value = "Negative Allowed":  gc.Range("B11").Value = negAllowed
+    ' last-button-press indicator (helps the operator see if they already reported a round)
+    gc.Range("C5").Formula = "=IF(T5="""",""(no button pressed yet)"",""Last: ""&T5)"
 
     ' ---- feedback labels ----
     gc.Range("E6").Value = "Points on the platform (banked answers included):"
@@ -241,6 +244,7 @@ Public Sub create_gc_sheet()
     gc.Range(ST_SEQ).Value = 1
     gc.Range(ST_PARENTK).Value = 0
     gc.Range(ST_ROUND).Value = 0
+    gc.Range(ST_LAST).Value = ""
 
     gc.Columns("A:L").AutoFit
     gc.Calculate
@@ -299,6 +303,11 @@ Public Sub gc_feedback(ByVal activeHits As Long)
         End If
     End If
 
+    ' the platform score the operator just clicked = (already-confirmed + activeHits) x P
+    Dim confBefore As Long: confBefore = Application.WorksheetFunction.Count(ws.Range("B14:B100000"))
+    Dim p As Double
+    If IsNumeric(ws.Range(PTS_CELL).Value) Then p = CDbl(ws.Range(PTS_CELL).Value)
+
     Application.ScreenUpdating = False
     gc_snapshot ws, firstRow, lastRow                 ' undo point BEFORE any change
 
@@ -309,6 +318,11 @@ Public Sub gc_feedback(ByVal activeHits As Long)
     End If
 
     ws.Range(ST_ROUND).Value = CLng(ws.Range(ST_ROUND).Value) + 1
+    If p > 0 Then
+        gc_log ws, "Scored " & (confBefore + activeHits) * p & " pts  (" & activeHits & " new correct)"
+    Else
+        gc_log ws, activeHits & " new correct"
+    End If
     gc_recaption ws
     gc_copy_submit ws, firstRow, lastRow
     Application.ScreenUpdating = True
@@ -337,6 +351,7 @@ Public Sub gc_apply_undo(ByVal ws As Worksheet)
     ws.Range(ws.Cells(1, 20), ws.Cells(60, 22)).Value = _
         ws.Range(ws.Cells(1, BAK_STATE_COL), ws.Cells(60, BAK_STATE_COL + 2)).Value
 
+    gc_log ws, "Undo"
     gc_recaption ws
     gc_copy_submit ws, firstRow, lastRow
     Application.ScreenUpdating = True
@@ -412,6 +427,7 @@ Public Sub gc_do_reeval(ByVal ws As Worksheet, ByVal truePoints As Double)
     gc_pump ws, fr, lr, sig, neg                 ' handles all/none/mixed
 
     ws.Range(ST_ROUND).Value = CLng(ws.Range(ST_ROUND).Value) + 1
+    gc_log ws, "Re-evaluate from " & truePoints & " pts"
     gc_recaption ws
     gc_copy_submit ws, fr, lr
     Application.ScreenUpdating = True
@@ -892,6 +908,11 @@ End Sub
 ' Copy the Submit column (confirmed answers + active guesses) for the operator.
 Private Sub gc_copy_submit(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
     ws.Range(ws.Cells(fr, COL_SUBMIT), ws.Cells(lr, COL_SUBMIT)).Copy
+End Sub
+
+' Record the last button press (with a timestamp) for the C5 indicator.
+Private Sub gc_log(ByVal ws As Worksheet, ByVal msg As String)
+    ws.Range(ST_LAST).Value = msg & "   @ " & Format$(Now, "h:mm:ss AM/PM")
 End Sub
 
 ' Snapshot mutable state (values only, no clipboard) for one-level undo.
