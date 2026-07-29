@@ -1075,9 +1075,8 @@ Private Sub create_level_worksheets()
         clwStage = "L" & level_index & ": copy instructions (nInstr=" & nInstr & ", bannerIdx=" & bannerIdx & ", startIdx=" & startIdx & ", ncols_raw=" & ncols_raw & ", ncols=" & ncols & ")"
         dest_row = 1
         For j = startIdx To nInstr
-            clwStage = "L" & level_index & ": copy instr j=" & j & "/" & nInstr & " (caseRow=" & instrRows(j) & ", dest=" & dest_row & ", ncols=" & ncols & " [raw=" & ncols_raw & "])"
-            level_ws.Range(level_ws.Cells(dest_row, 1), level_ws.Cells(dest_row, ncols)).Value = _
-                case_copy.Range(case_copy.Cells(instrRows(j), 1), case_copy.Cells(instrRows(j), ncols)).Value
+            clwStage = "L" & level_index & ": copy instr j=" & j & "/" & nInstr & " (caseRow=" & instrRows(j) & ", dest=" & dest_row & ", ncols=" & ncols & ")"
+            Call CopyRowValuesSafe(case_copy, instrRows(j), level_ws, dest_row, ncols)
             dest_row = dest_row + 1
         Next j
 
@@ -1154,8 +1153,7 @@ Private Sub create_level_worksheets()
         clwStage = "L" & level_index & ": copy header row"
         For i = 1 To last_row_case
             If CStr(case_copy.Cells(i, 1).Value) = "Level " & level_index & " Header" Then
-                level_ws.Range(level_ws.Cells(dest_row, 1), level_ws.Cells(dest_row, ncols)).Value = _
-                    case_copy.Range(case_copy.Cells(i, 1), case_copy.Cells(i, ncols)).Value
+                Call CopyRowValuesSafe(case_copy, i, level_ws, dest_row, ncols)
                 dest_row = dest_row + 1
                 Exit For
             End If
@@ -1336,6 +1334,52 @@ Private Sub CenterControlOn(ByVal ctrl As Object, ByVal targetRange As Range)
     ctrl.Left = targetRange.Left + (targetRange.Width - ctrl.Width) / 2
     ctrl.Top = targetRange.Top + (targetRange.Height - ctrl.Height) / 2
 End Sub
+
+' Copy columns 1..nCols of one row (srcRow on srcWs) into destRow on destWs AS
+' VALUES - but store any text that begins with a formula-trigger character
+' (= + - @) as literal Text so Excel does NOT parse it as a formula.
+'
+' Why: a plain "destRange.Value = srcRange.Value" re-interprets a copied string
+' like "= Base Time + (Attribute Point x Reduction Rate)" (a case author's
+' explanatory pseudo-formula, stored as TEXT in the case) as a real formula on
+' the destination. Excel then treats the spaces as the intersection operator
+' over undefined names and raises a spurious "Out of memory" (Err 7). This is
+' exactly what stalled Level 4 setup on the 24-Hours case (case copy!C165).
+' Pre-setting NumberFormat = "@" on just those cells makes the same assignment
+' store the text verbatim - which is also what the author intended to display.
+Private Sub CopyRowValuesSafe(ByVal srcWs As Worksheet, ByVal srcRow As Long, _
+                              ByVal destWs As Worksheet, ByVal destRow As Long, _
+                              ByVal nCols As Long)
+    If nCols < 1 Then Exit Sub
+
+    Dim srcArr As Variant
+    srcArr = srcWs.Range(srcWs.Cells(srcRow, 1), srcWs.Cells(srcRow, nCols)).Value
+
+    ' A single-cell range returns a scalar, not a 2-D array - handle both.
+    If Not IsArray(srcArr) Then
+        If IsFormulaTriggerText(srcArr) Then destWs.Cells(destRow, 1).NumberFormat = "@"
+        destWs.Cells(destRow, 1).Value = srcArr
+        Exit Sub
+    End If
+
+    Dim cc As Long
+    For cc = 1 To nCols
+        If IsFormulaTriggerText(srcArr(1, cc)) Then destWs.Cells(destRow, cc).NumberFormat = "@"
+    Next cc
+    destWs.Range(destWs.Cells(destRow, 1), destWs.Cells(destRow, nCols)).Value = srcArr
+End Sub
+
+' True when v is a String whose first character would make Excel treat a
+' .Value assignment as a formula/expression (= + - @).
+Private Function IsFormulaTriggerText(ByVal v As Variant) As Boolean
+    If VarType(v) = vbString Then
+        If Len(v) > 0 Then
+            Select Case Left$(CStr(v), 1)
+                Case "=", "+", "-", "@": IsFormulaTriggerText = True
+            End Select
+        End If
+    End If
+End Function
 
 ' === Align Level Worksheets Subroutine ===
 ' Pads each L# so yellow anchors align, creates a solution start strip on each sheet,
