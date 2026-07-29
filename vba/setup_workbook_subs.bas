@@ -985,6 +985,16 @@ Private Sub create_level_worksheets()
     Next clr_i
     Application.DisplayAlerts = clr_alerts
 
+    ' Bound row copies to the case's actual data width. Assigning a whole
+    ' worksheet row (level_ws.Rows(r).Value = case_copy.Rows(s).Value) transfers
+    ' a 1 x 16384 Variant array each time; repeated over a level's instruction
+    ' rows this raised "Out of memory" (Err 7) - worst on the level with the most
+    ' instruction rows (this case's Level 4, 31 rows). Copying only columns
+    ' 1..ncols moves the same data for a fraction of the memory.
+    Dim ncols As Long
+    ncols = GetLastUsedCol(case_copy)
+    If ncols < 1 Then ncols = 1
+
     ReDim yellow_cell_rows(1 To number_of_levels)
 
     For level_index = 1 To number_of_levels
@@ -1052,7 +1062,8 @@ Private Sub create_level_worksheets()
         clwStage = "L" & level_index & ": copy instructions (nInstr=" & nInstr & ", bannerIdx=" & bannerIdx & ", startIdx=" & startIdx & ")"
         dest_row = 1
         For j = startIdx To nInstr
-            level_ws.Rows(dest_row).Value = case_copy.Rows(instrRows(j)).Value
+            level_ws.Range(level_ws.Cells(dest_row, 1), level_ws.Cells(dest_row, ncols)).Value = _
+                case_copy.Range(case_copy.Cells(instrRows(j), 1), case_copy.Cells(instrRows(j), ncols)).Value
             dest_row = dest_row + 1
         Next j
 
@@ -1129,7 +1140,8 @@ Private Sub create_level_worksheets()
         clwStage = "L" & level_index & ": copy header row"
         For i = 1 To last_row_case
             If CStr(case_copy.Cells(i, 1).Value) = "Level " & level_index & " Header" Then
-                level_ws.Rows(dest_row).Value = case_copy.Rows(i).Value
+                level_ws.Range(level_ws.Cells(dest_row, 1), level_ws.Cells(dest_row, ncols)).Value = _
+                    case_copy.Range(case_copy.Cells(i, 1), case_copy.Cells(i, ncols)).Value
                 dest_row = dest_row + 1
                 Exit For
             End If
