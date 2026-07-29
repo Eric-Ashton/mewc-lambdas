@@ -671,7 +671,12 @@ Private Sub classify_rows()
                 case_copy.Cells(i, 1).Value = "Header"
             Case IsNumeric(colD) And colD <> 0 And InStr(colB, "bonus") > 0
                 case_copy.Cells(i, 1).Value = "Bonus Question"
-            Case IsNumeric(colD) And colD = 0 And InStr(colB, "example") > 0
+            ' A real example row has an actual numeric 0 in Points (col D). Require
+            ' col D to be non-blank first: a blank cell is Empty, and VBA treats
+            ' IsNumeric(Empty) as True with Empty = 0 also True, so a prose line like
+            ' "Example4:" (blank D) would otherwise false-match as an example row and
+            ' prop up a phantom level header via the cross-validation below.
+            Case Len(Trim$(colDStr)) > 0 And IsNumeric(colD) And colD = 0 And InStr(colB, "example") > 0
                 case_copy.Cells(i, 1).Value = "Example Question"
             Case IsNumeric(rowValues(1, 2)) And rowValues(1, 2) <> 0 And IsNumeric(colD) And colD <> 0
                 case_copy.Cells(i, 1).Value = "Level Question"
@@ -981,7 +986,7 @@ Private Sub create_level_worksheets()
         '
         ' We identify the header solely by column B containing "Level N" where N is
         ' the current level_index. Whatever text is in column C is the "difficulty"
-        ' label ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ we preserve it as-is and do NOT require any specific vocabulary.
+        ' label ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ we preserve it as-is and do NOT require any specific vocabulary.
         ' This tolerates "easy/medium/hard", "possible", "impossible", "extreme",
         ' a blank cell, or anything else an author chooses to write.
         '
@@ -1463,14 +1468,17 @@ Private Sub create_all_games_worksheet()
     lastColAG = wsAG.Cells(1, wsAG.Columns.count).End(xlToLeft).Column
     Set rng = wsAG.Range(wsAG.Cells(1, 1), wsAG.Cells(lastRowAG, lastColAG))
 
-    ' Keep only rows where Column A is "Level * Level Question"
-    With rng
-        .AutoFilter Field:=1, Criteria1:="<>*Level Question*"
-        On Error Resume Next
-        wsAG.Range(wsAG.Rows(1), wsAG.Rows(lastRowAG)).SpecialCells(xlCellTypeVisible).EntireRow.Delete
-        On Error GoTo ErrorHandler
-        .AutoFilter
-    End With
+    ' Keep only rows whose classification (col A) is a "... Level Question"; delete
+    ' every other (non-game) row. Deterministic bottom-up loop rather than an
+    ' AutoFilter + SpecialCells(xlCellTypeVisible).Delete, which could silently no-op
+    ' on some cases (a fragmented visible range or filter state carried over on the
+    ' copied sheet under On Error Resume Next) and leave non-game rows in AG.
+    Dim rDel As Long
+    For rDel = lastRowAG To 1 Step -1
+        If InStr(1, CStr(wsAG.Cells(rDel, 1).Value), "Level Question", vbTextCompare) = 0 Then
+            wsAG.Rows(rDel).Delete
+        End If
+    Next rDel
 
     ' Recompute last row after deletions
     lastRowAG = wsAG.Cells(wsAG.Rows.count, 1).End(xlUp).Row
