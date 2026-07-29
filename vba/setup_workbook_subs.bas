@@ -972,52 +972,47 @@ Private Sub create_level_worksheets()
             .Font.size = 11
         End With
 
-        ' Paste "Level n Instructions"
-        dest_row = 1
+        ' Collect this level's instruction rows (case_copy row numbers, in order),
+        ' find the difficulty header among them, and paste ONLY from one row above
+        ' that header onward. Copying from the header - rather than pasting the whole
+        ' preamble and then deleting it - avoids a large Rows(...).Delete on a fully
+        ' cell-formatted sheet, which raised a spurious "Out of memory" (Err 7) on
+        ' levels whose instructions have a long preamble (e.g. this case's Level 4).
+        Dim instrRows() As Long, nInstr As Long, bannerIdx As Long, startIdx As Long
+        ReDim instrRows(1 To last_row_case + 1)
+        nInstr = 0
         For i = 1 To last_row_case
-            row_type = CStr(case_copy.Cells(i, 1).Value)
-            If row_type = "Level " & level_index & " Instructions" Then
-                level_ws.Rows(dest_row).Value = case_copy.Rows(i).Value
-                dest_row = dest_row + 1
+            If CStr(case_copy.Cells(i, 1).Value) = "Level " & level_index & " Instructions" Then
+                nInstr = nInstr + 1
+                instrRows(nInstr) = i
             End If
         Next i
 
-        ' Locate difficulty header inside pasted instructions.
-        '
-        ' We identify the header solely by column B containing "Level N" where N is
-        ' the current level_index. Whatever text is in column C is the "difficulty"
-        ' label ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬ï¿½ we preserve it as-is and do NOT require any specific vocabulary.
-        ' This tolerates "easy/medium/hard", "possible", "impossible", "extreme",
-        ' a blank cell, or anything else an author chooses to write.
-        '
-        ' Matching rules for col B (case-insensitive, trimmed):
-        '   1. Exact match: "LEVEL N"
-        '   2. Starts-with match: "LEVEL N<non-digit>..." (e.g. "Level 1:", "Level 1 -")
-        '      We reject "LEVEL 10" when searching for "LEVEL 1" by checking the next
-        '      character is not a digit.
-        last_row_inst = GetLastUsedRow(level_ws)
-        difficulty_header = 0
+        ' Difficulty header = first instruction row whose col B is "LEVEL N" exactly, or
+        ' "LEVEL N<non-digit>..." (so "LEVEL 10" isn't matched when N=1). Whatever is in
+        ' col C is the difficulty label - preserved as-is, no fixed vocabulary required.
         level_label = "LEVEL " & level_index
-        For i = 1 To last_row_inst
-            b_text = Trim$(UCase$(CStr(level_ws.Cells(i, 2).Value)))
+        bannerIdx = 0
+        For j = 1 To nInstr
+            b_text = Trim$(UCase$(CStr(case_copy.Cells(instrRows(j), 2).Value)))
             If b_text = level_label Then
-                difficulty_header = i
-                Exit For
+                bannerIdx = j: Exit For
             ElseIf Len(b_text) > Len(level_label) Then
                 If Left$(b_text, Len(level_label)) = level_label Then
                     next_ch = Mid$(b_text, Len(level_label) + 1, 1)
-                    If next_ch < "0" Or next_ch > "9" Then
-                        difficulty_header = i
-                        Exit For
-                    End If
+                    If next_ch < "0" Or next_ch > "9" Then bannerIdx = j: Exit For
                 End If
             End If
-        Next i
-        If difficulty_header = 0 Then difficulty_header = 2
+        Next j
 
-        ' Keep exactly one row above the difficulty header
-        delete_end = difficulty_header - 2
-        If delete_end >= 1 Then level_ws.Rows("1:" & delete_end).Delete
+        ' Keep exactly one instruction row above the difficulty header.
+        If bannerIdx >= 2 Then startIdx = bannerIdx - 1 Else startIdx = 1
+
+        dest_row = 1
+        For j = startIdx To nInstr
+            level_ws.Rows(dest_row).Value = case_copy.Rows(instrRows(j)).Value
+            dest_row = dest_row + 1
+        Next j
 
         ' Freeze panes below row 3
         level_ws.Rows("1").RowHeight = 14.3
