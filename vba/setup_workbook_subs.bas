@@ -991,9 +991,22 @@ Private Sub create_level_worksheets()
     ' rows this raised "Out of memory" (Err 7) - worst on the level with the most
     ' instruction rows (this case's Level 4, 31 rows). Copying only columns
     ' 1..ncols moves the same data for a fraction of the memory.
-    Dim ncols As Long
-    ncols = GetLastUsedCol(case_copy)
+    '
+    ' GetLastUsedCol alone is NOT enough: a single stray far-right cell (or a
+    ' stray format Find picks up) inflates it to thousands of columns, which
+    ' silently turns the "bounded" copy back into a full-width row transfer and
+    ' the Err 7 comes right back. Clamp to the real data width the pipeline
+    ' already computed (last_col_all_levels, from a backward data scan of every
+    ' level's rows) plus a margin, so no legitimate instruction column is lost
+    ' but a stray can never make this full-width. ncols_raw is kept only so the
+    ' stage log can show whether the clamp actually fired.
+    Dim ncols_raw As Long, ncols As Long, ncols_cap As Long
+    ncols_raw = GetLastUsedCol(case_copy)
+    ncols_cap = last_col_all_levels + 8
+    If ncols_cap < 16 Then ncols_cap = 16
+    ncols = ncols_raw
     If ncols < 1 Then ncols = 1
+    If ncols > ncols_cap Then ncols = ncols_cap
 
     ReDim yellow_cell_rows(1 To number_of_levels)
 
@@ -1059,9 +1072,10 @@ Private Sub create_level_worksheets()
         ' Keep exactly one instruction row above the difficulty header.
         If bannerIdx >= 2 Then startIdx = bannerIdx - 1 Else startIdx = 1
 
-        clwStage = "L" & level_index & ": copy instructions (nInstr=" & nInstr & ", bannerIdx=" & bannerIdx & ", startIdx=" & startIdx & ")"
+        clwStage = "L" & level_index & ": copy instructions (nInstr=" & nInstr & ", bannerIdx=" & bannerIdx & ", startIdx=" & startIdx & ", ncols_raw=" & ncols_raw & ", ncols=" & ncols & ")"
         dest_row = 1
         For j = startIdx To nInstr
+            clwStage = "L" & level_index & ": copy instr j=" & j & "/" & nInstr & " (caseRow=" & instrRows(j) & ", dest=" & dest_row & ", ncols=" & ncols & " [raw=" & ncols_raw & "])"
             level_ws.Range(level_ws.Cells(dest_row, 1), level_ws.Cells(dest_row, ncols)).Value = _
                 case_copy.Range(case_copy.Cells(instrRows(j), 1), case_copy.Cells(instrRows(j), ncols)).Value
             dest_row = dest_row + 1
