@@ -671,7 +671,12 @@ Private Sub classify_rows()
                 case_copy.Cells(i, 1).Value = "Header"
             Case IsNumeric(colD) And colD <> 0 And InStr(colB, "bonus") > 0
                 case_copy.Cells(i, 1).Value = "Bonus Question"
-            Case IsNumeric(colD) And colD = 0 And InStr(colB, "example") > 0
+            ' A real example row has an actual numeric 0 in Points (col D). Require
+            ' col D to be non-blank first: a blank cell is Empty, and VBA treats
+            ' IsNumeric(Empty) as True with Empty = 0 also True, so a prose line like
+            ' "Example4:" (blank D) would otherwise false-match as an example row and
+            ' prop up a phantom level header via the cross-validation below.
+            Case Len(Trim$(colDStr)) > 0 And IsNumeric(colD) And colD = 0 And InStr(colB, "example") > 0
                 case_copy.Cells(i, 1).Value = "Example Question"
             Case IsNumeric(rowValues(1, 2)) And rowValues(1, 2) <> 0 And IsNumeric(colD) And colD <> 0
                 case_copy.Cells(i, 1).Value = "Level Question"
@@ -943,9 +948,71 @@ Private Sub create_level_worksheets()
     Dim next_ch As String           ' character after level_label in b_text (used to avoid
                                     ' matching "LEVEL 10" when we want "LEVEL 1")
 
+    ' Stage marker: updated before each risky operation so the ErrorHandler can
+    ' report exactly where (which level, which step) a failure hit, instead of
+    ' just "create_level_worksheets - Out of memory" with no location.
+    Dim clwStage As String
+    clwStage = "init"
+
+    ' --- Remove any pre-existing level sheets before rebuilding -------------
+    ' setup runs in-place (attempt_workbook = ThisWorkbook) and nothing else
+    ' clears these. A stale "_L1" makes "Sheets.Add ... .Name = ""_L1""" below
+    ' collide (Err 1004) and, via the shared ErrorHandler, abort the WHOLE sub -
+    ' leaving the old level sheets on screen so setup looks like it "stopped"
+    ' partway. Deleting every "_L<digits>" sheet first makes each run rebuild
+    ' deterministically and also mops up extras left by an earlier mis-count.
+    clwStage = "clear stale _L sheets"
+    Dim clr_i As Long, clr_ws As Worksheet, clr_nm As String, clr_alerts As Boolean
+    Dim clr_body As String, clr_k As Long, clr_alldig As Boolean
+    clr_alerts = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+    For clr_i = attempt_workbook.Worksheets.count To 1 Step -1
+        Set clr_ws = attempt_workbook.Worksheets(clr_i)
+        clr_nm = clr_ws.Name
+        If Len(clr_nm) >= 3 Then
+            If Left$(clr_nm, 2) = "_L" Then
+                clr_body = Mid$(clr_nm, 3)
+                clr_alldig = True
+                For clr_k = 1 To Len(clr_body)
+                    If Mid$(clr_body, clr_k, 1) < "0" Or Mid$(clr_body, clr_k, 1) > "9" Then
+                        clr_alldig = False
+                        Exit For
+                    End If
+                Next clr_k
+                If clr_alldig Then clr_ws.Delete
+            End If
+        End If
+    Next clr_i
+    Application.DisplayAlerts = clr_alerts
+
+    ' Bound row copies to the case's actual data width. Assigning a whole
+    ' worksheet row (level_ws.Rows(r).Value = case_copy.Rows(s).Value) transfers
+    ' a 1 x 16384 Variant array each time; repeated over a level's instruction
+    ' rows this raised "Out of memory" (Err 7) - worst on the level with the most
+    ' instruction rows (this case's Level 4, 31 rows). Copying only columns
+    ' 1..ncols moves the same data for a fraction of the memory.
+    '
+    ' GetLastUsedCol alone is NOT enough: a single stray far-right cell (or a
+    ' stray format Find picks up) inflates it to thousands of columns, which
+    ' silently turns the "bounded" copy back into a full-width row transfer and
+    ' the Err 7 comes right back. Clamp to the real data width the pipeline
+    ' already computed (last_col_all_levels, from a backward data scan of every
+    ' level's rows) plus a margin, so no legitimate instruction column is lost
+    ' but a stray can never make this full-width. ncols_raw is kept only so the
+    ' stage log can show whether the clamp actually fired.
+    Dim ncols_raw As Long, ncols As Long, ncols_cap As Long
+    ncols_raw = GetLastUsedCol(case_copy)
+    ncols_cap = last_col_all_levels + 8
+    If ncols_cap < 16 Then ncols_cap = 16
+    ncols = ncols_raw
+    If ncols < 1 Then ncols = 1
+    If ncols > ncols_cap Then ncols = ncols_cap
+
     ReDim yellow_cell_rows(1 To number_of_levels)
 
     For level_index = 1 To number_of_levels
+
+        clwStage = "L" & level_index & ": add & name sheet"
 
         ' Create & name the level sheet
         Set level_ws = attempt_workbook.Sheets.Add(After:=attempt_workbook.Sheets(attempt_workbook.Sheets.count))
@@ -957,6 +1024,7 @@ Private Sub create_level_worksheets()
         End If
 
         ' Base layout
+        clwStage = "L" & level_index & ": base layout (.Cells format)"
         With level_ws.Cells
             .UnMerge
             .RowHeight = 14.3
@@ -967,54 +1035,53 @@ Private Sub create_level_worksheets()
             .Font.size = 11
         End With
 
-        ' Paste "Level n Instructions"
-        dest_row = 1
+        ' Collect this level's instruction rows (case_copy row numbers, in order),
+        ' find the difficulty header among them, and paste ONLY from one row above
+        ' that header onward. Copying from the header - rather than pasting the whole
+        ' preamble and then deleting it - avoids a large Rows(...).Delete on a fully
+        ' cell-formatted sheet, which raised a spurious "Out of memory" (Err 7) on
+        ' levels whose instructions have a long preamble (e.g. this case's Level 4).
+        clwStage = "L" & level_index & ": scan instruction rows"
+        Dim instrRows() As Long, nInstr As Long, bannerIdx As Long, startIdx As Long
+        ReDim instrRows(1 To last_row_case + 1)
+        nInstr = 0
         For i = 1 To last_row_case
-            row_type = CStr(case_copy.Cells(i, 1).Value)
-            If row_type = "Level " & level_index & " Instructions" Then
-                level_ws.Rows(dest_row).Value = case_copy.Rows(i).Value
-                dest_row = dest_row + 1
+            If CStr(case_copy.Cells(i, 1).Value) = "Level " & level_index & " Instructions" Then
+                nInstr = nInstr + 1
+                instrRows(nInstr) = i
             End If
         Next i
 
-        ' Locate difficulty header inside pasted instructions.
-        '
-        ' We identify the header solely by column B containing "Level N" where N is
-        ' the current level_index. Whatever text is in column C is the "difficulty"
-        ' label ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¯Ã‚Â¿Ã‚Â½ we preserve it as-is and do NOT require any specific vocabulary.
-        ' This tolerates "easy/medium/hard", "possible", "impossible", "extreme",
-        ' a blank cell, or anything else an author chooses to write.
-        '
-        ' Matching rules for col B (case-insensitive, trimmed):
-        '   1. Exact match: "LEVEL N"
-        '   2. Starts-with match: "LEVEL N<non-digit>..." (e.g. "Level 1:", "Level 1 -")
-        '      We reject "LEVEL 10" when searching for "LEVEL 1" by checking the next
-        '      character is not a digit.
-        last_row_inst = GetLastUsedRow(level_ws)
-        difficulty_header = 0
+        ' Difficulty header = first instruction row whose col B is "LEVEL N" exactly, or
+        ' "LEVEL N<non-digit>..." (so "LEVEL 10" isn't matched when N=1). Whatever is in
+        ' col C is the difficulty label - preserved as-is, no fixed vocabulary required.
         level_label = "LEVEL " & level_index
-        For i = 1 To last_row_inst
-            b_text = Trim$(UCase$(CStr(level_ws.Cells(i, 2).Value)))
+        bannerIdx = 0
+        For j = 1 To nInstr
+            b_text = Trim$(UCase$(CStr(case_copy.Cells(instrRows(j), 2).Value)))
             If b_text = level_label Then
-                difficulty_header = i
-                Exit For
+                bannerIdx = j: Exit For
             ElseIf Len(b_text) > Len(level_label) Then
                 If Left$(b_text, Len(level_label)) = level_label Then
                     next_ch = Mid$(b_text, Len(level_label) + 1, 1)
-                    If next_ch < "0" Or next_ch > "9" Then
-                        difficulty_header = i
-                        Exit For
-                    End If
+                    If next_ch < "0" Or next_ch > "9" Then bannerIdx = j: Exit For
                 End If
             End If
-        Next i
-        If difficulty_header = 0 Then difficulty_header = 2
+        Next j
 
-        ' Keep exactly one row above the difficulty header
-        delete_end = difficulty_header - 2
-        If delete_end >= 1 Then level_ws.Rows("1:" & delete_end).Delete
+        ' Keep exactly one instruction row above the difficulty header.
+        If bannerIdx >= 2 Then startIdx = bannerIdx - 1 Else startIdx = 1
+
+        clwStage = "L" & level_index & ": copy instructions (nInstr=" & nInstr & ", bannerIdx=" & bannerIdx & ", startIdx=" & startIdx & ", ncols_raw=" & ncols_raw & ", ncols=" & ncols & ")"
+        dest_row = 1
+        For j = startIdx To nInstr
+            clwStage = "L" & level_index & ": copy instr j=" & j & "/" & nInstr & " (caseRow=" & instrRows(j) & ", dest=" & dest_row & ", ncols=" & ncols & ")"
+            Call CopyRowValuesSafe(case_copy, instrRows(j), level_ws, dest_row, ncols)
+            dest_row = dest_row + 1
+        Next j
 
         ' Freeze panes below row 3
+        clwStage = "L" & level_index & ": freeze panes"
         level_ws.Rows("1").RowHeight = 14.3
         level_ws.Rows("2").RowHeight = 24.4
         level_ws.Rows("3").RowHeight = 14.3
@@ -1032,6 +1099,7 @@ Private Sub create_level_worksheets()
         If last_instr_nonblank = 0 Then last_instr_nonblank = 1
         target_header_row = last_instr_nonblank + 2   ' one blank row after instructions
 
+        clwStage = "L" & level_index & ": trim gap rows " & target_header_row & ":" & (dest_row - 1)
         If dest_row > target_header_row Then
             level_ws.Rows(target_header_row & ":" & (dest_row - 1)).Delete
             dest_row = target_header_row
@@ -1040,6 +1108,7 @@ Private Sub create_level_worksheets()
         End If
 
         ' What-If framing
+        clwStage = "L" & level_index & ": what-if framing + buttons"
         With level_ws.Range("I1:K3").Interior: .Color = RGB(34, 138, 184): End With
         With level_ws.Range("M1:O1").Interior: .Color = RGB(0, 123, 0): End With
         With level_ws.Range("M2:O3").Interior: .Color = RGB(218, 242, 208): End With
@@ -1081,15 +1150,17 @@ Private Sub create_level_worksheets()
         End With
 
         ' Copy "Level n Header" row
+        clwStage = "L" & level_index & ": copy header row"
         For i = 1 To last_row_case
             If CStr(case_copy.Cells(i, 1).Value) = "Level " & level_index & " Header" Then
-                level_ws.Rows(dest_row).Value = case_copy.Rows(i).Value
+                Call CopyRowValuesSafe(case_copy, i, level_ws, dest_row, ncols)
                 dest_row = dest_row + 1
                 Exit For
             End If
         Next i
 
         ' Explicitly format the header row (no Selection reliance)
+        clwStage = "L" & level_index & ": format header row + CF"
         header_row = dest_row - 1
         Set header_range = level_ws.Range(level_ws.Cells(header_row, 1), level_ws.Cells(header_row, last_col_all_levels))
         With header_range.EntireRow
@@ -1122,6 +1193,7 @@ Private Sub create_level_worksheets()
         level_ws.Cells.UnMerge
 
         ' Example anchor (game name + unified XLOOKUP)
+        clwStage = "L" & level_index & ": example XLOOKUP formula"
         For i = 1 To last_row_case
             If CStr(case_copy.Cells(i, 1).Value) = "Level " & level_index & " Example Question" Then
                 first_example_game_name = CStr(case_copy.Cells(i, 2).Value)
@@ -1144,6 +1216,7 @@ Private Sub create_level_worksheets()
         Next i
 
         ' === Box exactly the header row and the XLOOKUP row (columns B .. last_col_all_levels) ===
+        clwStage = "L" & level_index & ": box header/xlookup rows"
         endCol = IIf(last_col_all_levels >= 2, last_col_all_levels, 2) ' at least column B
         Set boxRange = level_ws.Range(level_ws.Cells(header_row, 2), level_ws.Cells(dest_row, endCol))
         With boxRange.Borders
@@ -1193,6 +1266,7 @@ Private Sub create_level_worksheets()
         Next i
 
         ' Yellow anchor and game list
+        clwStage = "L" & level_index & ": yellow anchor + game list (" & first_game_number & ".." & last_game_number & ")"
         yellow_cell_rows(level_index) = dest_row + 5
         level_ws.Cells(yellow_cell_rows(level_index), 2).Interior.Color = RGB(255, 255, 0)
         level_ws.Cells(yellow_cell_rows(level_index) + 1, 1).Value = first_game_number
@@ -1201,6 +1275,7 @@ Private Sub create_level_worksheets()
         Next i
 
         ' Conditional formatting near "Done"
+        clwStage = "L" & level_index & ": CF near Done + B2/C2 format"
         With level_ws.Range("E1:G3").FormatConditions
             .Delete
             .Add Type:=xlExpression, _
@@ -1248,7 +1323,7 @@ Private Sub create_level_worksheets()
 ErrorHandler:
     Dim e_num As Long, e_desc As String
     e_num = Err.Number: e_desc = Err.Description
-    Call LogError(e_num, e_desc, "create_level_worksheets")
+    Call LogError(e_num, e_desc & " [stage: " & clwStage & "]", "create_level_worksheets")
     Err.Raise e_num, "create_level_worksheets", e_desc
 End Sub
 
@@ -1259,6 +1334,52 @@ Private Sub CenterControlOn(ByVal ctrl As Object, ByVal targetRange As Range)
     ctrl.Left = targetRange.Left + (targetRange.Width - ctrl.Width) / 2
     ctrl.Top = targetRange.Top + (targetRange.Height - ctrl.Height) / 2
 End Sub
+
+' Copy columns 1..nCols of one row (srcRow on srcWs) into destRow on destWs AS
+' VALUES - but store any text that begins with a formula-trigger character
+' (= + - @) as literal Text so Excel does NOT parse it as a formula.
+'
+' Why: a plain "destRange.Value = srcRange.Value" re-interprets a copied string
+' like "= Base Time + (Attribute Point x Reduction Rate)" (a case author's
+' explanatory pseudo-formula, stored as TEXT in the case) as a real formula on
+' the destination. Excel then treats the spaces as the intersection operator
+' over undefined names and raises a spurious "Out of memory" (Err 7). This is
+' exactly what stalled Level 4 setup on the 24-Hours case (case copy!C165).
+' Pre-setting NumberFormat = "@" on just those cells makes the same assignment
+' store the text verbatim - which is also what the author intended to display.
+Private Sub CopyRowValuesSafe(ByVal srcWs As Worksheet, ByVal srcRow As Long, _
+                              ByVal destWs As Worksheet, ByVal destRow As Long, _
+                              ByVal nCols As Long)
+    If nCols < 1 Then Exit Sub
+
+    Dim srcArr As Variant
+    srcArr = srcWs.Range(srcWs.Cells(srcRow, 1), srcWs.Cells(srcRow, nCols)).Value
+
+    ' A single-cell range returns a scalar, not a 2-D array - handle both.
+    If Not IsArray(srcArr) Then
+        If IsFormulaTriggerText(srcArr) Then destWs.Cells(destRow, 1).NumberFormat = "@"
+        destWs.Cells(destRow, 1).Value = srcArr
+        Exit Sub
+    End If
+
+    Dim cc As Long
+    For cc = 1 To nCols
+        If IsFormulaTriggerText(srcArr(1, cc)) Then destWs.Cells(destRow, cc).NumberFormat = "@"
+    Next cc
+    destWs.Range(destWs.Cells(destRow, 1), destWs.Cells(destRow, nCols)).Value = srcArr
+End Sub
+
+' True when v is a String whose first character would make Excel treat a
+' .Value assignment as a formula/expression (= + - @).
+Private Function IsFormulaTriggerText(ByVal v As Variant) As Boolean
+    If VarType(v) = vbString Then
+        If Len(v) > 0 Then
+            Select Case Left$(CStr(v), 1)
+                Case "=", "+", "-", "@": IsFormulaTriggerText = True
+            End Select
+        End If
+    End If
+End Function
 
 ' === Align Level Worksheets Subroutine ===
 ' Pads each L# so yellow anchors align, creates a solution start strip on each sheet,
@@ -1463,14 +1584,17 @@ Private Sub create_all_games_worksheet()
     lastColAG = wsAG.Cells(1, wsAG.Columns.count).End(xlToLeft).Column
     Set rng = wsAG.Range(wsAG.Cells(1, 1), wsAG.Cells(lastRowAG, lastColAG))
 
-    ' Keep only rows where Column A is "Level * Level Question"
-    With rng
-        .AutoFilter Field:=1, Criteria1:="<>*Level Question*"
-        On Error Resume Next
-        wsAG.Range(wsAG.Rows(1), wsAG.Rows(lastRowAG)).SpecialCells(xlCellTypeVisible).EntireRow.Delete
-        On Error GoTo ErrorHandler
-        .AutoFilter
-    End With
+    ' Keep only rows whose classification (col A) is a "... Level Question"; delete
+    ' every other (non-game) row. Deterministic bottom-up loop rather than an
+    ' AutoFilter + SpecialCells(xlCellTypeVisible).Delete, which could silently no-op
+    ' on some cases (a fragmented visible range or filter state carried over on the
+    ' copied sheet under On Error Resume Next) and leave non-game rows in AG.
+    Dim rDel As Long
+    For rDel = lastRowAG To 1 Step -1
+        If InStr(1, CStr(wsAG.Cells(rDel, 1).Value), "Level Question", vbTextCompare) = 0 Then
+            wsAG.Rows(rDel).Delete
+        End If
+    Next rDel
 
     ' Recompute last row after deletions
     lastRowAG = wsAG.Cells(wsAG.Rows.count, 1).End(xlUp).Row
