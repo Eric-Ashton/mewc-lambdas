@@ -948,9 +948,48 @@ Private Sub create_level_worksheets()
     Dim next_ch As String           ' character after level_label in b_text (used to avoid
                                     ' matching "LEVEL 10" when we want "LEVEL 1")
 
+    ' Stage marker: updated before each risky operation so the ErrorHandler can
+    ' report exactly where (which level, which step) a failure hit, instead of
+    ' just "create_level_worksheets - Out of memory" with no location.
+    Dim clwStage As String
+    clwStage = "init"
+
+    ' --- Remove any pre-existing level sheets before rebuilding -------------
+    ' setup runs in-place (attempt_workbook = ThisWorkbook) and nothing else
+    ' clears these. A stale "_L1" makes "Sheets.Add ... .Name = ""_L1""" below
+    ' collide (Err 1004) and, via the shared ErrorHandler, abort the WHOLE sub -
+    ' leaving the old level sheets on screen so setup looks like it "stopped"
+    ' partway. Deleting every "_L<digits>" sheet first makes each run rebuild
+    ' deterministically and also mops up extras left by an earlier mis-count.
+    clwStage = "clear stale _L sheets"
+    Dim clr_i As Long, clr_ws As Worksheet, clr_nm As String, clr_alerts As Boolean
+    Dim clr_body As String, clr_k As Long, clr_alldig As Boolean
+    clr_alerts = Application.DisplayAlerts
+    Application.DisplayAlerts = False
+    For clr_i = attempt_workbook.Worksheets.count To 1 Step -1
+        Set clr_ws = attempt_workbook.Worksheets(clr_i)
+        clr_nm = clr_ws.Name
+        If Len(clr_nm) >= 3 Then
+            If Left$(clr_nm, 2) = "_L" Then
+                clr_body = Mid$(clr_nm, 3)
+                clr_alldig = True
+                For clr_k = 1 To Len(clr_body)
+                    If Mid$(clr_body, clr_k, 1) < "0" Or Mid$(clr_body, clr_k, 1) > "9" Then
+                        clr_alldig = False
+                        Exit For
+                    End If
+                Next clr_k
+                If clr_alldig Then clr_ws.Delete
+            End If
+        End If
+    Next clr_i
+    Application.DisplayAlerts = clr_alerts
+
     ReDim yellow_cell_rows(1 To number_of_levels)
 
     For level_index = 1 To number_of_levels
+
+        clwStage = "L" & level_index & ": add & name sheet"
 
         ' Create & name the level sheet
         Set level_ws = attempt_workbook.Sheets.Add(After:=attempt_workbook.Sheets(attempt_workbook.Sheets.count))
@@ -962,6 +1001,7 @@ Private Sub create_level_worksheets()
         End If
 
         ' Base layout
+        clwStage = "L" & level_index & ": base layout (.Cells format)"
         With level_ws.Cells
             .UnMerge
             .RowHeight = 14.3
@@ -978,6 +1018,7 @@ Private Sub create_level_worksheets()
         ' preamble and then deleting it - avoids a large Rows(...).Delete on a fully
         ' cell-formatted sheet, which raised a spurious "Out of memory" (Err 7) on
         ' levels whose instructions have a long preamble (e.g. this case's Level 4).
+        clwStage = "L" & level_index & ": scan instruction rows"
         Dim instrRows() As Long, nInstr As Long, bannerIdx As Long, startIdx As Long
         ReDim instrRows(1 To last_row_case + 1)
         nInstr = 0
@@ -1008,6 +1049,7 @@ Private Sub create_level_worksheets()
         ' Keep exactly one instruction row above the difficulty header.
         If bannerIdx >= 2 Then startIdx = bannerIdx - 1 Else startIdx = 1
 
+        clwStage = "L" & level_index & ": copy instructions (nInstr=" & nInstr & ", bannerIdx=" & bannerIdx & ", startIdx=" & startIdx & ")"
         dest_row = 1
         For j = startIdx To nInstr
             level_ws.Rows(dest_row).Value = case_copy.Rows(instrRows(j)).Value
@@ -1015,6 +1057,7 @@ Private Sub create_level_worksheets()
         Next j
 
         ' Freeze panes below row 3
+        clwStage = "L" & level_index & ": freeze panes"
         level_ws.Rows("1").RowHeight = 14.3
         level_ws.Rows("2").RowHeight = 24.4
         level_ws.Rows("3").RowHeight = 14.3
@@ -1032,6 +1075,7 @@ Private Sub create_level_worksheets()
         If last_instr_nonblank = 0 Then last_instr_nonblank = 1
         target_header_row = last_instr_nonblank + 2   ' one blank row after instructions
 
+        clwStage = "L" & level_index & ": trim gap rows " & target_header_row & ":" & (dest_row - 1)
         If dest_row > target_header_row Then
             level_ws.Rows(target_header_row & ":" & (dest_row - 1)).Delete
             dest_row = target_header_row
@@ -1040,6 +1084,7 @@ Private Sub create_level_worksheets()
         End If
 
         ' What-If framing
+        clwStage = "L" & level_index & ": what-if framing + buttons"
         With level_ws.Range("I1:K3").Interior: .Color = RGB(34, 138, 184): End With
         With level_ws.Range("M1:O1").Interior: .Color = RGB(0, 123, 0): End With
         With level_ws.Range("M2:O3").Interior: .Color = RGB(218, 242, 208): End With
@@ -1081,6 +1126,7 @@ Private Sub create_level_worksheets()
         End With
 
         ' Copy "Level n Header" row
+        clwStage = "L" & level_index & ": copy header row"
         For i = 1 To last_row_case
             If CStr(case_copy.Cells(i, 1).Value) = "Level " & level_index & " Header" Then
                 level_ws.Rows(dest_row).Value = case_copy.Rows(i).Value
@@ -1090,6 +1136,7 @@ Private Sub create_level_worksheets()
         Next i
 
         ' Explicitly format the header row (no Selection reliance)
+        clwStage = "L" & level_index & ": format header row + CF"
         header_row = dest_row - 1
         Set header_range = level_ws.Range(level_ws.Cells(header_row, 1), level_ws.Cells(header_row, last_col_all_levels))
         With header_range.EntireRow
@@ -1122,6 +1169,7 @@ Private Sub create_level_worksheets()
         level_ws.Cells.UnMerge
 
         ' Example anchor (game name + unified XLOOKUP)
+        clwStage = "L" & level_index & ": example XLOOKUP formula"
         For i = 1 To last_row_case
             If CStr(case_copy.Cells(i, 1).Value) = "Level " & level_index & " Example Question" Then
                 first_example_game_name = CStr(case_copy.Cells(i, 2).Value)
@@ -1144,6 +1192,7 @@ Private Sub create_level_worksheets()
         Next i
 
         ' === Box exactly the header row and the XLOOKUP row (columns B .. last_col_all_levels) ===
+        clwStage = "L" & level_index & ": box header/xlookup rows"
         endCol = IIf(last_col_all_levels >= 2, last_col_all_levels, 2) ' at least column B
         Set boxRange = level_ws.Range(level_ws.Cells(header_row, 2), level_ws.Cells(dest_row, endCol))
         With boxRange.Borders
@@ -1193,6 +1242,7 @@ Private Sub create_level_worksheets()
         Next i
 
         ' Yellow anchor and game list
+        clwStage = "L" & level_index & ": yellow anchor + game list (" & first_game_number & ".." & last_game_number & ")"
         yellow_cell_rows(level_index) = dest_row + 5
         level_ws.Cells(yellow_cell_rows(level_index), 2).Interior.Color = RGB(255, 255, 0)
         level_ws.Cells(yellow_cell_rows(level_index) + 1, 1).Value = first_game_number
@@ -1201,6 +1251,7 @@ Private Sub create_level_worksheets()
         Next i
 
         ' Conditional formatting near "Done"
+        clwStage = "L" & level_index & ": CF near Done + B2/C2 format"
         With level_ws.Range("E1:G3").FormatConditions
             .Delete
             .Add Type:=xlExpression, _
@@ -1248,7 +1299,7 @@ Private Sub create_level_worksheets()
 ErrorHandler:
     Dim e_num As Long, e_desc As String
     e_num = Err.Number: e_desc = Err.Description
-    Call LogError(e_num, e_desc, "create_level_worksheets")
+    Call LogError(e_num, e_desc & " [stage: " & clwStage & "]", "create_level_worksheets")
     Err.Raise e_num, "create_level_worksheets", e_desc
 End Sub
 
