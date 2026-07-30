@@ -2,28 +2,32 @@
 z_change_counts(best, du, vstar, ncoins)
 
 === COMMENT ===
-Private helper for make_change - do not call directly. Backtracks the min-coins table from amount vstar to 0, tallying how many of each of the n denominations were used. Returns a 1-by-n row of counts.
+Private helper for make_change - do not call directly. Backtracks the min-coins table from amount vstar to 0, tallying how many of each of the ncoins denominations were used. Returns a 1-by-ncoins row of counts.
 
 === CODE ===
 =LAMBDA(best, du, vstar, ncoins, LET(
    inf, 1000000000,
-   kmin, INDEX(best, vstar + 1),
+   alen, ROWS(best),
+   seq, SEQUENCE(alen, 1, 0),
+   seqc, SEQUENCE(ncoins, 1, 1),
+   seqr, SEQUENCE(1, ncoins),
+   kmin, SUM(best * (seq = vstar)),
    zeros, SEQUENCE(1, ncoins, 0, 0),
    IF(OR(vstar <= 0, kmin <= 0, kmin >= inf),
       zeros,
-      DROP(REDUCE(HSTACK(vstar, zeros), SEQUENCE(kmin), LAMBDA(acc, step, LET(
-         amt, INDEX(acc, 1, 1),
-         cnt, DROP(acc, , 1),
-         cand, amt - du,
-         ok, (du >= 1) * (cand >= 0),
-         prevrow, IF(ok, cand + 1, 1),
-         prevbest, INDEX(best, prevrow),
-         pick, ok * (prevbest = INDEX(best, amt + 1) - 1),
-         hit, XMATCH(1, pick),
-         newcnt, cnt + (SEQUENCE(1, ncoins) = hit),
-         newamt, amt - INDEX(du, hit),
-         HSTACK(newamt, newcnt)
-      ))), , 1)
+      DROP(
+         REDUCE(HSTACK(vstar, zeros), SEQUENCE(kmin), LAMBDA(acc, step, LET(
+            rem, INDEX(acc, 1, 1),
+            cnt, DROP(acc, , 1),
+            bestrem, SUM(best * (seq = rem)),
+            prevb, MAP(du, LAMBDA(coin, IF((coin >= 1) * (coin <= rem), SUM(best * (seq = (rem - coin))), inf))),
+            pick, (du >= 1) * (prevb = bestrem - 1),
+            hit, XMATCH(1, pick),
+            chosen, SUM(du * (seqc = hit)),
+            HSTACK(rem - chosen, cnt + (seqr = hit))
+         ))),
+         , 1
+      )
    )
 ))
 
@@ -31,12 +35,14 @@ Private helper for make_change - do not call directly. Backtracks the min-coins 
 Private helper for make_change. Reconstructs the per-denomination coin counts from the DP table produced by z_change_costs.
 
 Arguments:
-  best  - the min-coins-per-amount column from z_change_costs.
-  du    - the denominations in integer GCD units (0 = unusable), aligned to the original coins order.
+  best   - the min-coins-per-amount column from z_change_costs.
+  du     - the denominations in integer GCD units (0 = unusable), aligned to the original coins order.
   vstar  - the chosen target amount (largest reachable value not exceeding the price).
   ncoins - the number of denominations (rows) to report.
 
 Returns:
   A 1-by-ncoins row giving how many of each denomination make up vstar with the fewest coins. Each step picks a denomination that lies on an optimal (one-coin-cheaper) path and subtracts it until the amount reaches 0. Returns all zeros when vstar is 0 or unreachable.
+
+Implementation note: it reads best[k] as SUM(best*(seq=k)) and du[hit] as SUM(du*(seqc=hit)) rather than INDEX(best, ...)/INDEX(du, ...). Excel mis-evaluates INDEX into these computed arrays (which come from a REDUCE and, via make_change, from a range) when several make_change calls share a sheet - it silently collapses the answer to a single coin. Element-wise selection with SUM (and MAP for the per-coin lookups) is evaluated reliably.
 
 Called only by make_change; not intended for direct worksheet use.

@@ -2,7 +2,7 @@
 make_change(coins, price)
 
 === COMMENT ===
-Fewest coins of the given denominations whose total is as close to price as possible without exceeding it. coins is a vertical array of denominations; returns a matching array of counts. Optimal (DP), so it is correct even for non-canonical denomination sets.
+Fewest coins of the given denominations whose total is as close to price as possible without exceeding it. coins is a vertical array of denominations; returns a matching array of counts. Optimal (DP), so it is correct even for non-canonical denomination sets. Works with range or literal inputs and with many calls on one sheet.
 
 === CODE ===
 =LAMBDA(coins, price, LET(
@@ -22,8 +22,8 @@ Fewest coins of the given denominations whose total is as close to price as poss
          ps, ROUND(pnum * scale, 0),
          cap, INT(ps / gunit),
          best, z_change_costs(du, cap),
-         reach, best < 1000000000,
-         vstar, MAX(IF(reach, SEQUENCE(ROWS(best), 1, 0), -1)),
+         seq, SEQUENCE(ROWS(best), 1, 0),
+         vstar, MAX(IF(best < 1000000000, seq, -1)),
          counts_row, z_change_counts(best, du, vstar, ncoins),
          IF(ROWS(coins) >= COLUMNS(coins), TRANSPOSE(counts_row), counts_row)
       )
@@ -38,7 +38,7 @@ Arguments:
   price - the target amount. The result never exceeds it.
 
 Returns:
-  An array the same shape as coins giving how many of each denomination to use. Among all coin combinations whose total is the largest achievable value not exceeding price, it returns the one using the fewest coins total.
+  An array the same shape as coins giving how many of each denomination to use. Among all coin combinations whose total is the largest achievable value not exceeding price, it returns the one using the fewest coins total. Ties are broken toward earlier-listed denominations, so listing coins largest-first yields a "heaviest-first" solution.
 
 This is a true optimizer (dynamic programming), not a largest-first greedy, so it stays correct even when the denominations aren't a canonical currency set - e.g. make_change({0.25; 0.10}, 0.30) returns {0; 3} (0.30) rather than the greedy {1; 0} (0.25).
 
@@ -46,4 +46,4 @@ Example:
   make_change({1; 0.5; 0.25; 0.05}, 4.34)  ->  {4; 0; 1; 1}
   (4.30 is the closest total not over 4.34, and 4+1+1 = 6 coins is the fewest that make it.)
 
-Note: denominations and price are scaled to integers (six decimal places) and reduced by their GCD, so the internal DP size is price/GCD. Relies on the private helpers z_change_costs and z_change_counts.
+Note: denominations and price are scaled to integers (six decimal places) and reduced by their GCD, so the internal DP size is price/GCD. Relies on the private helpers z_change_costs and z_change_counts, which are written to stay correct with range inputs and with multiple make_change calls on the same sheet (an earlier INDEX-based version silently returned a single coin in those cases).
