@@ -1,0 +1,42 @@
+=== SIGNATURE ===
+z_change_counts(best, du, vstar, ncoins)
+
+=== COMMENT ===
+Private helper for make_change - do not call directly. Backtracks the min-coins table from amount vstar to 0, tallying how many of each of the n denominations were used. Returns a 1-by-n row of counts.
+
+=== CODE ===
+=LAMBDA(best, du, vstar, ncoins, LET(
+   inf, 1000000000,
+   kmin, INDEX(best, vstar + 1),
+   zeros, SEQUENCE(1, ncoins, 0, 0),
+   IF(OR(vstar <= 0, kmin <= 0, kmin >= inf),
+      zeros,
+      DROP(REDUCE(HSTACK(vstar, zeros), SEQUENCE(kmin), LAMBDA(acc, step, LET(
+         amt, INDEX(acc, 1, 1),
+         cnt, DROP(acc, , 1),
+         cand, amt - du,
+         ok, (du >= 1) * (cand >= 0),
+         prevrow, IF(ok, cand + 1, 1),
+         prevbest, INDEX(best, prevrow),
+         pick, ok * (prevbest = INDEX(best, amt + 1) - 1),
+         hit, XMATCH(1, pick),
+         newcnt, cnt + (SEQUENCE(1, ncoins) = hit),
+         newamt, amt - INDEX(du, hit),
+         HSTACK(newamt, newcnt)
+      ))), , 1)
+   )
+))
+
+=== DESCRIPTION ===
+Private helper for make_change. Reconstructs the per-denomination coin counts from the DP table produced by z_change_costs.
+
+Arguments:
+  best  - the min-coins-per-amount column from z_change_costs.
+  du    - the denominations in integer GCD units (0 = unusable), aligned to the original coins order.
+  vstar  - the chosen target amount (largest reachable value not exceeding the price).
+  ncoins - the number of denominations (rows) to report.
+
+Returns:
+  A 1-by-ncoins row giving how many of each denomination make up vstar with the fewest coins. Each step picks a denomination that lies on an optimal (one-coin-cheaper) path and subtracts it until the amount reaches 0. Returns all zeros when vstar is 0 or unreachable.
+
+Called only by make_change; not intended for direct worksheet use.

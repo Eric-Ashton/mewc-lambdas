@@ -1,0 +1,49 @@
+=== SIGNATURE ===
+make_change(coins, price)
+
+=== COMMENT ===
+Fewest coins of the given denominations whose total is as close to price as possible without exceeding it. coins is a vertical array of denominations; returns a matching array of counts. Optimal (DP), so it is correct even for non-canonical denomination sets.
+
+=== CODE ===
+=LAMBDA(coins, price, LET(
+   cvec, TOCOL(coins),
+   ncoins, ROWS(cvec),
+   scale, 1000000,
+   cnum, IFERROR(cvec * 1, 0),
+   pnum, IFERROR(price * 1, 0),
+   ds, IF(cnum > 0, ROUND(cnum * scale, 0), 0),
+   npos, SUM(--(ds > 0)),
+   IF(npos = 0,
+      IF(ROWS(coins) >= COLUMNS(coins), SEQUENCE(ncoins, 1, 0, 0), SEQUENCE(1, ncoins, 0, 0)),
+      LET(
+         posd, FILTER(ds, ds > 0),
+         gunit, GCD(posd),
+         du, IF(ds > 0, ds / gunit, 0),
+         ps, ROUND(pnum * scale, 0),
+         cap, INT(ps / gunit),
+         best, z_change_costs(du, cap),
+         reach, best < 1000000000,
+         vstar, MAX(IF(reach, SEQUENCE(ROWS(best), 1, 0), -1)),
+         counts_row, z_change_counts(best, du, vstar, ncoins),
+         IF(ROWS(coins) >= COLUMNS(coins), TRANSPOSE(counts_row), counts_row)
+      )
+   )
+))
+
+=== DESCRIPTION ===
+Makes change for a price using the fewest coins, getting as close as possible to the price without going over.
+
+Arguments:
+  coins - a vertical array of the coin denominations available (e.g. {1; 0.5; 0.25; 0.05}). Non-positive or non-numeric entries are treated as unusable and get a count of 0.
+  price - the target amount. The result never exceeds it.
+
+Returns:
+  An array the same shape as coins giving how many of each denomination to use. Among all coin combinations whose total is the largest achievable value not exceeding price, it returns the one using the fewest coins total.
+
+This is a true optimizer (dynamic programming), not a largest-first greedy, so it stays correct even when the denominations aren't a canonical currency set - e.g. make_change({0.25; 0.10}, 0.30) returns {0; 3} (0.30) rather than the greedy {1; 0} (0.25).
+
+Example:
+  make_change({1; 0.5; 0.25; 0.05}, 4.34)  ->  {4; 0; 1; 1}
+  (4.30 is the closest total not over 4.34, and 4+1+1 = 6 coins is the fewest that make it.)
+
+Note: denominations and price are scaled to integers (six decimal places) and reduced by their GCD, so the internal DP size is price/GCD. Relies on the private helpers z_change_costs and z_change_counts.

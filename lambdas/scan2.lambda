@@ -1,0 +1,37 @@
+=== SIGNATURE ===
+scan2(start_a, start_b, arr, lambda_a, lambda_b)
+
+=== COMMENT ===
+Like SCAN but carries TWO accumulators. For each item of arr it updates a and b together; lambda_a and lambda_b each receive (a, b, item) and return the next a and next b. Returns a 2-column array of the running (a, b) after each item.
+
+=== CODE ===
+=LAMBDA(start_a, start_b, arr, lambda_a, lambda_b, LET(
+   vec, TOCOL(arr),
+   seeded, REDUCE(HSTACK(start_a, start_b), vec, LAMBDA(acc, item, LET(
+      cur_a, INDEX(acc, ROWS(acc), 1),
+      cur_b, INDEX(acc, ROWS(acc), 2),
+      VSTACK(acc, HSTACK(lambda_a(cur_a, cur_b, item), lambda_b(cur_a, cur_b, item)))
+   ))),
+   DROP(seeded, 1)
+))
+
+=== DESCRIPTION ===
+A two-accumulator SCAN. Ordinary SCAN can only carry one scalar accumulator, so carrying two values forces you to concatenate them into one; scan2 threads two independent accumulators for you.
+
+Arguments:
+  start_a  - initial value of the first accumulator.
+  start_b  - initial value of the second accumulator.
+  arr      - the items to iterate over (flattened top-to-bottom, like TOCOL).
+  lambda_a - LAMBDA(a, b, item) returning the next value of accumulator a. It sees the CURRENT a and b and the current item.
+  lambda_b - LAMBDA(a, b, item) returning the next value of accumulator b (also sees the current a and b).
+
+Returns:
+  A 2-column array with one row per item of arr: column 1 is the running a, column 2 is the running b, each taken AFTER that item is processed (matching SCAN's per-item semantics). Take the last row for the final pair.
+
+Both new values are computed from the PRE-update a and b, so lambda_a and lambda_b can reference each other's previous value. Accumulators should be scalars (numbers or text), like SCAN.
+
+Example - running sum in a, running max in b, over {3;1;4;1;5}:
+  scan2(0, -1E+308, {3;1;4;1;5}, LAMBDA(a,b,x, a + x), LAMBDA(a,b,x, MAX(b, x)))
+  -> {3,3; 4,3; 8,4; 9,4; 14,5}
+
+Note: builds the result by appending rows (order n^2), so it suits small/medium arrays. See scan3 for three accumulators.

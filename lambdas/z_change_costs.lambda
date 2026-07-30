@@ -1,0 +1,33 @@
+=== SIGNATURE ===
+z_change_costs(du, cap)
+
+=== COMMENT ===
+Private helper for make_change - do not call directly. Unbounded-coin DP: returns a column of length cap+1 where row a+1 is the fewest coins that total exactly a units, or 1000000000 (sentinel) if a is not reachable. du is the denominations in integer GCD-units (0 = unusable).
+
+=== CODE ===
+=LAMBDA(du, cap, LET(
+   inf, 1000000000,
+   IF(cap < 1,
+      0,
+      REDUCE(0, SEQUENCE(cap), LAMBDA(acc, amt, LET(
+         cand, amt - du,
+         ok, (du >= 1) * (cand >= 0),
+         ridx, IF(ok, cand + 1, 1),
+         prev, INDEX(acc, ridx),
+         cost, IF(ok, prev + 1, inf),
+         VSTACK(acc, MIN(cost))
+      )))
+   )
+))
+
+=== DESCRIPTION ===
+Private helper for make_change. Builds the minimum-coins-per-amount table by dynamic programming.
+
+Arguments:
+  du  - the coin denominations expressed as positive integers (in GCD units); entries below 1 are ignored as unusable.
+  cap - the largest amount (in the same units) to solve for.
+
+Returns:
+  A column of cap+1 values. Row a+1 holds the fewest coins whose values sum to exactly a units, or 1000000000 if a cannot be made. When cap < 1 it returns the scalar 0 (only amount 0, which needs 0 coins).
+
+Called only by make_change; not intended for direct worksheet use.

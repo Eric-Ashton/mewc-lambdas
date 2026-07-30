@@ -1,0 +1,42 @@
+=== SIGNATURE ===
+scan3(start_a, start_b, start_c, arr, lambda_a, lambda_b, lambda_c)
+
+=== COMMENT ===
+Like SCAN but carries THREE accumulators. For each item of arr it updates a, b and c together; lambda_a/lambda_b/lambda_c each receive (a, b, c, item) and return the next value of that accumulator. Returns a 3-column array of the running (a, b, c) after each item.
+
+=== CODE ===
+=LAMBDA(start_a, start_b, start_c, arr, lambda_a, lambda_b, lambda_c, LET(
+   vec, TOCOL(arr),
+   seeded, REDUCE(HSTACK(start_a, start_b, start_c), vec, LAMBDA(acc, item, LET(
+      cur_a, INDEX(acc, ROWS(acc), 1),
+      cur_b, INDEX(acc, ROWS(acc), 2),
+      cur_c, INDEX(acc, ROWS(acc), 3),
+      VSTACK(acc, HSTACK(
+         lambda_a(cur_a, cur_b, cur_c, item),
+         lambda_b(cur_a, cur_b, cur_c, item),
+         lambda_c(cur_a, cur_b, cur_c, item)
+      ))
+   ))),
+   DROP(seeded, 1)
+))
+
+=== DESCRIPTION ===
+A three-accumulator SCAN. Threads three independent accumulators through arr so you don't have to pack them into one.
+
+Arguments:
+  start_a, start_b, start_c - initial values of the three accumulators.
+  arr      - the items to iterate over (flattened top-to-bottom, like TOCOL).
+  lambda_a - LAMBDA(a, b, c, item) returning the next a (sees current a, b, c and the item).
+  lambda_b - LAMBDA(a, b, c, item) returning the next b.
+  lambda_c - LAMBDA(a, b, c, item) returning the next c.
+
+Returns:
+  A 3-column array with one row per item of arr: columns 1/2/3 are the running a/b/c AFTER that item is processed (matching SCAN's per-item semantics). Take the last row for the final triple.
+
+All three new values are computed from the PRE-update a, b and c, so the update lambdas can reference each other's previous values. Accumulators should be scalars (numbers or text), like SCAN.
+
+Example - running sum, running product, running count over {2;3;4}:
+  scan3(0, 1, 0, {2;3;4}, LAMBDA(a,b,c,x, a+x), LAMBDA(a,b,c,x, b*x), LAMBDA(a,b,c,x, c+1))
+  -> {2,2,1; 5,6,2; 9,24,3}
+
+Note: builds the result by appending rows (order n^2), so it suits small/medium arrays. See scan2 for two accumulators.
