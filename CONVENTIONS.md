@@ -57,6 +57,40 @@ their `cm=` dynamic-array marker (the `@` problem), which the workbook's own
 you don't touch keep their markers. Lambda **code** still flows text-first via
 the test-workbook sync (see below) — you don't hand-edit the Lamb sheet for that.
 
+### Creating a test sheet for a new lambda
+Each public lambda has its own worksheet whose **name equals the lambda name** — that's
+how the header cells look themselves up (`B1` Signature, `B2` Code, `I1` Description all
+`XLOOKUP` the sheet name against the `Lamb` sheet). Layout: row 4 a title + a
+`=COUNTIF(<match-col>:<...>,"PASS")&" / N PASS"` tally; row 5 the labels
+`# | Case | Inputs | Expected | Actual | Match`; then one block per case — `A` case number,
+`B` description, inputs from `D` (spread across `D/F/H…`), `Expected` values from `J`,
+`Actual` = the lambda call, `Match` = `=IF(<expected>=<actual>,"PASS","FAIL")` (use
+`=IF(AND(<exp range>=<act range>),…)` when the result spills). Steps:
+
+1. **Create the sheet** by duplicating an existing one (gets the header formulas + labels
+   for free): `apply_edits(SRC, OUT, edits, duplicates=[("count_substring","<name>")])`.
+   Duplicated headers use `CELL("filename")`, so they auto-resolve to the new sheet name.
+2. **Clear** the copied source's case cells (rows ≥ 4 you won't reuse) — an edit with
+   neither `value` nor `formula` blanks a cell but keeps its style.
+3. **Write** the title (`A4`), tally (`<match-col>4`), row-5 labels, and each case's
+   cells. For a spilling `Actual`, put the formula only in the anchor cell and leave the
+   spill range empty; compare with an explicit range in `Match`. Wide outputs can shift
+   `Actual`/`Match` right (e.g. Expected `J:K`, Actual `M:N`, Match `P`).
+4. **Formulas**: write plain (no leading `=`); a formula that *inlines* a modern function
+   (e.g. `LAMBDA`, `LET`) must use its stored grammar — `_xlfn.LAMBDA`, params `_xlpm.<name>` —
+   or Excel flags it on open. Bare library-lambda names (`make_change`, …) and classic
+   functions (`IF`, `AND`, `SUM`, `COUNTIF`, `HYPERLINK`) need no prefix.
+5. **Roll-up**: add a row to the `lambda_tests` sheet (`HYPERLINK` + two `COUNTIF`s + total
+   + status) and extend the `TOTAL` row's `SUM` ranges. It's a static list, not auto-built.
+6. **Reorder** (optional) with `apply_edits(..., sheet_order=[…])` to place the new sheet
+   among the others rather than at the end.
+7. **In Excel** (manual, can't run in CI): run `sync_test_workbook_from_repo.sync_all` (or
+   `sync_lambdas` then `lambda_update`) so the Name Manager + `Lamb` sheet carry the lambda
+   and the helpers, then confirm the sheet and the `lambda_tests` roll-up show PASS. Save
+   from Excel and commit the workbook alongside the `.lambda` files.
+
+Helpers (`z_*`) are exercised through their public wrapper's sheet — they don't get their own.
+
 ## Workflow (repo ↔ Excel)
 The committed `MEWC Lambda and VBA Unit Tests.xlsm` is the upstream/dev workbook; the text
 files are what you **edit**. Keep the direction of truth straight — *edit text, refresh the
