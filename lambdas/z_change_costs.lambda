@@ -1,0 +1,42 @@
+=== SIGNATURE ===
+z_change_costs(du, cap)
+
+=== COMMENT ===
+Private helper for make_change - do not call directly. Unbounded-coin DP: returns a column of length cap+1 where row a+1 is the fewest coins that total exactly a units, or 1000000000 (sentinel) if a is not reachable. du is the denominations in integer GCD-units (entries below 1 are ignored).
+
+=== CODE ===
+=LAMBDA(du, cap, LET(
+   inf, 1000000000,
+   IF(cap < 1,
+      0,
+      LET(
+         alen, cap + 1,
+         init, VSTACK(0, SEQUENCE(cap, 1, inf, 0)),
+         REDUCE(init, SEQUENCE(cap), LAMBDA(best, pass_num,
+            REDUCE(best, du, LAMBDA(acc, coin,
+               IF(coin < 1,
+                  acc,
+                  LET(
+                     shifted, TAKE(VSTACK(SEQUENCE(coin, 1, inf, 0), best), alen),
+                     IF(shifted + 1 < acc, shifted + 1, acc)
+                  )
+               )
+            ))
+         ))
+      )
+   )
+))
+
+=== DESCRIPTION ===
+Private helper for make_change. Builds the minimum-coins-per-amount table by dynamic programming.
+
+Arguments:
+  du  - the coin denominations expressed as positive integers (in GCD units); entries below 1 are ignored as unusable.
+  cap - the largest amount (in the same units) to solve for.
+
+Returns:
+  A column of cap+1 values. Row a+1 holds the fewest coins whose values sum to exactly a units, or 1000000000 if a cannot be made. When cap < 1 it returns the scalar 0 (only amount 0, which needs 0 coins).
+
+Implementation note: this is a shift-based Bellman-Ford relaxation - each pass, every coin shifts the whole best vector down by its size (VSTACK a column of sentinels on top, then TAKE back to length cap+1) and takes the element-wise min of best and shifted+1. cap passes guarantee convergence (a solution never needs more than cap coins). It deliberately avoids INDEX-ing into the growing accumulator with a computed index: Excel returns wrong results for that pattern when the inputs trace back to a range or when several make_change calls share a sheet.
+
+Called only by make_change; not intended for direct worksheet use.
