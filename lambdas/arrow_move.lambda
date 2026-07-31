@@ -2,7 +2,7 @@
 arrow_move(start_ad, arrow, [steps], [board_rng], [push_mode])
 
 === COMMENT ===
-Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction, bounded by board_rng (default whole sheet). Returns a NUMERIC address. Out of bounds, push_mode: 1 stop at edge (default), 0 stay, -1 'oob'.
+Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction (arrow glyph or its numeric equivalent), bounded by board_rng (default whole sheet). Returns a NUMERIC address. Out of bounds, push_mode: 1 stop at edge (default), 0 stay, -1 'oob'.
 
 === CODE ===
 =LAMBDA(start_ad, arrow, [steps], [board_rng], [push_mode],
@@ -12,8 +12,9 @@ Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction,
     start_num, num_ad(start_ad),
     start_row, INT(start_num / 1000000),
     start_col, MOD(start_num, 1000000),
-    d_row, SWITCH(arrow, "←", 0, "↖", -1, "↗", -1, "→", 0, "↙", 1, "↓", 1, "↘", 1, "↑", -1),
-    d_col, SWITCH(arrow, "←", -1, "↖", -1, "↗", 1, "→", 1, "↙", -1, "↓", 0, "↘", 1, "↑", 0),
+    arr_norm, z_num_to_arrow(arrow),
+    d_row, SWITCH(arr_norm, "←", 0, "↖", -1, "↗", -1, "→", 0, "↙", 1, "↓", 1, "↘", 1, "↑", -1),
+    d_col, SWITCH(arr_norm, "←", -1, "↖", -1, "↗", 1, "→", 1, "↙", -1, "↓", 0, "↘", 1, "↑", 0),
     row_min, IF(ISOMITTED(board_rng), 1, MIN(ROW(board_rng))),
     row_max, IF(ISOMITTED(board_rng), 1048576, MAX(ROW(board_rng))),
     col_min, IF(ISOMITTED(board_rng), 1, MIN(COLUMN(board_rng))),
@@ -38,7 +39,7 @@ Moves an address a number of steps in an arrow direction, constrained to a board
 
 Arguments:
   start_ad    - starting cell as a numeric address or an A1 string (coerced with num_ad).
-  arrow       - direction arrow.
+  arrow       - direction as a standard arrow (↑↓←→↖↗↙↘) or its numeric equivalent (1, -1000000, ...).
   [steps]     - number of steps (default 1).
   [board_rng] - bounding range (default whole sheet).
   [push_mode] - out-of-bounds behavior: 1 = stop at edge (default), 0 = stay at start, -1 = return "oob".
