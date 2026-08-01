@@ -2,12 +2,12 @@
 num_ad(ad_or_rng)
 
 === COMMENT ===
-Convert any address or range to a numeric address (1e6*row+col) or an array of them. A string address becomes its number; a range (A1 or numeric) expands to an array of numeric addresses top-left to bottom-right; empty becomes ""; anything else passes through. Element-wise over an array (ranges inside an array pass through).
+Convert any address or range to a numeric address (1e6*row+col) or an array of them. A string address becomes its number; a standard direction arrow becomes its numeric delta (→ 1, ↑ -1000000, ...); a range (A1 or numeric) expands to an array of numeric addresses top-left to bottom-right; empty becomes ""; anything else passes through. Element-wise over an array (ranges inside an array pass through).
 
 === CODE ===
 =LAMBDA(ad_or_rng,
   LET(
-    to_num_1, LAMBDA(one, IF(one = "", "", IFERROR(z_a1n(one), one))),
+    to_num_1, LAMBDA(one, IF(one = "", "", LET(av, z_arrow_to_num(one), IF(ISNUMBER(av), av, IFERROR(z_a1n(one), one))))),
     IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1,
       MAP(ad_or_rng, to_num_1),
       LET(
@@ -24,6 +24,7 @@ Convert any address or range to a numeric address (1e6*row+col) or an array of t
 Convert any address or range to numeric form - the mirror of str_ad, and the standard way to coerce mixed address input to numbers.
 
 Behaviour by input:
+  standard direction arrow ("→", "↘")    -> its numeric delta (1, 1000001) - the value you add to an address to move that way
   valid string address ("D3")            -> the numeric address (3000004)
   valid A1 range ("A1:B4")               -> an array of numeric addresses, top-left first, bottom-right last
   valid numeric range ("1000001:4000002")-> the same array
@@ -45,4 +46,6 @@ Example:
   num_ad("D3")                ->  3000004
   num_ad("A1:B2")             ->  {1000001, 1000002; 2000001, 2000002}
   num_ad(3000004)             ->  3000004
+  num_ad("→")                 ->  1
+  num_ad({"D3", "↑"})         ->  {3000004, -1000000}
   num_ad("hi")                ->  "hi"

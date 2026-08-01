@@ -1,29 +1,34 @@
 === SIGNATURE ===
-rotate_arrow(arrow, steps, [clockwise])
+rotate_arrow(arrow, steps, [clockwise], [as_num])
 
 === COMMENT ===
-Rotates an arrow by 45 degrees times steps. clockwise = 1 (default) rotates clockwise; clockwise = 0 rotates counter-clockwise.
+Rotates an arrow by 45 degrees times steps. arrow may be a standard arrow or its numeric equivalent. clockwise = 1 (default) rotates clockwise, 0 counter-clockwise. as_num = 0 (default) returns an arrow, 1 returns the numeric equivalent.
 
 === CODE ===
-=LAMBDA(arrow, steps, [dir], LET(
+=LAMBDA(arrow, steps, [clockwise], [as_num], LET(
    arrows, "↑↗→↘↓↙←↖",
    arrow_list, MID(arrows, SEQUENCE(8), 1),
-   i, XMATCH(arrow, arrow_list),
-   s, IF(ISOMITTED(dir), steps, IF(dir = "ccw", -steps, steps)),
-   n, MOD(i - 1 + s, 8) + 1,
-   IFNA(MID(arrows, n, 1), "")
+   idx, XMATCH(z_num_to_arrow(arrow), arrow_list),
+   turn, IF(ISOMITTED(clockwise), steps, IF(OR(clockwise = 0, clockwise = "ccw"), -steps, steps)),
+   pos, MOD(idx - 1 + turn, 8) + 1,
+   out, IFNA(MID(arrows, pos, 1), ""),
+   IF(IF(ISOMITTED(as_num), 0, as_num) = 1, z_arrow_to_num(out), out)
 ))
 
 === DESCRIPTION ===
 Rotates an arrow around the eight compass directions.
 
 Arguments:
-  arrow       - the arrow to rotate (↑↗→↘↓↙←↖).
+  arrow       - the arrow to rotate: a standard arrow (↑↗→↘↓↙←↖) or its numeric equivalent (1, -1000000, ...).
   steps       - number of 45-degree turns.
-  [clockwise] - 1 = clockwise (default), 0 = counter-clockwise.
+  [clockwise] - 1 = clockwise (default), 0 = counter-clockwise (the string "ccw" also means counter-clockwise).
+  [as_num]    - 0 = return the arrow glyph (default), 1 = return its numeric equivalent.
 
 Returns:
-  The rotated arrow, or "" if arrow is not one of ↑↗→↘↓↙←↖.
+  The rotated arrow (or, with as_num = 1, its numeric equivalent), or "" if arrow is not one of the eight directions.
 
 Example:
-  rotate_arrow("→", 1)  ->  "↘"
+  rotate_arrow("→", 1)         ->  "↘"
+  rotate_arrow("→", 1, 0)      ->  "↗"
+  rotate_arrow("→", 1, 1, 1)   ->  1000001   (the number for ↘)
+  rotate_arrow(1, 2)           ->  "↓"       (1 is →, two turns clockwise)

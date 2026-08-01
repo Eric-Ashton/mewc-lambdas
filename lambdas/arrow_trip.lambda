@@ -2,7 +2,7 @@
 arrow_trip(rng, start_ad, dir, [stopper])
 
 === COMMENT ===
-Walks from start_ad (numeric or A1) in a straight arrow direction across rng until the edge (or the optional stopper value). Returns a 2-column array of NUMERIC addresses and their values, including the start cell.
+Walks from start_ad (numeric or A1) in a straight arrow direction (arrow glyph or its numeric equivalent) across rng until the edge (or the optional stopper value). Returns a 2-column array of NUMERIC addresses and their values, including the start cell.
 
 === CODE ===
 =LAMBDA(rng, start_ad, dir, [stopper],
@@ -22,7 +22,7 @@ Walks from start_ad (numeric or A1) in a straight arrow direction across rng unt
         arrow_list, {"↑"; "↓"; "←"; "→"; "↖"; "↗"; "↘"; "↙"},
         row_steps, {-1; 1; 0; 0; -1; -1; 1; 1},
         col_steps, {0; 0; -1; 1; -1; 1; 1; -1},
-        dir_index, XMATCH(dir, arrow_list),
+        dir_index, XMATCH(z_num_to_arrow(dir), arrow_list),
         row_delta, INDEX(row_steps, dir_index),
         col_delta, INDEX(col_steps, dir_index),
         row_limit, IF(row_delta > 0, bottom_row - start_row, IF(row_delta < 0, start_row - top_row, 1000000)),
@@ -50,7 +50,7 @@ Traces a straight path from a start cell in one arrow direction until the board 
 Arguments:
   rng       - the board range to travel across.
   start_ad  - starting cell as a numeric address or A1 string (coerced with num_ad).
-  dir       - direction arrow.
+  dir       - direction as a standard arrow (↑↓←→↖↗↙↘) or its numeric equivalent (1, -1000000, ...).
   [stopper] - a value that halts the trip when encountered (inclusive).
 
 Returns:

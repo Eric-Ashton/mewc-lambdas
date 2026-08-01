@@ -1,0 +1,27 @@
+=== SIGNATURE ===
+z_num_to_arrow(x)
+
+=== COMMENT ===
+Helper: if x is one of the 8 numeric-address direction deltas (-1000000, 1000000, -1, 1, and the four diagonals), return the matching standard arrow glyph; anything else (arrows, letter codes, other numbers) passes through unchanged.
+
+=== CODE ===
+=LAMBDA(x, LET(
+   arrows, "↑↓←→↖↗↙↘",
+   nums, {-1000000; 1000000; -1; 1; -1000001; -999999; 999999; 1000001},
+   i, IFERROR(XMATCH(x, nums), 0),
+   IF(AND(ISNUMBER(x), i >= 1), MID(arrows, i, 1), x)
+))
+
+=== DESCRIPTION ===
+The inverse of z_arrow_to_num: turns a numeric-address direction delta back into its standard arrow glyph, so arrow-taking lambdas can accept the number and still run their existing arrow logic.
+
+Arguments:
+  x - any value. If it is one of the 8 direction deltas the matching arrow is returned; otherwise x is returned unchanged (an arrow, a letter code like "U", or an unrelated number all pass through).
+
+Returns:
+  The standard arrow for a known delta, else x unchanged.
+
+Example:
+  z_num_to_arrow(1)         ->  "→"
+  z_num_to_arrow(-1000001)  ->  "↖"
+  z_num_to_arrow("U")       ->  "U"
