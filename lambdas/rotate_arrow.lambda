@@ -2,13 +2,13 @@
 rotate_arrow(arrow, steps, [clockwise], [as_num])
 
 === COMMENT ===
-Rotates an arrow by 45 degrees times steps. arrow may be a standard arrow or its numeric equivalent. clockwise = 1 (default) rotates clockwise, 0 counter-clockwise. as_num = 0 (default) returns an arrow, 1 returns the numeric equivalent.
+Rotates an arrow by 45 degrees times steps. arrow may be a standard arrow, its numeric equivalent, or a letter code (U D L R UL UR DL DR). clockwise = 1 (default) rotates clockwise, 0 counter-clockwise. as_num = 0 (default) returns an arrow, 1 returns the numeric equivalent.
 
 === CODE ===
 =LAMBDA(arrow, steps, [clockwise], [as_num], LET(
    arrows, "↑↗→↘↓↙←↖",
    arrow_list, MID(arrows, SEQUENCE(8), 1),
-   idx, XMATCH(z_num_to_arrow(arrow), arrow_list),
+   idx, XMATCH(z_dir_to_arrow(arrow), arrow_list),
    turn, IF(ISOMITTED(clockwise), steps, IF(OR(clockwise = 0, clockwise = "ccw"), -steps, steps)),
    pos, MOD(idx - 1 + turn, 8) + 1,
    out, IFNA(MID(arrows, pos, 1), ""),
@@ -19,7 +19,7 @@ Rotates an arrow by 45 degrees times steps. arrow may be a standard arrow or its
 Rotates an arrow around the eight compass directions.
 
 Arguments:
-  arrow       - the arrow to rotate: a standard arrow (↑↗→↘↓↙←↖) or its numeric equivalent (1, -1000000, ...).
+  arrow       - the arrow to rotate: a standard arrow (↑↗→↘↓↙←↖), its numeric equivalent (1, -1000000, ...), or a letter code (U D L R UL UR DL DR).
   steps       - number of 45-degree turns.
   [clockwise] - 1 = clockwise (default), 0 = counter-clockwise (the string "ccw" also means counter-clockwise).
   [as_num]    - 0 = return the arrow glyph (default), 1 = return its numeric equivalent.

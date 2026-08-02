@@ -1,0 +1,34 @@
+=== SIGNATURE ===
+z_dir_to_arrow(x)
+
+=== COMMENT ===
+Helper: normalize a direction to a standard arrow glyph. Accepts a numeric-address delta (1, -1000000, ...) or a letter code (U D L R UL UR DL DR) and returns the matching arrow; an arrow or anything unrecognized passes through unchanged.
+
+=== CODE ===
+=LAMBDA(x, LET(
+   arrows, "↑↓←→↖↗↙↘",
+   nums, {-1000000; 1000000; -1; 1; -1000001; -999999; 999999; 1000001},
+   codes, {"U"; "D"; "L"; "R"; "UL"; "UR"; "DL"; "DR"},
+   i_num, IFERROR(XMATCH(x, nums), 0),
+   i_code, IFERROR(XMATCH(x, codes), 0),
+   IF(AND(ISNUMBER(x), i_num >= 1), MID(arrows, i_num, 1),
+      IF(AND(ISTEXT(x), i_code >= 1), MID(arrows, i_code, 1), x))
+))
+
+=== DESCRIPTION ===
+Normalizes any accepted direction spec to the standard arrow glyph, so the direction-taking lambdas (arrow_move, arrow_trip, rotate_arrow, shift_arr) can accept an arrow, its numeric-address delta, or a letter code interchangeably.
+
+Arguments:
+  x - any value. Converted to a standard arrow when it is one of the 8 numeric deltas or one of the letter codes U/D/L/R/UL/UR/DL/DR; otherwise returned unchanged (an arrow glyph passes through, as does anything unrecognized).
+
+Mapping (letter code / number -> arrow):
+  U/-1000000 up, D/1000000 down, L/-1 left, R/1 right, UL/-1000001, UR/-999999, DL/999999, DR/1000001.
+
+Returns:
+  The standard arrow for a known number or code, else x unchanged. Letter codes are matched case-insensitively.
+
+Example:
+  z_dir_to_arrow("R")        ->  "→"
+  z_dir_to_arrow(1)          ->  "→"
+  z_dir_to_arrow("UL")       ->  "↖"
+  z_dir_to_arrow("↓")        ->  "↓"

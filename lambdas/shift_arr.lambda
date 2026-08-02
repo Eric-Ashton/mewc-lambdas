@@ -1,16 +1,16 @@
 === SIGNATURE ===
-shift_arr(arr, dir, [steps], [fill])
+shift_arr(arr, dir, [fill], [steps])
 
 === COMMENT ===
-Shifts a 1D or 2D array by "steps" (default 1) in the dir direction (arrow glyph or its numeric equivalent). With no fill, items wrap around; if fill is a value, it fills the vacated cells instead.
+Shifts a 1D or 2D array by "steps" (default 1) in the dir direction (arrow glyph, its numeric equivalent, or a letter code like "R"/"UL"). With no fill, items wrap around; if fill is a value, it fills the vacated cells instead.
 
 === CODE ===
-=LAMBDA(arr, dir, [steps], [fill], LET(
+=LAMBDA(arr, dir, [fill], [steps], LET(
    s, IF(ISOMITTED(steps), 1, steps),
    wrap_mode, IF(ISOMITTED(fill), TRUE, fill = "wrap"),
    num_rows, ROWS(arr),
    num_cols, COLUMNS(arr),
-   dir_norm, z_num_to_arrow(dir),
+   dir_norm, z_dir_to_arrow(dir),
    dir_list, {"U", "D", "L", "R", "UL", "UR", "DL", "DR", "↑", "↓", "←", "→", "↖", "↗", "↙", "↘", "⇑", "⇓", "⇐", "⇒", "⇖", "⇗", "⇙", "⇘"},
    delta_r, CHOOSE(
       XMATCH(dir_norm, dir_list),
@@ -103,12 +103,15 @@ Shifts the contents of an array in a direction.
 
 Arguments:
   arr     - the array to shift (1D or 2D).
-  dir     - direction: a letter code ("U","DL"), a standard arrow (↑↓←→↖↗↙↘), or the numeric equivalent (1, -1000000, ...).
-  [steps] - number of cells to shift (default 1).
+  dir     - direction: a letter code (U D L R UL UR DL DR), a standard arrow (↑↓←→↖↗↙↘), or the numeric equivalent (1, -1000000, ...).
   [fill]  - value to place in vacated cells; if omitted, contents wrap around.
+  [steps] - number of cells to shift (default 1).
 
 Returns:
   The shifted array, same shape as arr, or "" if dir is not a recognized direction.
 
+Note: the argument order is (arr, dir, [fill], [steps]) - fill comes before steps.
+
 Example:
-  shift_arr(grid, "→", 1)
+  shift_arr(grid, "R")            wrap one cell right
+  shift_arr(grid, "R", 0, 2)      shift right 2, filling vacated cells with 0
