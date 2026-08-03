@@ -15,10 +15,8 @@ Vertical sequence from start to stop inclusive, counting by step. Can repeat eac
    ok_dir, OR(d = 0, SIGN(stp) = SIGN(d)),
    ok_div, MOD(ABS(d), ABS(stp)) = 0,
    n, QUOTIENT(ABS(d), ABS(stp)) + 1,
-   base, s + stp * SEQUENCE(n, , 0, 1),
-   each_rep, INDEX(base, ROUNDUP(SEQUENCE(n * re) / re, 0)),
-   whole_rep, INDEX(each_rep, MOD(SEQUENCE(n * re * ra) - 1, n * re) + 1),
-   IF(AND(stp <> 0, ok_dir, ok_div), whole_rep, #VALUE!)
+   out, s + stp * INT(MOD(SEQUENCE(n * re * ra) - 1, n * re) / re),
+   IF(AND(stp <> 0, ok_dir, ok_div), out, #VALUE!)
 ))
 
 === DESCRIPTION ===
@@ -33,6 +31,8 @@ Arguments:
 
 Returns:
   A vertical array from start to stop, or #VALUE! if step is 0, points the wrong way, or does not divide the span evenly. Decimal steps may introduce floating-point error.
+
+  The result is a real value array, so it reports its true size to ROWS/COLUMNS and nests correctly inside other functions (e.g. ROWS(xsequence(1, 10)) = 10). It is built by arithmetic on SEQUENCE rather than INDEX, because an INDEX-built array is seen as a single reference by dimension functions.
 
 Example:
   xsequence(1, 5)  ->  {1;2;3;4;5}
