@@ -1,0 +1,81 @@
+=== SIGNATURE ===
+z_route_edges_worker(self, costs, frontier, board, move_rule, dir_list, row_delta, col_delta, cell_keys, infinity, steps_left)
+
+=== COMMENT ===
+Private recursive worker for route_edges; do not call directly. Relaxes only outgoing edges from cells whose costs improved in the prior pass.
+
+=== CODE ===
+=LAMBDA(self, costs, frontier, board, move_rule, dir_list, row_delta, col_delta, cell_keys, infinity, steps_left,
+  LET(
+    improvements, z_route_edges_candidates(
+      costs,
+      frontier,
+      board,
+      move_rule,
+      dir_list,
+      row_delta,
+      col_delta,
+      infinity
+    ),
+    sorted_improvements, SORT(improvements, 3, 1),
+    first_matches, XMATCH(
+      UNIQUE(INDEX(sorted_improvements, 0, 1) & "|" & INDEX(sorted_improvements, 0, 2)),
+      INDEX(sorted_improvements, 0, 1) & "|" & INDEX(sorted_improvements, 0, 2)
+    ),
+    next_frontier, FILTER(
+      INDEX(sorted_improvements, first_matches, SEQUENCE(, 3)),
+      INDEX(sorted_improvements, first_matches, 1) > 0,
+      0
+    ),
+    updated_costs, IFNA(
+      INDEX(
+        next_frontier,
+        XMATCH(cell_keys, INDEX(next_frontier, 0, 1) & "|" & INDEX(next_frontier, 0, 2)),
+        3
+      ),
+      costs
+    ),
+    IF(
+      SUM(next_frontier) = 0,
+      costs,
+      IF(
+        steps_left = 0,
+        "MORE STEPS",
+        self(
+          self,
+          updated_costs,
+          next_frontier,
+          board,
+          move_rule,
+          dir_list,
+          row_delta,
+          col_delta,
+          cell_keys,
+          infinity,
+          steps_left - 1
+        )
+      )
+    )
+  )
+)
+
+=== DESCRIPTION ===
+Private recursive frontier worker for route_edges.
+
+It asks z_route_edges_candidates for all cost improvements reachable from the current frontier, keeps the cheapest proposal for each destination, writes those proposals into the cost array, and recurses using only the newly improved cells. It stops when no destination improves. If an additional improvement exists after max_steps passes, it returns "MORE STEPS" instead of an incomplete map.
+
+Arguments:
+  self        - reference to this Lambda for recursion.
+  costs       - current least-known cost array.
+  frontier    - rows of {row, column, cost} improved in the prior pass.
+  board       - map/helper array passed to move_rule.
+  move_rule   - LAMBDA(from_cell, to_cell, dir) returning a legal nonnegative edge cost or NA()/text/negative for an illegal edge.
+  dir_list    - allowed direction arrows.
+  row_delta   - row offset corresponding to each direction.
+  col_delta   - column offset corresponding to each direction.
+  cell_keys   - board-shaped array of row|column keys used to update the cost array.
+  infinity    - numeric sentinel used for unreachable cells and illegal moves.
+  steps_left  - remaining edge-relaxation passes allowed before returning "MORE STEPS".
+
+Returns:
+  The completed least-cost array, or "MORE STEPS" when the supplied limit is insufficient.

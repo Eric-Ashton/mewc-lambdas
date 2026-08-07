@@ -13,6 +13,8 @@ Directed shortest paths. move_rule(from,to,dir) returns a nonnegative edge cost 
     all_dirs, {"↑"; "↓"; "←"; "→"; "↖"; "↗"; "↙"; "↘"},
     dir_text, IF(ISOMITTED(dirs), "↑↓←→↖↗↙↘", dirs),
     dir_list, FILTER(all_dirs, ISNUMBER(SEARCH(all_dirs, dir_text))),
+    row_delta, XLOOKUP(dir_list, all_dirs, {-1; 1; 0; 0; -1; -1; 1; 1}),
+    col_delta, XLOOKUP(dir_list, all_dirs, {0; 0; -1; 1; -1; 1; -1; 1}),
     step_count, MAX(1, INT(IF(ISOMITTED(max_steps), MAX(row_count, col_count) - 1, max_steps))),
     start_coords, IF(
       ROWS(start_ref) * COLUMNS(start_ref) = 1,
@@ -32,21 +34,25 @@ Directed shortest paths. move_rule(from,to,dir) returns a nonnegative edge cost 
       col_count,
       LAMBDA(row_ix, col_ix, IF(AND(row_ix = start_row, col_ix = start_col), 0, infinity))
     ),
+    cell_keys, MAKEARRAY(row_count, col_count, LAMBDA(row_ix, col_ix, row_ix & "|" & col_ix)),
     IF(
       OR(start_row < 1, start_row > row_count, start_col < 1, start_col > col_count),
       "X",
       LET(
-        result, REDUCE(
+        result, z_route_edges_worker(
+          z_route_edges_worker,
           initial_costs,
-          SEQUENCE(step_count),
-          LAMBDA(costs, unused, z_route_edges_step(costs, board, move_rule, dir_list, infinity))
+          HSTACK(start_row, start_col, 0),
+          board,
+          move_rule,
+          dir_list,
+          row_delta,
+          col_delta,
+          cell_keys,
+          infinity,
+          step_count
         ),
-        checked, z_route_edges_step(result, board, move_rule, dir_list, infinity),
-        IF(
-          SUM(--(checked < result)) > 0,
-          "MORE STEPS",
-          IF(result >= infinity / 2, "", result)
-        )
+        IF(result = "MORE STEPS", result, IF(result >= infinity / 2, "", result))
       )
     )
   )
@@ -65,8 +71,8 @@ Arguments:
 Returns:
   An array the same size as board containing the least cost from the start to every reachable cell. The start is 0. Unreachable cells are blank. An out-of-range start returns "X". If another relaxation can still improve a cost after max_steps, returns "MORE STEPS" instead of an incomplete distance map.
 
-The solver uses synchronous Bellman-Ford-style relaxation through the private z_route_edges_step helper. It requires no circular references or iterative-calculation setting. The complete route state must be the current cell; rules involving previous direction, collected keys, or other path history require an expanded state.
+The solver uses a label-correcting frontier through two private helpers. Each pass examines only outgoing moves from cells whose costs improved in the previous pass, and it stops as soon as no cell improves. It requires no circular references or iterative-calculation setting. The complete route state must be the current cell; rules involving previous direction, collected keys, or other path history require an expanded state.
 
 Example:
-  =LET(rule,LAMBDA(from_cell,to_cell,dir,XLOOKUP(dir,{"↑","↓","←","→","↖","↗","↙","↘"},{3,3,4,4,5,5,5,5},NA())),route_edges(A1:C3,"B2",rule,,8))
+  =route_edges(A1:C3,"B2",LAMBDA(from_cell,to_cell,dir,XLOOKUP(dir,{"↑","↓","←","→","↖","↗","↙","↘"},{3,3,4,4,5,5,5,5},NA())),,8)
   returns the 3-4-5 directional distance map from B2.

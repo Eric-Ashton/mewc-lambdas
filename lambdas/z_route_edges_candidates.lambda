@@ -1,0 +1,69 @@
+=== SIGNATURE ===
+z_route_edges_candidates(costs, frontier, board, move_rule, dir_list, row_delta, col_delta, infinity)
+
+=== COMMENT ===
+Private helper for route_edges; do not call directly. Returns all valid cost improvements reachable from the current frontier.
+
+=== CODE ===
+=LAMBDA(costs, frontier, board, move_rule, dir_list, row_delta, col_delta, infinity,
+  LET(
+    row_count, ROWS(board),
+    col_count, COLUMNS(board),
+    dir_count, ROWS(dir_list),
+    source_count, ROWS(frontier),
+    source_rows, INDEX(frontier, 0, 1),
+    source_cols, INDEX(frontier, 0, 2),
+    source_costs, INDEX(frontier, 0, 3),
+    target_rows, TOCOL(source_rows + TRANSPOSE(row_delta)),
+    target_cols, TOCOL(source_cols + TRANSPOSE(col_delta)),
+    base_costs, TOCOL(source_costs + SEQUENCE(, dir_count, 0, 0)),
+    valid_targets, (target_rows >= 1) * (target_rows <= row_count) * (target_cols >= 1) * (target_cols <= col_count),
+    safe_rows, MAP(target_rows, LAMBDA(row_ix, MIN(row_count, MAX(1, row_ix)))),
+    safe_cols, MAP(target_cols, LAMBDA(col_ix, MIN(col_count, MAX(1, col_ix)))),
+    from_cells, TOCOL(MAKEARRAY(
+      source_count,
+      dir_count,
+      LAMBDA(row_ix, dir_ix, INDEX(board, INDEX(source_rows, row_ix), INDEX(source_cols, row_ix)))
+    )),
+    to_cells, MAP(safe_rows, safe_cols, LAMBDA(row_ix, col_ix, INDEX(board, row_ix, col_ix))),
+    dir_values, TOCOL(MAKEARRAY(
+      source_count,
+      dir_count,
+      LAMBDA(row_ix, dir_ix, INDEX(dir_list, dir_ix))
+    )),
+    edge_costs, MAP(
+      from_cells,
+      to_cells,
+      dir_values,
+      LAMBDA(from_cell, to_cell, dir, IFNA(move_rule(from_cell, to_cell, dir), infinity))
+    ),
+    clean_edges, MAP(
+      edge_costs,
+      LAMBDA(edge, IF(NOT(ISNUMBER(edge)), infinity, IF(edge < 0, infinity, edge)))
+    ),
+    candidate_costs, MAP(base_costs, clean_edges, LAMBDA(base_cost, edge, MIN(infinity, base_cost + edge))),
+    IF(
+      valid_targets * (candidate_costs < INDEX(costs, safe_rows, safe_cols)),
+      HSTACK(target_rows, target_cols, candidate_costs),
+      {0, 0, 0}
+    )
+  )
+)
+
+=== DESCRIPTION ===
+Private candidate-generation helper for route_edges.
+
+For every cell in the current frontier, it constructs the allowed neighboring moves, calls move_rule(from_cell, to_cell, dir), and returns {row, column, cost} for moves that improve the destination's current cost. Out-of-bounds moves, #N/A, text, and negative move costs are treated as illegal. Other Excel errors remain visible.
+
+Arguments:
+  costs       - current least-known cost array.
+  frontier    - rows of {row, column, cost} whose outgoing moves must be examined.
+  board       - map/helper array passed to move_rule.
+  move_rule   - LAMBDA(from_cell, to_cell, dir) returning a legal nonnegative edge cost or NA()/text/negative for an illegal edge.
+  dir_list    - allowed direction arrows.
+  row_delta   - row offset corresponding to each direction.
+  col_delta   - column offset corresponding to each direction.
+  infinity    - numeric sentinel used for unreachable cells and illegal moves.
+
+Returns:
+  Rows of {destination row, destination column, proposed cost}. Non-improving and illegal candidates are represented by zero rows for the worker to discard.
