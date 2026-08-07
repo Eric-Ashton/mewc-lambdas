@@ -1,20 +1,18 @@
 === SIGNATURE ===
-route_edges(board, start_ref, move_rule, [dirs], [max_steps])
+ftd_maze_cost(board, start_ref, ftd_lambda, [max_steps])
 
 === COMMENT ===
-Directed shortest paths. move_rule(from,to,dir) returns a nonnegative edge cost or NA()/text for an illegal move. Optional arrow string limits directions. Returns least cost to every cell; start is 0.
+Directed maze costs. ftd_lambda(from,to,dir) returns a nonnegative edge cost or NA()/text for an illegal move. Returns least cost to every cell; start is 0.
 
 === CODE ===
-=LAMBDA(board, start_ref, move_rule, [dirs], [max_steps],
+=LAMBDA(board, start_ref, ftd_lambda, [max_steps],
   LET(
     row_count, ROWS(board),
     col_count, COLUMNS(board),
     infinity, 1E99,
-    all_dirs, {"↑"; "↓"; "←"; "→"; "↖"; "↗"; "↙"; "↘"},
-    dir_text, IF(ISOMITTED(dirs), "↑↓←→↖↗↙↘", dirs),
-    dir_list, FILTER(all_dirs, ISNUMBER(SEARCH(all_dirs, dir_text))),
-    row_delta, XLOOKUP(dir_list, all_dirs, {-1; 1; 0; 0; -1; -1; 1; 1}),
-    col_delta, XLOOKUP(dir_list, all_dirs, {0; 0; -1; 1; -1; 1; -1; 1}),
+    dir_list, {"↑"; "↓"; "←"; "→"; "↖"; "↗"; "↙"; "↘"},
+    row_delta, {-1; 1; 0; 0; -1; -1; 1; 1},
+    col_delta, {0; 0; -1; 1; -1; 1; -1; 1},
     step_count, MAX(1, INT(IF(ISOMITTED(max_steps), MAX(row_count, col_count) - 1, max_steps))),
     start_coords, IF(
       ROWS(start_ref) * COLUMNS(start_ref) = 1,
@@ -39,12 +37,12 @@ Directed shortest paths. move_rule(from,to,dir) returns a nonnegative edge cost 
       OR(start_row < 1, start_row > row_count, start_col < 1, start_col > col_count),
       "X",
       LET(
-        result, z_route_edges_worker(
-          z_route_edges_worker,
+        result, z_ftd_maze_cost_worker(
+          z_ftd_maze_cost_worker,
           initial_costs,
           HSTACK(start_row, start_col, 0),
           board,
-          move_rule,
+          ftd_lambda,
           dir_list,
           row_delta,
           col_delta,
@@ -62,17 +60,19 @@ Directed shortest paths. move_rule(from,to,dir) returns a nonnegative edge cost 
 Least-cost distance from a start cell to every reachable cell when move legality or cost can depend on direction and on both cells.
 
 Arguments:
-  board       - rectangular map or helper array. Cell values are passed to move_rule.
+  board       - rectangular map or helper array. Cell values are passed to ftd_lambda.
   start_ref   - starting cell as A1 text, a numeric address (1e6*row+col), or a {row, col} coordinate pair relative to board.
-  move_rule   - LAMBDA(from_cell, to_cell, dir). Return a nonnegative move cost for a legal move; return NA(), text, or a negative value for an illegal move. Other Excel errors remain visible.
-  [dirs]      - string of allowed arrow characters. Defaults to all eight directions: ↑↓←→↖↗↙↘.
+  ftd_lambda  - LAMBDA(from_cell, to_cell, dir). Return a nonnegative move cost for a legal move; return NA(), text, or a negative value for an illegal move. Other Excel errors remain visible. It may be written inline or supplied as the name of a defined LAMBDA.
   [max_steps] - maximum edges allowed in a route. Defaults to the larger board dimension minus one. If that is insufficient for a winding route, the function returns "MORE STEPS"; rerun with a larger value.
 
 Returns:
   An array the same size as board containing the least cost from the start to every reachable cell. The start is 0. Unreachable cells are blank. An out-of-range start returns "X". If another relaxation can still improve a cost after max_steps, returns "MORE STEPS" instead of an incomplete distance map.
 
-The solver uses a label-correcting frontier through two private helpers. Each pass examines only outgoing moves from cells whose costs improved in the previous pass, and it stops as soon as no cell improves. It requires no circular references or iterative-calculation setting. The complete route state must be the current cell; rules involving previous direction, collected keys, or other path history require an expanded state.
+The solver considers all eight adjacent directions. ftd_lambda decides which directions and cells are legal. It uses a label-correcting frontier through two private helpers, examines only outgoing moves from cells whose costs improved in the previous pass, and stops as soon as no cell improves. It requires no circular references or iterative-calculation setting. The complete route state must be the current cell; rules involving previous direction, collected keys, or other path history require an expanded state.
 
-Example:
-  =route_edges(A1:C3,"B2",LAMBDA(from_cell,to_cell,dir,XLOOKUP(dir,{"↑","↓","←","→","↖","↗","↙","↘"},{3,3,4,4,5,5,5,5},NA())),,8)
-  returns the 3-4-5 directional distance map from B2.
+Examples:
+  =ftd_maze_cost(A1:C3,"B2",LAMBDA(from_cell,to_cell,dir,XLOOKUP(dir,{"↑","↓","←","→","↖","↗","↙","↘"},{3,3,4,4,5,5,5,5},NA())))
+
+  If deep_sea_rule is a defined name whose definition is =LAMBDA(from_cell,to_cell,dir,...), use:
+  =ftd_maze_cost(A1:C3,"B2",deep_sea_rule)
+  Do not add parentheses after deep_sea_rule; ftd_maze_cost supplies its three arguments internally.

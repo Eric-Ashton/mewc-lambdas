@@ -1,11 +1,11 @@
 === SIGNATURE ===
-z_route_edges_candidates(costs, frontier, board, move_rule, dir_list, row_delta, col_delta, infinity)
+z_ftd_maze_cost_candidates(costs, frontier, board, ftd_lambda, dir_list, row_delta, col_delta, infinity)
 
 === COMMENT ===
-Private helper for route_edges; do not call directly. Returns all valid cost improvements reachable from the current frontier.
+Private helper for ftd_maze_cost; do not call directly. Returns all valid cost improvements reachable from the current frontier.
 
 === CODE ===
-=LAMBDA(costs, frontier, board, move_rule, dir_list, row_delta, col_delta, infinity,
+=LAMBDA(costs, frontier, board, ftd_lambda, dir_list, row_delta, col_delta, infinity,
   LET(
     row_count, ROWS(board),
     col_count, COLUMNS(board),
@@ -35,7 +35,7 @@ Private helper for route_edges; do not call directly. Returns all valid cost imp
       from_cells,
       to_cells,
       dir_values,
-      LAMBDA(from_cell, to_cell, dir, IFNA(move_rule(from_cell, to_cell, dir), infinity))
+      LAMBDA(from_cell, to_cell, dir, IFNA(ftd_lambda(from_cell, to_cell, dir), infinity))
     ),
     clean_edges, MAP(
       edge_costs,
@@ -51,16 +51,16 @@ Private helper for route_edges; do not call directly. Returns all valid cost imp
 )
 
 === DESCRIPTION ===
-Private candidate-generation helper for route_edges.
+Private candidate-generation helper for ftd_maze_cost.
 
-For every cell in the current frontier, it constructs the allowed neighboring moves, calls move_rule(from_cell, to_cell, dir), and returns {row, column, cost} for moves that improve the destination's current cost. Out-of-bounds moves, #N/A, text, and negative move costs are treated as illegal. Other Excel errors remain visible.
+For every cell in the current frontier, it constructs all eight adjacent moves, calls ftd_lambda(from_cell, to_cell, dir), and returns {row, column, cost} for moves that improve the destination's current cost. Out-of-bounds moves, #N/A, text, and negative move costs are treated as illegal. Other Excel errors remain visible.
 
 Arguments:
   costs       - current least-known cost array.
   frontier    - rows of {row, column, cost} whose outgoing moves must be examined.
-  board       - map/helper array passed to move_rule.
-  move_rule   - LAMBDA(from_cell, to_cell, dir) returning a legal nonnegative edge cost or NA()/text/negative for an illegal edge.
-  dir_list    - allowed direction arrows.
+  board       - map/helper array passed to ftd_lambda.
+  ftd_lambda  - LAMBDA(from_cell, to_cell, dir) returning a legal nonnegative edge cost or NA()/text/negative for an illegal edge.
+  dir_list    - the eight direction arrows.
   row_delta   - row offset corresponding to each direction.
   col_delta   - column offset corresponding to each direction.
   infinity    - numeric sentinel used for unreachable cells and illegal moves.
