@@ -1,0 +1,72 @@
+=== SIGNATURE ===
+route_edges(board, start_ref, move_rule, [dirs], [max_steps])
+
+=== COMMENT ===
+Directed shortest paths. move_rule(from,to,dir) returns a nonnegative edge cost or NA()/text for an illegal move. Optional arrow string limits directions. Returns least cost to every cell; start is 0.
+
+=== CODE ===
+=LAMBDA(board, start_ref, move_rule, [dirs], [max_steps],
+  LET(
+    row_count, ROWS(board),
+    col_count, COLUMNS(board),
+    infinity, 1E99,
+    all_dirs, {"↑"; "↓"; "←"; "→"; "↖"; "↗"; "↙"; "↘"},
+    dir_text, IF(ISOMITTED(dirs), "↑↓←→↖↗↙↘", dirs),
+    dir_list, FILTER(all_dirs, ISNUMBER(SEARCH(all_dirs, dir_text))),
+    step_count, MAX(1, INT(IF(ISOMITTED(max_steps), MAX(row_count, col_count) - 1, max_steps))),
+    start_coords, IF(
+      ROWS(start_ref) * COLUMNS(start_ref) = 1,
+      LET(
+        start_num, num_ad(start_ref),
+        HSTACK(
+          INT(start_num / 1000000) - MIN(ROW(board)) + 1,
+          MOD(start_num, 1000000) - MIN(COLUMN(board)) + 1
+        )
+      ),
+      start_ref
+    ),
+    start_row, INDEX(start_coords, 1),
+    start_col, INDEX(start_coords, 2),
+    initial_costs, MAKEARRAY(
+      row_count,
+      col_count,
+      LAMBDA(row_ix, col_ix, IF(AND(row_ix = start_row, col_ix = start_col), 0, infinity))
+    ),
+    IF(
+      OR(start_row < 1, start_row > row_count, start_col < 1, start_col > col_count),
+      "X",
+      LET(
+        result, REDUCE(
+          initial_costs,
+          SEQUENCE(step_count),
+          LAMBDA(costs, unused, z_route_edges_step(costs, board, move_rule, dir_list, infinity))
+        ),
+        checked, z_route_edges_step(result, board, move_rule, dir_list, infinity),
+        IF(
+          SUM(--(checked < result)) > 0,
+          "MORE STEPS",
+          IF(result >= infinity / 2, "", result)
+        )
+      )
+    )
+  )
+)
+
+=== DESCRIPTION ===
+Least-cost distance from a start cell to every reachable cell when move legality or cost can depend on direction and on both cells.
+
+Arguments:
+  board       - rectangular map or helper array. Cell values are passed to move_rule.
+  start_ref   - starting cell as A1 text, a numeric address (1e6*row+col), or a {row, col} coordinate pair relative to board.
+  move_rule   - LAMBDA(from_cell, to_cell, dir). Return a nonnegative move cost for a legal move; return NA(), text, or a negative value for an illegal move. Other Excel errors remain visible.
+  [dirs]      - string of allowed arrow characters. Defaults to all eight directions: ↑↓←→↖↗↙↘.
+  [max_steps] - maximum edges allowed in a route. Defaults to the larger board dimension minus one. If that is insufficient for a winding route, the function returns "MORE STEPS"; rerun with a larger value.
+
+Returns:
+  An array the same size as board containing the least cost from the start to every reachable cell. The start is 0. Unreachable cells are blank. An out-of-range start returns "X". If another relaxation can still improve a cost after max_steps, returns "MORE STEPS" instead of an incomplete distance map.
+
+The solver uses synchronous Bellman-Ford-style relaxation through the private z_route_edges_step helper. It requires no circular references or iterative-calculation setting. The complete route state must be the current cell; rules involving previous direction, collected keys, or other path history require an expanded state.
+
+Example:
+  =LET(rule,LAMBDA(from_cell,to_cell,dir,XLOOKUP(dir,{"↑","↓","←","→","↖","↗","↙","↘"},{3,3,4,4,5,5,5,5},NA())),route_edges(A1:C3,"B2",rule,,8))
+  returns the 3-4-5 directional distance map from B2.
