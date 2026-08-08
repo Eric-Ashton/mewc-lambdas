@@ -208,6 +208,59 @@ def _duplicate_sheets(names, data, infos, duplicates):
     return new_parts
 
 
+def _delete_sheets(names, data, infos, deletes):
+    """Remove whole worksheets. deletes: iterable of sheet display names.
+
+    Unregisters each sheet from workbook.xml, its rels, and
+    [Content_Types].xml, and drops the worksheet part (plus its own rels
+    part, if any) from the archive. Safe here ONLY because this workbook has
+    no sheet-local defined names (localSheetId is a positional index that a
+    deletion would shift) and nothing else references the deleted sheet by
+    name - the caller is responsible for having rewritten such references
+    (e.g. the lambda_tests roll-up row) via edits first.
+
+    Mutates data/names/infos in place.
+    """
+    wb = data["xl/workbook.xml"].decode("utf-8")
+    rels = data["xl/_rels/workbook.xml.rels"].decode("utf-8")
+    ct = data["[Content_Types].xml"].decode("utf-8")
+    part_of = _sheet_part_map_xml(wb, rels)
+
+    if re.search(r"localSheetId=", wb):
+        raise ValueError("workbook has sheet-local defined names (localSheetId); "
+                         "deleting a sheet would reassign them by index")
+
+    relmap = dict(re.findall(r'<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"', rels))
+    for name in deletes:
+        if name not in part_of:
+            raise KeyError(f"sheet to delete not found: {name!r}")
+        part = part_of[name]
+        # r:id of this sheet, so we can drop the matching relationship
+        m = re.search(rf'<sheet[^>]*name="{re.escape(_xml_escape_attr(name))}"[^>]*r:id="([^"]+)"', wb)
+        rid = m.group(1) if m else None
+
+        # workbook.xml: remove the <sheet .../> element
+        wb = re.sub(rf'<sheet\b[^>]*name="{re.escape(_xml_escape_attr(name))}"[^>]*/?>', "", wb, count=1)
+        # rels: remove the relationship pointing at this part
+        if rid:
+            rels = re.sub(rf'<Relationship[^>]*Id="{re.escape(rid)}"[^>]*/>', "", rels, count=1)
+        # [Content_Types].xml: remove the Override for the part
+        ct = re.sub(rf'<Override[^>]*PartName="/{re.escape(part)}"[^>]*/>', "", ct, count=1)
+
+        # drop the worksheet part and its own rels part (if any)
+        part_rels = f"xl/worksheets/_rels/{part.split('/')[-1]}.rels"
+        for gone in (part, part_rels):
+            if gone in data:
+                del data[gone]
+                infos.pop(gone, None)
+                if gone in names:
+                    names.remove(gone)
+
+    data["xl/workbook.xml"] = wb.encode("utf-8")
+    data["xl/_rels/workbook.xml.rels"] = rels.encode("utf-8")
+    data["[Content_Types].xml"] = ct.encode("utf-8")
+
+
 def _xml_unescape(s: str) -> str:
     return (s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
              .replace("&quot;", '"').replace("&apos;", "'"))
@@ -506,7 +559,8 @@ def _force_full_recalc(wb_xml):
 # --------------------------------------------------------------------------- #
 # main entry point
 # --------------------------------------------------------------------------- #
-def apply_edits(src, out, edits, renames=None, sheet_order=None, duplicates=None):
+def apply_edits(src, out, edits, renames=None, sheet_order=None, duplicates=None,
+                deletes=None):
     """Write `out` = `src` with the given cell edits applied via XML surgery.
 
     edits: iterable of dicts {sheet, cell, value?|formula?, style?}. `src` is
@@ -516,7 +570,9 @@ def apply_edits(src, out, edits, renames=None, sheet_order=None, duplicates=None
       1. duplicates: [(src name, new name)] - append copies of existing sheets.
       2. renames: {old name -> new name} - rename existing sheets in place.
       3. edits - reference sheets by their FINAL name (post-duplicate/rename).
-      4. sheet_order: full tab order, in final names.
+      4. deletes: [name, ...] - remove whole sheets (after edits have rewritten
+         any references to them, e.g. a roll-up row).
+      5. sheet_order: full tab order, in final names (must exclude deleted).
 
     renames only changes the display name (see _rename_sheets for the caveat).
     """
@@ -552,7 +608,11 @@ def apply_edits(src, out, edits, renames=None, sheet_order=None, duplicates=None
         xml = _apply_sheet_edits(xml, sheet_edits)
         data[part] = xml.encode("utf-8")
 
-    # 4. reorder tabs, force recalc (cached formula values were dropped)
+    # 4. delete whole sheets (references to them must already be rewritten)
+    if deletes:
+        _delete_sheets(names, data, infos, deletes)
+
+    # 5. reorder tabs, force recalc (cached formula values were dropped)
     wbxml = data["xl/workbook.xml"].decode("utf-8")
     if sheet_order:
         wbxml = _reorder_sheets(wbxml, sheet_order)
@@ -577,7 +637,7 @@ def apply_edits(src, out, edits, renames=None, sheet_order=None, duplicates=None
     return touched_parts
 
 
-def validate(src, out, edits, duplicates=None, sheet_order=None):
+def validate(src, out, edits, duplicates=None, sheet_order=None, deletes=None):
     """Structural check: non-edited parts byte-identical, edits readable back.
 
     Matches the apply_edits contract: `edits` reference FINAL sheet names (after
@@ -586,7 +646,8 @@ def validate(src, out, edits, duplicates=None, sheet_order=None):
     Legitimately-changed parts are excused: the edited sheet parts, the three
     structural parts (workbook.xml, [Content_Types].xml, workbook rels), and the
     dropped calcChain. When `duplicates` is given, newly-added worksheet parts
-    are expected rather than flagged.
+    are expected rather than flagged. When `deletes` is given, the removed
+    sheets' parts are expected to be gone rather than flagged as lost.
     """
     import openpyxl
 
@@ -602,13 +663,25 @@ def validate(src, out, edits, duplicates=None, sheet_order=None):
                | {"xl/workbook.xml", "[Content_Types].xml",
                   "xl/_rels/workbook.xml.rels"})
 
+    # parts that legitimately vanish when a sheet is deleted
+    expected_lost = set()
+    if deletes:
+        part_of_src = _sheet_part_map_xml(
+            zs.read("xl/workbook.xml").decode("utf-8"),
+            zs.read("xl/_rels/workbook.xml.rels").decode("utf-8"))
+        for name in deletes:
+            p = part_of_src.get(name)
+            if p:
+                expected_lost.add(p)
+                expected_lost.add(f"xl/worksheets/_rels/{p.split('/')[-1]}.rels")
+
     report = {"ok": True, "parts_lost": [], "parts_added": [], "calc_chain_dropped": False,
               "unexpected_changes": [], "edits_verified": 0, "edits_failed": []}
 
     sn, on = set(zs.namelist()), set(zo.namelist())
     lost = sn - on
     report["calc_chain_dropped"] = CALC_CHAIN in lost
-    report["parts_lost"] = sorted(lost - {CALC_CHAIN})
+    report["parts_lost"] = sorted(lost - {CALC_CHAIN} - expected_lost)
 
     added = on - sn
     # New worksheet parts are expected when duplicating; anything else added is not.
