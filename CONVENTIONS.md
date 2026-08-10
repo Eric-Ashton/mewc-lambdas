@@ -91,6 +91,13 @@ how the header cells look themselves up (`B1` Signature, `B2` Code, `I1` Descrip
 
 Helpers (`z_*`) are exercised through their public wrapper's sheet — they don't get their own.
 
+**Removing a lambda.** Delete `lambdas/<name>.lambda`, drop its entry from `LIB_LAMBDAS`
+in `tools/lambda_check.py`, and in the workbook `apply_edits(..., deletes=["<name>"])` to
+remove its test sheet. First rewrite anything that references it — its `lambda_tests`
+roll-up row (edit the row, or overwrite it in place if you're swapping in a replacement of
+adjacent alphabetical rank) — and give a `sheet_order` that omits the deleted name. `sync_all`
+rebuilds the `Lamb` sheet from the surviving files, so the retired row clears itself on sync.
+
 ## Workflow (repo ↔ Excel)
 The committed `MEWC Lambda and VBA Unit Tests.xlsm` is the upstream/dev workbook; the text
 files are what you **edit**. Keep the direction of truth straight — *edit text, refresh the

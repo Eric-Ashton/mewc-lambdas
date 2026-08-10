@@ -1,0 +1,65 @@
+=== SIGNATURE ===
+xtextjoin(arr, [delim], [str_arr_set])
+
+=== COMMENT ===
+TEXTJOIN that can also split back into an array or set, and beats the arg-count and 32k-char limits. delim (default ";") both joins output and splits input. Blanks, errors and "" are ignored; explicit zeros are kept. str_arr_set: 1=string (default), 2=array, 3=sorted-unique set.
+
+=== CODE ===
+=LAMBDA(arr, [delim], [str_arr_set],
+  LET(
+    sep, IF(ISOMITTED(delim), ";", delim),
+    mode, IF(ISOMITTED(str_arr_set), 1, str_arr_set),
+    row_strings, BYROW(arr, LAMBDA(one_row,
+      TEXTJOIN(sep, TRUE, IFERROR(one_row & "", "")))),
+    has_any, SUM(--(row_strings <> "")) > 0,
+    IF(
+      NOT(has_any),
+      "",
+      LET(
+        used_rows, FILTER(row_strings, row_strings <> ""),
+        stacked, REDUCE("", used_rows, LAMBDA(acc, one_str,
+          VSTACK(acc, TEXTSPLIT(one_str, , sep, TRUE)))),
+        tokens, DROP(stacked, 1),
+        token_count, ROWS(tokens),
+        IF(
+          mode = 2,
+          tokens,
+          IF(
+            mode = 3,
+            SORT(UNIQUE(tokens)),
+            IF(
+              SUM(LEN(tokens)) + (token_count - 1) * LEN(sep) > 32767,
+              "TOO LONG",
+              TEXTJOIN(sep, TRUE, tokens)
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+=== DESCRIPTION ===
+A TEXTJOIN that reads a whole array (bypassing TEXTJOIN's ~252 argument limit) and can hand the result back as a joined string, a vertical array, or a sorted unique set. It is built to survive outputs larger than one cell can hold.
+
+arr may be a single string or a 1D/2D array of strings; a 2D array is read in row-major order (left to right, top to bottom). Cells may hold single items, delim-separated lists, blanks, "", or errors. Blanks, "", and errors are ignored. Numbers become text; an explicit 0 is kept, but a blank cell never becomes a fake 0 (values are read with concatenation, which treats a blank as "" and a real zero as "0").
+
+Arguments:
+  arr           - the value(s) to join/split.
+  [delim]       - delimiter used for BOTH the joined output and for splitting the input. Default ";".
+  [str_arr_set] - output style: 1 = string (default), 2 = array, 3 = set.
+
+Modes:
+  1 string - one string, like TEXTJOIN but with no argument-count limit. If the result would exceed a cell's 32,767-character limit it returns "TOO LONG".
+  2 array  - a vertical array of the items, as if the whole thing were joined and split again, but built one input row at a time so the total may exceed 32,767 characters.
+  3 set    - the array output with UNIQUE then SORT applied.
+
+To stay within Excel's limits on big inputs, each input row is joined and re-split on its own and the pieces are stacked, so no single intermediate string has to hold the whole output. Each individual input row must still fit in 32,767 characters.
+
+Returns:
+  A single string (mode 1), a vertical array (mode 2), or a sorted set (mode 3). Empty input returns "".
+
+Examples:
+  xtextjoin({"a;b";"c";"";"d;e"})               ->  "a;b;c;d;e"
+  xtextjoin({"a;b";"c";"d;e"}, ";", 2)          ->  {"a";"b";"c";"d";"e"}
+  xtextjoin({"b;a";"a;c"}, ";", 3)              ->  {"a";"b";"c"}
