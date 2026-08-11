@@ -1,0 +1,35 @@
+=== SIGNATURE ===
+streak(arr)
+
+=== COMMENT ===
+For each cell, a running count of consecutive equal values in row-major order: 1 when the value differs from the previous item, otherwise the previous count plus 1. Output is the same size and shape as arr.
+
+=== CODE ===
+=LAMBDA(arr,
+  LET(
+    cols, COLUMNS(arr),
+    flat, TOCOL(arr),
+    n_items, ROWS(flat),
+    same_as_prev, MAP(SEQUENCE(n_items), LAMBDA(i,
+      IF(i = 1, FALSE, INDEX(flat, i) = INDEX(flat, i - 1)))),
+    run_len, SCAN(0, same_as_prev, LAMBDA(acc, is_same, IF(is_same, acc + 1, 1))),
+    WRAPROWS(run_len, cols)
+  )
+)
+
+=== DESCRIPTION ===
+Counts consecutive runs of equal values. Reading arr in row-major order (left to right, top to bottom), each cell is 1 when its value differs from the item just before it, and one more than the previous count when it matches - so the number tells you how many of that value have appeared in a row so far. The returned array has the same size and shape as arr.
+
+Arguments:
+  arr - a single value or a 1D/2D array.
+
+Returns:
+  An array the same size and shape as arr of run-length counts (each run restarts at 1).
+
+How it works: the input is flattened row-major, each item is compared with the one before it, and SCAN turns that "same as previous" flag into a running counter that resets to 1 whenever the value changes. The counts are wrapped back into arr's shape with WRAPROWS.
+
+Numbers and text are compared exactly (5 and "5" are different). Blank cells read as 0.
+
+Examples:
+  streak({"A";"B";"C";"C";"D";"D";"D";"E"})  ->  {1;1;1;2;1;2;3;1}
+  streak({"A","A";"B","A"})                  ->  {1,2;1,1}

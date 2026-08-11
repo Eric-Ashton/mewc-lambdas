@@ -1,0 +1,33 @@
+=== SIGNATURE ===
+first_time(arr)
+
+=== COMMENT ===
+For each cell, 1 if that value appears for the first time when arr is read in row-major order, 0 if it repeats an earlier value. Output is the same size and shape as arr.
+
+=== CODE ===
+=LAMBDA(arr,
+  LET(
+    cols, COLUMNS(arr),
+    flat, TOCOL(arr),
+    n_items, ROWS(flat),
+    first_seen, --(XMATCH(flat, flat) = SEQUENCE(n_items)),
+    WRAPROWS(first_seen, cols)
+  )
+)
+
+=== DESCRIPTION ===
+Flags the first appearance of each distinct value. Reading arr in row-major order (left to right, top to bottom), a cell is 1 the first time its value is seen and 0 for every later repeat. The returned array has the same size and shape as arr.
+
+Arguments:
+  arr - a single value or a 1D/2D array.
+
+Returns:
+  An array the same size and shape as arr, of 1s (first occurrence) and 0s (repeat).
+
+How it works: the input is flattened row-major, XMATCH finds the first position of each value, and a cell is 1 exactly where that first position equals the cell's own position. The flags are wrapped back into arr's shape with WRAPROWS.
+
+Numbers and text are compared exactly (5 and "5" are different). Blank cells read as 0.
+
+Examples:
+  first_time({"A";"B";"A";"C";"B"})   ->  {1;1;0;1;0}
+  first_time({"A","B","A";"C","A","B"}) ->  {1,1,0;1,0,0}
