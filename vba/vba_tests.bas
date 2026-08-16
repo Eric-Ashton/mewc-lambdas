@@ -82,6 +82,10 @@ Public Sub run_vba_tests()
     RunGuarded "find_yellow"
     RunGuarded "get_return_column_number"
     RunGuarded "make_level_data_table"
+    RunGuarded "split_formulas"
+    RunGuarded "split_cols"
+    RunGuarded "split_rows"
+    RunGuarded "split_overwrite"
 
     write_results
     write_group_blocks        ' per-group Case/Expected/Actual/Result on each sheet
@@ -122,6 +126,10 @@ Private Sub RunGuarded(ByVal which As String)
         Case "find_yellow": test_find_yellow
         Case "get_return_column_number": test_get_return_column_number
         Case "make_level_data_table": test_make_level_data_table
+        Case "split_formulas": test_split_formulas
+        Case "split_cols": test_split_cols
+        Case "split_rows": test_split_rows
+        Case "split_overwrite": test_split_overwrite
     End Select
     Exit Sub
 Failed:
@@ -688,6 +696,67 @@ Private Sub test_make_level_data_table()
             "=XLOOKUP(A2,zz_tmsrc!$A$2,zz_tmsrc!$B$2)", newWs.Range("B2").Formula2
         DeleteSheet newWs.Name
     End If
+End Sub
+
+Private Sub test_split_formulas()
+    grp "split_formulas"
+    Dim f() As String
+    f = split_formulas("SORT(A1:C5)", 3, True)
+    chk "cols -> 3 CHOOSECOLS strings", _
+        "3x1D[=CHOOSECOLS(SORT(A1:C5),1)|=CHOOSECOLS(SORT(A1:C5),2)|=CHOOSECOLS(SORT(A1:C5),3)]", f
+    f = split_formulas("SORT(A1:C5)", 2, False)
+    chk "rows -> 2 CHOOSEROWS strings", _
+        "2x1D[=CHOOSEROWS(SORT(A1:C5),1)|=CHOOSEROWS(SORT(A1:C5),2)]", f
+End Sub
+
+Private Sub test_split_cols()
+    grp "split_cols"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_split_cols"): ws.Activate
+    ws.Range("B2").Formula2 = "=SEQUENCE(4,3)"      ' spills B2:D5
+    Application.Calculate
+    ws.Range("B2").Select
+    Application.Run "split_cols"
+    chk "B2 formula", "=CHOOSECOLS(SEQUENCE(4,3),1)", ws.Range("B2").Formula2
+    chk "C2 formula", "=CHOOSECOLS(SEQUENCE(4,3),2)", ws.Range("C2").Formula2
+    chk "D2 formula", "=CHOOSECOLS(SEQUENCE(4,3),3)", ws.Range("D2").Formula2
+    chk "B2 now spills its own column", "$B$2:$B$5", ws.Range("B2").SpillingToRange
+    chkTrue "nothing written past the last column (E2)", Not ws.Range("E2").HasFormula
+    chk "split column 3 keeps its values", "3x1[3|6|9]", ws.Range("D2:D4").Value
+End Sub
+
+Private Sub test_split_rows()
+    grp "split_rows"
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_split_rows"): ws.Activate
+    ws.Range("B2").Formula2 = "=SEQUENCE(3,2)"      ' spills B2:C4 (3 rows, 2 cols)
+    Application.Calculate
+    ws.Range("B2").Select
+    Application.Run "split_rows"
+    chk "B2 formula", "=CHOOSEROWS(SEQUENCE(3,2),1)", ws.Range("B2").Formula2
+    chk "B3 formula", "=CHOOSEROWS(SEQUENCE(3,2),2)", ws.Range("B3").Formula2
+    chk "B4 formula", "=CHOOSEROWS(SEQUENCE(3,2),3)", ws.Range("B4").Formula2
+    chk "B2 now spills its own row", "$B$2:$C$2", ws.Range("B2").SpillingToRange
+    chkTrue "nothing written past the last row (B5)", Not ws.Range("B5").HasFormula
+End Sub
+
+Private Sub test_split_overwrite()
+    grp "split_overwrite"
+    Dim ws As Worksheet
+    ' clean spill: the footprint is the formula's own spill, so nothing is at risk
+    Set ws = AddSheet("zz_split_ov"): ws.Activate
+    ws.Range("B2").Formula2 = "=SEQUENCE(4,3)"
+    Application.Calculate
+    chk "clean spill -> 0 overwrites", "0", split_overwrite_count(ws.Range("B2"), 4, 3)
+
+    ' blocked spill: a value sits inside the target area, so it is counted
+    Dim ws2 As Worksheet
+    Set ws2 = AddSheet("zz_split_ov2"): ws2.Activate
+    ws2.Range("C3").Value = "blocker"                ' inside the 4x3 footprint B2:D5
+    ws2.Range("B2").Formula2 = "=SEQUENCE(4,3)"      ' now #SPILL!
+    Application.Calculate
+    chkTrue "anchor is blocked (#SPILL!)", IsError(ws2.Range("B2").Value2)
+    chk "blocked -> 1 overwrite (the blocker)", "1", split_overwrite_count(ws2.Range("B2"), 4, 3)
 End Sub
 
 ' ---- results writer ---------------------------------------------------------
