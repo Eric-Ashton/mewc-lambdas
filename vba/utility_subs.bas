@@ -971,3 +971,182 @@ Private Sub sweep_name_cruft()   ' Private -> hidden from Alt+F8; run from the V
         " hidden reserved name(s) (_xleta. / _xlop. / _xlpm.).", _
         vbInformation, "sweep_name_cruft"
 End Sub
+
+'===================================
+' Subs: split_cols / split_rows
+'===================================
+' Take the spilling-array formula in the selected cell and replace the single
+' spilled block with one CHOOSECOLS (split_cols) or CHOOSEROWS (split_rows)
+' formula per column / row, so each column / row becomes its own formula.
+'
+' Example - D19 holds  =SORT(Sheet4!B7:K100,{3,4})  spilling 10 columns:
+'   split_cols puts  =CHOOSECOLS(SORT(Sheet4!B7:K100,{3,4}),1)  in D19,
+'                    =CHOOSECOLS(SORT(Sheet4!B7:K100,{3,4}),2)  in E19, ... col 10.
+'   split_rows does the same down the rows with CHOOSEROWS.
+'
+' SELECTION REQUIRED: a single cell holding a formula that spills a 2D array
+' (a cell inside such a spill also works - it redirects to the spill's anchor).
+'
+' If placing the new formulas would overwrite cells that already hold data
+' (e.g. the original formula's spill is currently blocked by a #SPILL!), a
+' Yes/No warning is shown first; nothing is overwritten without confirmation.
+' If nothing would be overwritten, no prompt appears.
+
+Public Sub split_cols()
+    split_selection True
+End Sub
+
+Public Sub split_rows()
+    split_selection False
+End Sub
+
+Private Sub split_selection(ByVal splitCols As Boolean)
+    Dim anchor As Range, sp As Range
+    Dim rowN As Long, colN As Long, n As Long, overwrites As Long
+    Dim body As String, fx() As String, k As Long
+    Dim prevSU As Boolean
+
+    Set anchor = split_anchor()
+    If anchor Is Nothing Then
+        MsgBox "Select a single cell that holds a formula which spills a 2D array.", _
+               vbExclamation, "split"
+        Exit Sub
+    End If
+
+    ' The formula's current spill; Nothing when it is blocked (#SPILL!) or scalar.
+    On Error Resume Next
+    Set sp = anchor.SpillingToRange
+    On Error GoTo 0
+
+    If Not sp Is Nothing Then
+        rowN = sp.Rows.count: colN = sp.Columns.count
+    ElseIf Not split_eval_dims(anchor, rowN, colN) Then
+        MsgBox "The selected formula does not produce a 2D array to split.", _
+               vbExclamation, "split"
+        Exit Sub
+    End If
+
+    n = IIf(splitCols, colN, rowN)
+    body = split_body(anchor)
+
+    overwrites = split_overwrite_count(anchor, rowN, colN)
+    If overwrites > 0 Then
+        If MsgBox(overwrites & " cell(s) in the target area already contain data " & _
+                  "and would be overwritten." & vbLf & vbLf & "Continue?", _
+                  vbYesNo + vbExclamation, "split") <> vbYes Then Exit Sub
+    End If
+
+    prevSU = Application.ScreenUpdating
+    Application.ScreenUpdating = False
+    On Error GoTo CleanUp
+
+    ' Clear the whole target footprint (the anchor formula plus any blockers) so
+    ' each new single-axis formula spills into empty space.
+    anchor.Resize(rowN, colN).ClearContents
+
+    fx = split_formulas(body, n, splitCols)
+    For k = 1 To n
+        If splitCols Then
+            anchor.Offset(0, k - 1).Formula2 = fx(k)
+        Else
+            anchor.Offset(k - 1, 0).Formula2 = fx(k)
+        End If
+    Next k
+    anchor.Select
+
+CleanUp:
+    Application.ScreenUpdating = prevSU
+End Sub
+
+' Build the "=CHOOSECOLS(body,k)" / "=CHOOSEROWS(body,k)" formula strings.
+' Public so the test harness can check it directly.
+Public Function split_formulas(ByVal body As String, ByVal n As Long, _
+                               ByVal splitCols As Boolean) As String()
+    Dim fx() As String, k As Long, fn As String
+    If n < 1 Then n = 1
+    ReDim fx(1 To n)
+    fn = IIf(splitCols, "CHOOSECOLS", "CHOOSEROWS")
+    For k = 1 To n
+        fx(k) = "=" & fn & "(" & body & "," & k & ")"
+    Next k
+    split_formulas = fx
+End Function
+
+' Count cells in the anchor.Resize(rowN, colN) footprint that already hold
+' independent data - i.e. non-empty cells that are neither the anchor itself
+' nor part of the anchor's own spill (which we are replacing). Public for tests.
+Public Function split_overwrite_count(ByVal anchor As Range, ByVal rowN As Long, _
+                                      ByVal colN As Long) As Long
+    Dim foot As Range, cell As Range, sp As Range, cnt As Long
+    Set foot = anchor.Resize(rowN, colN)
+    On Error Resume Next
+    Set sp = anchor.SpillingToRange
+    On Error GoTo 0
+    For Each cell In foot.Cells
+        If cell.Address <> anchor.Address Then
+            If Not IsEmpty(cell.Value2) Then
+                If sp Is Nothing Then
+                    cnt = cnt + 1
+                ElseIf Application.Intersect(cell, sp) Is Nothing Then
+                    cnt = cnt + 1
+                End If
+            End If
+        End If
+    Next cell
+    split_overwrite_count = cnt
+End Function
+
+' The selected cell if it has a formula; otherwise, if it is inside a spill,
+' that spill's anchor. Nothing if neither applies.
+Private Function split_anchor() As Range
+    Dim c As Range, p As Range
+    If Selection Is Nothing Then Exit Function
+    If Not TypeOf Selection Is Range Then Exit Function
+    Set c = Selection.Cells(1, 1)
+    If c.HasFormula Then
+        Set split_anchor = c
+        Exit Function
+    End If
+    On Error Resume Next
+    Set p = c.SpillParent
+    On Error GoTo 0
+    If Not p Is Nothing Then
+        If p.HasFormula Then Set split_anchor = p.Cells(1, 1)
+    End If
+End Function
+
+' The anchor's formula without its leading "=".
+Private Function split_body(ByVal anchor As Range) As String
+    Dim f As String
+    f = anchor.Formula2
+    If Left$(f, 1) = "=" Then f = Mid$(f, 2)
+    split_body = f
+End Function
+
+' Dimensions of the array the formula would produce, used when the cell is not
+' currently spilling (e.g. blocked with #SPILL!). Worksheet.Evaluate resolves
+' sheet-qualified references; it caps the formula text at 255 chars, so a very
+' long blocked formula falls back to the "does not produce a 2D array" message.
+Private Function split_eval_dims(ByVal anchor As Range, ByRef rowN As Long, _
+                                 ByRef colN As Long) As Boolean
+    Dim v As Variant, rU As Long, rL As Long, cU As Long, cL As Long, is2d As Boolean
+    On Error Resume Next
+    v = anchor.Worksheet.Evaluate(Mid$(anchor.Formula2, 2))
+    If Err.Number <> 0 Then Err.Clear: On Error GoTo 0: Exit Function
+    On Error GoTo 0
+    If IsError(v) Then Exit Function
+    If Not IsArray(v) Then Exit Function
+
+    On Error Resume Next
+    rL = LBound(v, 1): rU = UBound(v, 1)
+    cL = 0: cU = -1: is2d = False
+    cL = LBound(v, 2)
+    is2d = (Err.Number = 0)
+    If is2d Then cU = UBound(v, 2)
+    Err.Clear
+    On Error GoTo 0
+
+    rowN = rU - rL + 1
+    colN = IIf(is2d, cU - cL + 1, 1)
+    split_eval_dims = (rowN >= 1 And colN >= 1)
+End Function
