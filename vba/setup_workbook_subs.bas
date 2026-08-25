@@ -343,8 +343,18 @@ Private Sub import_case()
 
     Dim destBase As Long
     destBase = attempt_workbook.Sheets.count
+    ' Excel drops copied (visible) sheets after the last VISIBLE sheet, which is
+    ' NOT necessarily Sheets(destBase) when that anchor is hidden. A model whose
+    ' last sheet is hidden (e.g. ErrorLog) would push the imports one slot before
+    ' destBase+1, and the locate-by-position logic below would then scan past the
+    ' case sheet and miss it. Make the anchor visible just for the copy so the
+    ' imports land exactly at destBase+1 .. destBase+srcSheetCount, then restore.
+    Dim anchorVis As Long
+    anchorVis = attempt_workbook.Sheets(destBase).Visible
+    attempt_workbook.Sheets(destBase).Visible = xlSheetVisible
     case_workbook.Worksheets.Copy _
         After:=attempt_workbook.Sheets(destBase)
+    attempt_workbook.Sheets(destBase).Visible = anchorVis
 
     ' Freeze each copied sheet's CURRENT effective font (name + size) as
     ' direct cell formatting, and capture its CURRENT column widths in
