@@ -648,10 +648,28 @@ Private Sub FreezeEffectiveFont(ByVal ws As Worksheet)
     Set used = ws.UsedRange
     If used Is Nothing Then Exit Sub
 
+    ' UsedRange is often far larger than the real content - stray formatting in
+    ' distant columns is common (e.g. a 188-column UsedRange whose content stops
+    ' at column V). Pinning fonts across tens of thousands of EMPTY cells is what
+    ' made this the slowest stage of setup (~10s on a case sheet). An empty cell
+    ' has no glyph, so its font is irrelevant to how the sheet looks after the
+    ' Normal-style change - restrict the work to the true content box. Find with
+    ' LookIn:=xlFormulas locates the last row/column holding an actual value or
+    ' formula, ignoring empty-but-formatted cells, and cuts the cell count ~10x.
+    Dim lastR As Range, lastC As Range
+    Set lastR = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), _
+        LookIn:=xlFormulas, SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    Set lastC = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), _
+        LookIn:=xlFormulas, SearchOrder:=xlByColumns, SearchDirection:=xlPrevious)
+    If lastR Is Nothing Or lastC Is Nothing Then Exit Sub   ' no content at all
+
+    Dim box As Range
+    Set box = ws.Range(ws.Cells(1, 1), ws.Cells(lastR.Row, lastC.Column))
+
     Dim r As Range, c As Range
     Dim rowFontName As Variant, rowFontSize As Variant
 
-    For Each r In used.Rows
+    For Each r In box.Rows
         rowFontName = Null: rowFontSize = Null
         rowFontName = r.Font.Name    ' Null when the row's font names differ
         rowFontSize = r.Font.Size    ' Null when the row's font sizes differ
