@@ -42,11 +42,22 @@ Private gCaseSheets As Collection
 Private gCaseColWidths As Collection
 Private gSetupAborted As Boolean    ' a stage bailed out - stop the pipeline cleanly
 
+' Lightweight per-stage timing. TimeMark records the seconds elapsed since the
+' previous mark; WriteTimingLog dumps the whole breakdown to the ErrorLog sheet
+' (columns F:H) at the end of a run so a slow stage is easy to spot. Overhead is
+' a Timer read per mark; the sheet is written once, at the end.
+Private gTimeLabels(1 To 40) As String
+Private gTimeSecs(1 To 40) As Double
+Private gTimeN As Long
+Private gTimePrev As Double
+Private gTimeStart As Double
+
 Sub setup_workbook()
     On Error GoTo ErrorHandler
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
     Application.EnableEvents = False
+    Call TimeReset
 
     Set attempt_workbook = ThisWorkbook
     gSetupAborted = False
@@ -57,7 +68,14 @@ Sub setup_workbook()
     ' pipeline below carried on building tabs on a half-set-up workbook.
     If Not case_inputs_valid() Then GoTo Cleanup
 
+    ' Save the original template with AUTOMATIC calculation so a setup run never
+    ' leaves the template file in manual mode; only the build pipeline below
+    ' runs manual (for speed). The recalc this triggers is on the small template
+    ' only and is negligible.
+    Application.Calculation = xlCalculationAutomatic
     ThisWorkbook.Save
+    Application.Calculation = xlCalculationManual
+    Call TimeMark("01 validate + template Save")
 
     ' --- Best-effort pipeline -------------------------------------------------
     ' Tuned for the MEWC competition use-case: there's no time to debug a
@@ -74,21 +92,21 @@ Sub setup_workbook()
     Err.Clear
     If gSetupAborted Then GoTo Cleanup
     Call set_normal_style
-    Err.Clear
+    Err.Clear: Call TimeMark("07 set_normal_style")
     Call classify_rows
-    Err.Clear
+    Err.Clear: Call TimeMark("08 classify_rows")
     Call create_level_worksheets
-    Err.Clear
+    Err.Clear: Call TimeMark("09 create_level_worksheets")
     Call align_level_worksheets
-    Err.Clear
+    Err.Clear: Call TimeMark("10 align_level_worksheets")
     Call create_all_games_worksheet
-    Err.Clear
+    Err.Clear: Call TimeMark("11 create_all_games_worksheet")
     Call zoom_all_worksheets
-    Err.Clear
+    Err.Clear: Call TimeMark("12 zoom_all_worksheets")
     Call create_internal_links
-    Err.Clear
+    Err.Clear: Call TimeMark("13 create_internal_links")
     Call create_hints_sheet
-    Err.Clear
+    Err.Clear: Call TimeMark("14 create_hints_sheet")
 
     ' Final UI nicety - guarded the same way (no _L1 sheet means earlier
     ' stages failed; we don't want that to abort the cleanup).
@@ -103,6 +121,10 @@ Cleanup:
     ' read-only case workbook open. import_case closes it itself on both the
     ' normal and error paths; this catches an abort raised anywhere else.
     Call CloseCaseWorkbook
+
+    ' Write the per-stage timing breakdown to the ErrorLog sheet (columns F:H)
+    ' before it is hidden, so a slow run can be diagnosed after the fact.
+    Call WriteTimingLog
 
     ' Hide the ErrorLog sheet if it exists. Use SheetExists rather than
     ' exception-based lookup so the VBA debugger's "Break on All Errors"
@@ -267,8 +289,9 @@ Private Sub import_case()
       Application.DisplayAlerts = True
       Application.Calculation = xlCalculationManual
    End If
+   Call TimeMark("02 SaveAs attempt file")
 
-    
+
     'opens case workbook and copies over worksheets
     full_case_path = case_path & Application.PathSeparator & case_filename
     If Dir(full_case_path) = "" Then
@@ -297,6 +320,7 @@ Private Sub import_case()
                                        IgnoreReadOnlyRecommended:=True)
     Application.AskToUpdateLinks = prev_ask_update
     Application.AutomationSecurity = prev_auto_sec
+    Call TimeMark("03 open case workbook")
 
     ' --- Candidate names for the case-content sheet ---
     ' Add new candidates to this array as future cases introduce new names.
@@ -355,6 +379,7 @@ Private Sub import_case()
     case_workbook.Worksheets.Copy _
         After:=attempt_workbook.Sheets(destBase)
     attempt_workbook.Sheets(destBase).Visible = anchorVis
+    Call TimeMark("04 copy case sheets in")
 
     ' Freeze each copied sheet's CURRENT effective font (name + size) as
     ' direct cell formatting, and capture its CURRENT column widths in
@@ -401,6 +426,7 @@ Private Sub import_case()
     Next k
 
     Call CloseCaseWorkbook
+    Call TimeMark("05 freeze fonts + theme + restore visibility")
 
     ' --- Locate the case-content sheet among the sheets we just copied ---
     ' Only inspect the freshly-imported range (destBase+1 .. destBase+srcSheetCount)
@@ -526,8 +552,9 @@ Private Sub import_case()
     Application.DisplayAlerts = alerts_prev
 
     case_worksheet.Tab.Color = RGB(255, 0, 0)
+    Call TimeMark("06 locate + rename + junk-sheet cleanup")
     Exit Sub
-    
+
 ErrorHandler:
     ' Re-raise so setup_workbook's top-level Cleanup restores ScreenUpdating,
     ' Calculation and Events. Silent Resume Next here would leave Excel frozen.
@@ -541,6 +568,68 @@ ErrorHandler:
     Err.Raise e_num, "import_case", e_desc
 
 
+End Sub
+
+' === Timing (diagnostics) ===================================================
+' Lightweight per-stage stopwatch. Reset at the start of a run, marked at each
+' stage boundary, and dumped to the ErrorLog sheet (columns F:H) at the end, so
+' a slow run can be diagnosed by unhiding ErrorLog and reading the breakdown.
+
+Private Sub TimeReset()
+    gTimeN = 0
+    gTimeStart = Timer
+    gTimePrev = gTimeStart
+End Sub
+
+' Record the seconds elapsed since the previous mark under `label`.
+Private Sub TimeMark(ByVal label As String)
+    Dim t As Double
+    t = Timer
+    If gTimeN < UBound(gTimeLabels) Then
+        gTimeN = gTimeN + 1
+        gTimeLabels(gTimeN) = label
+        ' Timer wraps to 0 at midnight; a negative delta means we crossed it -
+        ' record ~0 rather than a misleading huge value on an overnight run.
+        If t >= gTimePrev Then gTimeSecs(gTimeN) = t - gTimePrev
+    End If
+    gTimePrev = t
+End Sub
+
+' Dump the timing breakdown to ErrorLog columns F:H (Stage, Seconds, Cumulative)
+' with a TOTAL row. Written once, at the end of a run. Best-effort: never raises,
+' so a failure here can't derail cleanup.
+Private Sub WriteTimingLog()
+    On Error GoTo done
+    If gTimeN = 0 Then Exit Sub
+
+    Dim logSheet As Worksheet
+    If SheetExists(ThisWorkbook, "ErrorLog") Then
+        Set logSheet = ThisWorkbook.Sheets("ErrorLog")
+    Else
+        Set logSheet = ThisWorkbook.Sheets.Add( _
+            After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.count))
+        logSheet.Name = "ErrorLog"
+    End If
+
+    logSheet.Range("F:H").ClearContents
+    logSheet.Range("F1:H1").Value = Array("Stage", "Seconds", "Cumulative")
+    logSheet.Range("F1:H1").Font.Bold = True
+
+    Dim i As Long, r As Long, cum As Double
+    r = 2
+    For i = 1 To gTimeN
+        cum = cum + gTimeSecs(i)
+        logSheet.Cells(r, "F").Value = gTimeLabels(i)
+        logSheet.Cells(r, "G").Value = Round(gTimeSecs(i), 2)
+        logSheet.Cells(r, "H").Value = Round(cum, 2)
+        r = r + 1
+    Next i
+    logSheet.Cells(r, "F").Value = "TOTAL (setup start -> end)"
+    logSheet.Cells(r, "G").Value = Round(Timer - gTimeStart, 2)
+    logSheet.Range(logSheet.Cells(r, "F"), logSheet.Cells(r, "G")).Font.Bold = True
+    logSheet.Columns("F:H").AutoFit
+
+done:
 End Sub
 
 ' Freezes every cell's CURRENT effective font (Name + Size) in ws.UsedRange as
@@ -2348,14 +2437,19 @@ Sub safe_setup()
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
     Application.EnableEvents = False
-    
+    Call TimeReset
+
     Set attempt_workbook = ThisWorkbook
     gSetupAborted = False
 
     ' Same gate as setup_workbook: don't save or import against a bad location.
     If Not case_inputs_valid() Then GoTo Cleanup
 
+    ' Save the template with AUTOMATIC calculation so the run never leaves the
+    ' original file in manual mode (matches setup_workbook).
+    Application.Calculation = xlCalculationAutomatic
     ThisWorkbook.Save
+    Application.Calculation = xlCalculationManual
 
     Call import_case
 Cleanup:
