@@ -86,6 +86,7 @@ Public Sub run_vba_tests()
     RunGuarded "split_cols"
     RunGuarded "split_rows"
     RunGuarded "split_overwrite"
+    RunGuarded "formula_shortcuts"
 
     write_results
     write_group_blocks        ' per-group Case/Expected/Actual/Result on each sheet
@@ -130,6 +131,7 @@ Private Sub RunGuarded(ByVal which As String)
         Case "split_cols": test_split_cols
         Case "split_rows": test_split_rows
         Case "split_overwrite": test_split_overwrite
+        Case "formula_shortcuts": test_formula_shortcuts
     End Select
     Exit Sub
 Failed:
@@ -757,6 +759,32 @@ Private Sub test_split_overwrite()
     Application.Calculate
     chkTrue "anchor is blocked (#SPILL!)", IsError(ws2.Range("B2").Value2)
     chk "blocked -> 1 overwrite (the blocker)", "1", split_overwrite_count(ws2.Range("B2"), 4, 3)
+End Sub
+
+Private Sub test_formula_shortcuts()
+    grp "formula_shortcuts"
+    ' skeleton strings: right function, line breaks kept, placeholders present
+    Dim j As String, k As String
+    j = scan_template()
+    chkTrue "J skeleton starts with =SCAN(", Left$(j, 6) = "=SCAN("
+    chkTrue "J skeleton keeps its line breaks", InStr(j, vbLf) > 0
+    chkTrue "J skeleton has the a-accumulator placeholder", InStr(j, "new_a") > 0
+    k = scan2_template()
+    chkTrue "K skeleton starts with =scan2(", Left$(k, 7) = "=scan2("
+    chkTrue "K skeleton has both lambda bodies", _
+        InStr(k, "new_a") > 0 And InStr(k, "new_b") > 0
+
+    Dim ws As Worksheet
+    Set ws = AddSheet("zz_shortcuts")
+    ' fill_if_empty drops the skeleton into an EMPTY cell...
+    fill_if_empty ws.Range("B2"), scan_template()
+    chkTrue "empty cell now holds a formula", ws.Range("B2").HasFormula
+    chkTrue "empty cell got the SCAN skeleton", Left$(ws.Range("B2").Formula2, 6) = "=SCAN("
+    chkTrue "inserted skeleton kept its line breaks", InStr(ws.Range("B2").Formula2, vbLf) > 0
+    ' ...but NEVER overwrites a cell that already has content
+    ws.Range("B4").Value = "keep me"
+    fill_if_empty ws.Range("B4"), scan_template()
+    chk "occupied cell is left untouched", "keep me", ws.Range("B4").Value
 End Sub
 
 ' ---- results writer ---------------------------------------------------------
