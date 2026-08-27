@@ -1,0 +1,25 @@
+=== SIGNATURE ===
+xbycol(arr, function)
+
+=== COMMENT ===
+BYCOL that allows array-returning functions: each column's result is flattened to a column (TOCOL) and stacked side by side; ragged #N/A padding is blanked (IFNA). Use for per-column transforms that expand each item into a column.
+
+=== CODE ===
+=LAMBDA(arr, function,
+  IFNA(z_xbycol_ix(arr, function, 1, COLUMNS(arr)), "")
+)
+
+=== DESCRIPTION ===
+BYCOL that allows the function to return an array per column. The by-column twin of xbyrow.
+
+Built-in BYCOL and MAP require a single scalar per column. xbycol lifts that limit: it applies the function to each column, flattens each result to a single column with TOCOL, and stacks them side by side with HSTACK (divide-and-conquer, fast on wide inputs). The output is wrapped in IFNA so the #N/A padding from ragged columns shows as blank.
+
+Arguments:
+  arr      - the array to iterate over, one column at a time.
+  function - a LAMBDA applied to each column; may return a scalar or an array.
+
+Returns:
+  One output column per input column. Each result is laid out vertically and stacked; ragged columns are padded with blanks (via IFNA).
+
+Example:
+  xbycol(B14#, LAMBDA(x, neighbors_list(x)))
