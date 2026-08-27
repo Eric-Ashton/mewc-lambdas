@@ -32,8 +32,8 @@ count_substring ctotal cycles die_pips dist exists first_time freq_table is_uniq
 knight_moves label_lookup lc_to_nc load_array nc_to_lc neighbors_count
 neighbors_list offset_letter only_letters only_numbers rc_to_ref ref_to_rc rev
 rotate_arrow route_cost save_array selections set set_d set_i set_u shift_arr
-smallest str2arr str_rev streak textbetween transform_array update_arr xcountif
-xdec2bin xmod xn xrank xsequence xtextjoin xtocol""".split())
+smallest str2arr str_rev streak textbetween transform_array update_arr xbycol
+xbyrow xcountif xdec2bin xmod xn xrank xsequence xtextjoin xtocol""".split())
 
 def load_workbook_names(folder):
     names = set()

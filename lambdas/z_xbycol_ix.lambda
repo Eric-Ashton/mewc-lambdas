@@ -1,0 +1,36 @@
+=== SIGNATURE ===
+z_xbycol_ix(arr, function, first, last)
+
+=== COMMENT ===
+Private recursive worker for xbycol (don't call directly). Applies function to each column, flattens the result to a column with TOCOL, and HSTACKs the pieces via divide-and-conquer.
+
+=== CODE ===
+=LAMBDA(arr, function, first, last,
+  IF(first = last,
+     TOCOL(
+       IF(ROWS(arr) = 1,
+          function(@CHOOSECOLS(arr, first)),
+          function(CHOOSECOLS(arr, first)))),
+     LET(
+       mid_col, INT((first + last) / 2),
+       HSTACK(
+         z_xbycol_ix(arr, function, first, mid_col),
+         z_xbycol_ix(arr, function, mid_col + 1, last)
+       )
+     )
+  )
+)
+
+=== DESCRIPTION ===
+Private recursive worker for xbycol - do not call directly.
+
+Splits the column index range [first, last] in half, recurses on each half, and HSTACKs the pieces (divide-and-conquer). At a single column it applies function to that column (dereferencing a lone cell with @) and flattens the result to a column with TOCOL.
+
+Arguments:
+  arr      - the full array (passed through unchanged).
+  function - the LAMBDA to apply to each column.
+  first    - first column index of the current window.
+  last     - last column index of the current window.
+
+Returns:
+  The stacked, one-column-per-input results for columns first..last. Called by xbycol as z_xbycol_ix(arr, function, 1, COLUMNS(arr)).
