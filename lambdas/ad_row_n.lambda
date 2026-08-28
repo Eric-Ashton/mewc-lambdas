@@ -1,0 +1,48 @@
+=== SIGNATURE ===
+ad_row_n(ad_or_rng)
+
+=== COMMENT ===
+Row number(s) of an address or range. A single address - numeric (66000045) or A1 ("AA99") - becomes its row number; a range string ("B8:D11") becomes a vertical array of the rows it spans. In an array input each single address becomes its row number, while ranges and non-addresses pass through unchanged.
+
+=== CODE ===
+=LAMBDA(ad_or_rng,
+  LET(
+    row_of_1, LAMBDA(one,
+      LET(box, IFERROR(z_ad_box(one), 0),
+        IF(COUNT(box) = 4,
+          LET(top, SUM(INDEX(box, 1)), lft, SUM(INDEX(box, 2)),
+              bot, SUM(INDEX(box, 3)), rgt, SUM(INDEX(box, 4)),
+            IF(AND(top = bot, lft = rgt, top >= 1, lft >= 1), top, one)),
+          one))),
+    IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1,
+      MAP(ad_or_rng, row_of_1),
+      LET(box, IFERROR(z_ad_box(ad_or_rng), 0),
+        IF(COUNT(box) = 4,
+          LET(top, SUM(INDEX(box, 1)), lft, SUM(INDEX(box, 2)), bot, SUM(INDEX(box, 3)),
+            IF(AND(top >= 1, lft >= 1),
+               IF(top = bot, top, SEQUENCE(bot - top + 1, 1, top)),
+               ad_or_rng)),
+          ad_or_rng)))
+  )
+)
+
+=== DESCRIPTION ===
+Row number(s) from an address or range. Uses the shared z_ad_box parser, so it accepts every address type the library uses: a numeric address (1e6*row+col, e.g. 66000045), an A1 string ("AA99"), an A1 range ("B8:D11") or a numeric range.
+
+Behaviour depends on the input:
+  scalar single address        -> its row number            (66000045 -> 66, "AA99" -> 99)
+  scalar range                 -> a VERTICAL array of the rows it spans   ("B8:D11" -> {8;9;10;11})
+  scalar non-address           -> returned unchanged
+  array of values (element-wise):
+    each single address        -> its row number
+    a range, or any non-address-> returned unchanged (a range is never expanded inside an array)
+
+A value only counts as an address when z_ad_box parses it AND its row and column are both >= 1, so a plain data number that isn't a real address passes straight through.
+
+Arguments:
+  ad_or_rng - a single address/range, or an array of them.
+
+Returns:
+  A row number, a vertical array of row numbers (scalar range only), the array of per-element results, or the input unchanged where it is not a single address.
+
+See also ad_col_n (columns), ad_to_rc (one address -> {row, col}), num_ad.

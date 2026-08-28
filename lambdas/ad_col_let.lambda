@@ -1,0 +1,36 @@
+=== SIGNATURE ===
+ad_col_let(num)
+
+=== COMMENT ===
+Column letters for a column number. A scalar integer 1..16384 becomes its column-letter string (1475 -> "BDS"); anything else is returned unchanged. Over an array, each cell is converted the same way. The inverse of ad_col_n on a bare column letter.
+
+=== CODE ===
+=LAMBDA(num,
+  LET(
+    to_let, LAMBDA(one,
+      IF(ISNUMBER(one),
+         IF(AND(one = INT(one), one >= 1, one <= 16384),
+            LET(a, ADDRESS(1, one, 4), LEFT(a, LEN(a) - 1)),
+            one),
+         one)),
+    IF(ROWS(num) * COLUMNS(num) > 1, MAP(num, to_let), to_let(num))
+  )
+)
+
+=== DESCRIPTION ===
+Column-letter string(s) from a column number. The inverse of ad_col_n's column-letter mode, and a companion to ad_row_n / ad_col_n.
+
+Behaviour:
+  scalar integer 1..16384 -> its column letters   (1 -> "A", 27 -> "AA", 1475 -> "BDS", 16384 -> "XFD")
+  scalar anything else    -> returned unchanged    (0, 16385, 1.5 and text all pass through)
+  array input             -> element-wise: each 1..16384 integer -> letters, everything else unchanged
+
+It builds the letters from ADDRESS(1, num, 4) (a relative "<letters>1" reference) and drops the trailing row digit, so no lookup table or column-width assumptions are involved.
+
+Arguments:
+  num - a column number, or an array of values.
+
+Returns:
+  A column-letter string, the array of per-element results, or the input unchanged where it is not an integer in 1..16384.
+
+See also ad_col_n (address/letter -> column number), ad_row_n, rc_to_ad.

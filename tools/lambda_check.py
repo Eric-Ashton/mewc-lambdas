@@ -27,7 +27,7 @@ import sys, os, re, glob
 # ---------------------------------------------------------------------------
 # workbook defined names (lambdas + ranges) — loaded from the template if found
 # ---------------------------------------------------------------------------
-LIB_LAMBDAS = set("""addr_lookup arrow arrow_move arrow_trip biggest clamp
+LIB_LAMBDAS = set("""ad_col_let ad_col_n ad_row_n addr_lookup arrow arrow_move arrow_trip biggest clamp
 count_substring ctotal cycles die_pips dist exists first_time freq_table is_unique
 knight_moves label_lookup lc_to_nc load_array nc_to_lc neighbors_count
 neighbors_list offset_letter only_letters only_numbers rc_to_ref ref_to_rc rev
