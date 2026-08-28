@@ -1,36 +1,47 @@
 === SIGNATURE ===
-ad_col_let(num)
+ad_col_let(col_n_or_ad)
 
 === COMMENT ===
-Column letters for a column number. A scalar integer 1..16384 becomes its column-letter string (1475 -> "BDS"); anything else is returned unchanged. Over an array, each cell is converted the same way. The inverse of ad_col_n on a bare column letter.
+Column letters from a column number OR an address. A scalar integer 1..16384 becomes its column-letter string (1475 -> "BDS"); a valid numeric address (66000045) or A1 string address ("AA99") becomes its column's letters (-> "AS", "AA"); anything else is returned unchanged. Over an array, each cell is converted the same way.
 
 === CODE ===
-=LAMBDA(num,
+=LAMBDA(col_n_or_ad,
   LET(
+    col_to_let, LAMBDA(col, LET(a, ADDRESS(1, col, 4), LEFT(a, LEN(a) - 1))),
+    addr_col, LAMBDA(one,
+      LET(box, IFERROR(z_ad_box(one), 0),
+        IF(COUNT(box) = 4,
+          LET(top, SUM(INDEX(box, 1)), lft, SUM(INDEX(box, 2)),
+              bot, SUM(INDEX(box, 3)), rgt, SUM(INDEX(box, 4)),
+            IF(AND(top = bot, lft = rgt, top >= 1, lft >= 1), col_to_let(lft), one)),
+          one))),
     to_let, LAMBDA(one,
       IF(ISNUMBER(one),
          IF(AND(one = INT(one), one >= 1, one <= 16384),
-            LET(a, ADDRESS(1, one, 4), LEFT(a, LEN(a) - 1)),
-            one),
-         one)),
-    IF(ROWS(num) * COLUMNS(num) > 1, MAP(num, to_let), to_let(num))
+            col_to_let(one),
+            addr_col(one)),
+         addr_col(one))),
+    IF(ROWS(col_n_or_ad) * COLUMNS(col_n_or_ad) > 1,
+       MAP(col_n_or_ad, to_let),
+       to_let(col_n_or_ad))
   )
 )
 
 === DESCRIPTION ===
-Column-letter string(s) from a column number. The inverse of ad_col_n's column-letter mode, and a companion to ad_row_n / ad_col_n.
+Column-letter string(s) from either a column number or an address. Companion to ad_row_n / ad_col_n, and the inverse of ad_col_n.
 
-Behaviour:
-  scalar integer 1..16384 -> its column letters   (1 -> "A", 27 -> "AA", 1475 -> "BDS", 16384 -> "XFD")
-  scalar anything else    -> returned unchanged    (0, 16385, 1.5 and text all pass through)
-  array input             -> element-wise: each 1..16384 integer -> letters, everything else unchanged
+Behaviour (element-wise over an array):
+  integer 1..16384          -> its column letters              (1 -> "A", 27 -> "AA", 1475 -> "BDS", 16384 -> "XFD")
+  numeric address 1e6*r+c   -> its COLUMN's letters            (66000045 -> "AS", 1000001 -> "A")
+  A1 string address         -> its COLUMN's letters            ("AA99" -> "AA", "$D$3" -> "D")
+  anything else             -> returned unchanged              (0, 16385, 1.5, a range, plain text, a bare column letter)
 
-It builds the letters from ADDRESS(1, num, 4) (a relative "<letters>1" reference) and drops the trailing row digit, so no lookup table or column-width assumptions are involved.
+Precedence: a whole number in 1..16384 is read as a column index first (that is the common case and what a column number looks like); only larger numbers are tried as numeric addresses, so 66000045 reads as row 66 / column 45, not as a column index. Addresses are parsed with the shared z_ad_box, and letters are built from ADDRESS(1, col, 4) with the trailing row digit dropped - no lookup table. A range is not a single address, so it passes through unchanged.
 
 Arguments:
-  num - a column number, or an array of values.
+  col_n_or_ad - a column number, a single address (numeric or A1), or an array of such values.
 
 Returns:
-  A column-letter string, the array of per-element results, or the input unchanged where it is not an integer in 1..16384.
+  A column-letter string, the array of per-element results, or the input unchanged where it is neither a 1..16384 integer nor a single address.
 
 See also ad_col_n (address/letter -> column number), ad_row_n, rc_to_ad.
