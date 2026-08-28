@@ -2,7 +2,7 @@
 ad_col_n(ad_or_rng)
 
 === COMMENT ===
-Column number(s) of an address or range. A single address - numeric (66000045) or A1 ("AA99") - becomes its column number; a range string ("B8:D11") becomes a horizontal array of the columns it spans. In an array input each single address becomes its column number, while ranges and non-addresses pass through unchanged.
+Column number(s) of an address or range. A single address - numeric (66000045) or A1 ("AA99") - becomes its column number; a range string ("B8:D11") becomes a vertical array of the columns it spans. In an array input each single address becomes its column number, while ranges and non-addresses pass through unchanged.
 
 === CODE ===
 =LAMBDA(ad_or_rng,
@@ -20,7 +20,7 @@ Column number(s) of an address or range. A single address - numeric (66000045) o
         IF(COUNT(box) = 4,
           LET(top, SUM(INDEX(box, 1)), lft, SUM(INDEX(box, 2)), rgt, SUM(INDEX(box, 4)),
             IF(AND(top >= 1, lft >= 1),
-               IF(lft = rgt, lft, SEQUENCE(1, rgt - lft + 1, lft)),
+               IF(lft = rgt, lft, SEQUENCE(rgt - lft + 1, 1, lft)),
                ad_or_rng)),
           ad_or_rng)))
   )
@@ -31,7 +31,7 @@ Column number(s) from an address or range. The column-wise twin of ad_row_n. Use
 
 Behaviour depends on the input:
   scalar single address        -> its column number         (66000045 -> 45, "AA99" -> 27)
-  scalar range                 -> a HORIZONTAL array of the columns it spans   ("B8:D11" -> {2,3,4})
+  scalar range                 -> a VERTICAL array of the columns it spans   ("B8:D11" -> {2;3;4})
   scalar non-address           -> returned unchanged
   array of values (element-wise):
     each single address        -> its column number
@@ -43,6 +43,6 @@ Arguments:
   ad_or_rng - a single address/range, or an array of them.
 
 Returns:
-  A column number, a horizontal array of column numbers (scalar range only), the array of per-element results, or the input unchanged where it is not a single address.
+  A column number, a vertical array of column numbers (scalar range only), the array of per-element results, or the input unchanged where it is not a single address.
 
 See also ad_row_n (rows), ad_to_rc (one address -> {row, col}), num_ad.
