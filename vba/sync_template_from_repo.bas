@@ -10,7 +10,9 @@ Option Private Module
 '   sync_vba       Import every repo vba\*.bas tagged 'deploy: shared' or
 '                  'template', remove any stale standard module not in that set
 '                  (with a confirmation), and skip this module itself.
-'   sync_all       Run both (lambdas first, VBA last).
+'   sync_all       Run both (lambdas first, VBA last), then
+'                  register_formula_shortcuts so Ctrl+Shift+J/K/Q are armed
+'                  after a mid-session sync (Auto_Open already arms them on open).
 '
 ' Option Private Module keeps sync_* out of the Alt+F8 macro list during
 ' competition. Run these from the VBE (F5) or a button when updating the template.
@@ -59,7 +61,26 @@ Public Sub sync_all()
     Set wb = ThisWorkbook
     lam = do_sync_lambdas(wb)          ' Lamb sheet + Name Manager (safe) first
     vb = do_sync_vba(wb)               ' modify the VBA project last
-    MsgBox lam & vbLf & vbLf & vb, vbInformation, MODULE_ID
+
+    ' Re-arm the authoring shortcuts (Ctrl+Shift+J/K/Q). Auto_Open already does
+    ' this on open; doing it here refreshes the bindings after a mid-session sync.
+    Dim shortcutMsg As String
+    On Error Resume Next
+    Application.Run "register_formula_shortcuts"
+    If Err.Number = 0 Then
+        shortcutMsg = "Registered formula shortcuts (Ctrl+Shift+J/K/Q)."
+    Else
+        shortcutMsg = "Note: could not register formula shortcuts (" & Err.Description & ")."
+        Err.Clear
+    End If
+    On Error GoTo fail
+
+    ' Land the user on the Prep worksheet (best-effort: skip if it isn't there).
+    On Error Resume Next
+    ThisWorkbook.Worksheets("Prep").Activate
+    On Error GoTo fail
+
+    MsgBox lam & vbLf & vbLf & vb & vbLf & vbLf & shortcutMsg, vbInformation, MODULE_ID
     Exit Sub
 fail:
     Dim em As String: em = "Error " & Err.Number & ": " & Err.Description
@@ -125,7 +146,10 @@ Private Function do_sync_lambdas(ByVal wb As Workbook) As String
     ' Clear every existing lambda name first (not just the ones still present in
     ' the repo) so a renamed or removed lambda doesn't linger as an orphan.
     ' repo_path and other non-lambda names are preserved - see the helper.
-    Call delete_all_lambda_names(wb)
+    ' Uses the module-local copy on purpose: calling into utility_subs here would
+    ' mark that module "in use" for the rest of sync_all, so do_sync_vba's later
+    ' Remove of utility_subs is deferred and its re-Import lands as utility_subs1.
+    Call purge_lambda_names(wb)
 
     Dim added() As Boolean: ReDim added(1 To n)
     Dim pass As Long, progress As Boolean, addedCount As Long
@@ -273,6 +297,37 @@ Private Function ensure_lamb_sheet(ByVal wb As Workbook) As Worksheet
         ws.Range("A1:D1").Font.Bold = True
     End If
     Set ensure_lamb_sheet = ws
+End Function
+
+' Module-local copy of utility_subs.delete_all_lambda_names, kept here so this
+' bootstrap module stays self-contained (see the note at do_sync_lambdas' call
+' site). Deletes every defined name whose definition is a LAMBDA; non-lambda
+' names (repo_path, plain ranges, add-in IQ_* names) are left alone. Returns the
+' count deleted.
+Private Function purge_lambda_names(ByVal wb As Workbook) As Long
+    Dim nm As Name, kill As Collection, s As Variant
+    Dim rt As String, removed As Long
+
+    Set kill = New Collection
+    For Each nm In wb.names
+        rt = ""
+        On Error Resume Next
+        rt = nm.RefersTo            ' broken names can raise; treat as non-lambda
+        On Error GoTo 0
+        If InStr(1, rt, "LAMBDA(", vbTextCompare) > 0 Then
+            kill.Add nm.Name        ' collect first; don't delete mid-iteration
+        End If
+    Next nm
+
+    For Each s In kill
+        On Error Resume Next
+        Err.Clear
+        wb.names(s).Delete
+        If Err.Number = 0 Then removed = removed + 1
+        On Error GoTo 0
+    Next s
+
+    purge_lambda_names = removed
 End Function
 
 Private Sub restore_app()
