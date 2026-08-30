@@ -75,6 +75,11 @@ Public Sub sync_all()
     End If
     On Error GoTo fail
 
+    ' Land the user on the Prep worksheet (best-effort: skip if it isn't there).
+    On Error Resume Next
+    ThisWorkbook.Worksheets("Prep").Activate
+    On Error GoTo fail
+
     MsgBox lam & vbLf & vbLf & vb & vbLf & vbLf & shortcutMsg, vbInformation, MODULE_ID
     Exit Sub
 fail:

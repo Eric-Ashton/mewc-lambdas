@@ -78,6 +78,11 @@ Public Sub sync_all()
     End If
     On Error GoTo fail
 
+    ' Land the user on the Prep worksheet (best-effort: skip if it isn't there).
+    On Error Resume Next
+    ThisWorkbook.Worksheets("Prep").Activate
+    On Error GoTo fail
+
     MsgBox lam & vbLf & vbLf & vb & vbLf & vbLf & _
            "Ran lambda_update (Name Manager + @-fix) and run_vba_tests." & vbLf & _
            shortcutMsg, vbInformation, MODULE_ID
