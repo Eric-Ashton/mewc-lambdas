@@ -39,6 +39,7 @@ Public Sub create_data_table()
     Dim ws As Worksheet
     Dim lo As ListObject
     Dim prev_screen As Boolean
+    Dim prev_events As Boolean
 
     On Error GoTo CleanFail
 
@@ -53,8 +54,13 @@ Public Sub create_data_table()
     Set rng = Selection.CurrentRegion
     Set ws = rng.Worksheet
 
+    ' Suppress events while building the table so third-party add-ins that hook
+    ' Application-level events (SheetChange/Calculate/SelectionChange/...) don't
+    ' fire mid-operation.
     prev_screen = Application.ScreenUpdating
+    prev_events = Application.EnableEvents
     Application.ScreenUpdating = False
+    Application.EnableEvents = False
 
     ' --- Create the table (top row treated as the header) -------------------
     Set lo = ws.ListObjects.Add(xlSrcRange, rng, , xlYes)
@@ -79,6 +85,7 @@ Public Sub create_data_table()
     lo.Range.HorizontalAlignment = xlCenter
 
 CleanExit:
+    Application.EnableEvents = prev_events
     Application.ScreenUpdating = prev_screen
     Exit Sub
 
