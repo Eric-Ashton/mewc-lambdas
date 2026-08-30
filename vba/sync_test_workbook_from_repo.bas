@@ -9,7 +9,10 @@ Attribute VB_Name = "sync_test_workbook_from_repo"
 '                  remove any stale standard module not in that set (with a
 '                  confirmation), and skip this module itself.
 '   sync_all       sync_lambdas, then sync_vba, then run lambda_update (pushes the
-'                  Name Manager + strips the "@" on test sheets) and run_vba_tests.
+'                  Name Manager + strips the "@" on test sheets), run_vba_tests,
+'                  and register_formula_shortcuts (arms Ctrl+Shift+J/K/Q here -
+'                  formula_shortcuts' Auto_Open skips the "Unit Tests" workbook,
+'                  so a sync is where we (re)arm them for testing).
 '
 ' Self-contained (bootstrap-safe: it rewrites the VBA project, so it can't depend
 ' on other repo modules). The "@" fix and the Name Manager push are delegated to
@@ -60,9 +63,24 @@ Public Sub sync_all()
     vb = do_sync_vba(wb)               ' import shared+test modules, prune drift
     Application.Run "lambda_update"    ' Name Manager + strip "@" on test sheets
     Application.Run "run_vba_tests"    ' regenerate the vba_tests sheet
+
+    ' Arm the authoring shortcuts (Ctrl+Shift+J/K/Q). formula_shortcuts'
+    ' Auto_Open deliberately skips the "Unit Tests" workbook, so this sync is the
+    ' spot where we register them so they can be tested here.
+    Dim shortcutMsg As String
+    On Error Resume Next
+    Application.Run "register_formula_shortcuts"
+    If Err.Number = 0 Then
+        shortcutMsg = "Registered formula shortcuts (Ctrl+Shift+J/K/Q)."
+    Else
+        shortcutMsg = "Note: could not register formula shortcuts (" & Err.Description & ")."
+        Err.Clear
+    End If
+    On Error GoTo fail
+
     MsgBox lam & vbLf & vbLf & vb & vbLf & vbLf & _
-           "Ran lambda_update (Name Manager + @-fix) and run_vba_tests.", _
-           vbInformation, MODULE_ID
+           "Ran lambda_update (Name Manager + @-fix) and run_vba_tests." & vbLf & _
+           shortcutMsg, vbInformation, MODULE_ID
     Exit Sub
 fail:
     Dim em As String: em = "Error " & Err.Number & ": " & Err.Description
