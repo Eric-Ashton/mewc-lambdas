@@ -10,7 +10,9 @@ Option Private Module
 '   sync_vba       Import every repo vba\*.bas tagged 'deploy: shared' or
 '                  'template', remove any stale standard module not in that set
 '                  (with a confirmation), and skip this module itself.
-'   sync_all       Run both (lambdas first, VBA last).
+'   sync_all       Run both (lambdas first, VBA last), then
+'                  register_formula_shortcuts so Ctrl+Shift+J/K/Q are armed
+'                  after a mid-session sync (Auto_Open already arms them on open).
 '
 ' Option Private Module keeps sync_* out of the Alt+F8 macro list during
 ' competition. Run these from the VBE (F5) or a button when updating the template.
@@ -59,7 +61,21 @@ Public Sub sync_all()
     Set wb = ThisWorkbook
     lam = do_sync_lambdas(wb)          ' Lamb sheet + Name Manager (safe) first
     vb = do_sync_vba(wb)               ' modify the VBA project last
-    MsgBox lam & vbLf & vbLf & vb, vbInformation, MODULE_ID
+
+    ' Re-arm the authoring shortcuts (Ctrl+Shift+J/K/Q). Auto_Open already does
+    ' this on open; doing it here refreshes the bindings after a mid-session sync.
+    Dim shortcutMsg As String
+    On Error Resume Next
+    Application.Run "register_formula_shortcuts"
+    If Err.Number = 0 Then
+        shortcutMsg = "Registered formula shortcuts (Ctrl+Shift+J/K/Q)."
+    Else
+        shortcutMsg = "Note: could not register formula shortcuts (" & Err.Description & ")."
+        Err.Clear
+    End If
+    On Error GoTo fail
+
+    MsgBox lam & vbLf & vbLf & vb & vbLf & vbLf & shortcutMsg, vbInformation, MODULE_ID
     Exit Sub
 fail:
     Dim em As String: em = "Error " & Err.Number & ": " & Err.Description
