@@ -1,12 +1,13 @@
 Attribute VB_Name = "formula_shortcuts"
 ' deploy: shared
 '==============================================================================
-' formula_shortcuts - keyboard shortcuts that drop a starter formula skeleton
-' into the ACTIVE cell, but only when that cell is empty (so a shortcut can
-' never overwrite existing work).
+' formula_shortcuts - keyboard shortcuts for authoring. Two drop a starter
+' formula skeleton into the ACTIVE cell (only when it is empty, so they can
+' never overwrite existing work); one runs the split_cols utility.
 '
 '   Ctrl+Shift+J  ->  a SCAN(...) skeleton
 '   Ctrl+Shift+K  ->  a scan2(...) skeleton
+'   Ctrl+Shift+Q  ->  split_cols (split the selected spilled 2D formula into one CHOOSECOLS formula per column)
 '
 ' Both skeletons keep their line breaks, and use placeholder names (a_init,
 ' x_arr, new_a, ...) that you replace - so a freshly-inserted cell shows #NAME?
@@ -75,6 +76,7 @@ Public Sub register_formula_shortcuts()
     On Error Resume Next
     Application.OnKey "^+j", "'" & ThisWorkbook.Name & "'!insert_scan_template"
     Application.OnKey "^+k", "'" & ThisWorkbook.Name & "'!insert_scan2_template"
+    Application.OnKey "^+q", "'" & ThisWorkbook.Name & "'!split_cols"
     On Error GoTo 0
 End Sub
 
@@ -82,6 +84,7 @@ Public Sub unregister_formula_shortcuts()
     On Error Resume Next
     Application.OnKey "^+j"
     Application.OnKey "^+k"
+    Application.OnKey "^+q"
     On Error GoTo 0
 End Sub
 
