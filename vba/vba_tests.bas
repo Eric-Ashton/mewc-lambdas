@@ -726,7 +726,8 @@ Private Sub test_create_data_table()
         Set lo = ws.ListObjects(1)
         chk "expanded to the whole block (Ctrl+Shift+8)", "$A$1:$C$3", lo.Range.Address
         chk "named d", "d", lo.Name
-        chk "style is Table Style Light 9", "TableStyleLight9", lo.TableStyle
+        ' lo.TableStyle returns a TableStyle object, not a string - name it.
+        chk "style is Table Style Light 9", "TableStyleLight9", lo.TableStyle.Name
         chkTrue "header row on", lo.ShowHeaders
         chkTrue "filter buttons on", lo.ShowAutoFilterDropDown
         chkTrue "banded rows off", Not lo.ShowTableStyleRowStripes
