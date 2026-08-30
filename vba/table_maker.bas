@@ -3,26 +3,124 @@ Attribute VB_Name = "table_maker"
 Option Explicit
 
 '==============================================================================
-' table_maker  -  scaffolds a "what-if data table" style sheet for a level's
-'                 game data.
+' table_maker  -  table/data-table authoring helpers.
 '
-' Workflow:
-'   1. On the case sheet, select the input array for a level (header row plus
-'      the data rows underneath, leftmost column = game number).
-'   2. Alt+F8 -> make_level_data_table (or bind to a button).
-'   3. Sheet _T1 (or next free _Tn) is added to the workbook and populated:
-'        A1..    header row from the input (values + formatting)
-'        A2      first game number (as value)
-'        B2      =XLOOKUP(A2, <game# column on case>, <full input on case>)
-'                so it spills the matching row's data horizontally
-'        B4      empty, yellow fill - drop your target formula here
-'        A5..    every game number from the leftmost column (blanks skipped)
-'   4. Fill B4 with your target formula (referring back to B2#), select
-'      A4:B<last> (or wider), Data > What-If Analysis > Data Table, use A2
-'      as the Column input cell.
+' create_data_table
+'   Turns the selection into an Excel table (ListObject). Select any single cell
+'   inside the block (or the whole block); it is expanded like Ctrl+Shift+8
+'   (CurrentRegion), converted to a table styled "Blue, Table Style Light 9"
+'   with the header row and filter buttons on and everything else off (no banded
+'   rows/columns, no total row, no first/last-column emphasis), named "d" (or the
+'   next free d_1, d_2, ...), and all its cells centre-aligned.
+'
+' create_MEWC_level_table
+'   Scaffolds a "what-if data table" style sheet for a level's game data.
+'   Workflow:
+'     1. On the case sheet, select the input array for a level (header row plus
+'        the data rows underneath, leftmost column = game number).
+'     2. Alt+F8 -> create_MEWC_level_table (or bind to a button).
+'     3. Sheet _T1 (or next free _Tn) is added to the workbook and populated:
+'          A1..    header row from the input (values + formatting)
+'          A2      first game number (as value)
+'          B2      =XLOOKUP(A2, <game# column on case>, <full input on case>)
+'                  so it spills the matching row's data horizontally
+'          B4      empty, yellow fill - drop your target formula here
+'          A5..    every game number from the leftmost column (blanks skipped)
+'     4. Fill B4 with your target formula (referring back to B2#), select
+'        A4:B<last> (or wider), Data > What-If Analysis > Data Table, use A2
+'        as the Column input cell.
 '==============================================================================
 
-Public Sub make_level_data_table()
+' -----------------------------------------------------------------------------
+' create_data_table - selection -> a styled, named Excel table.
+' -----------------------------------------------------------------------------
+Public Sub create_data_table()
+    Dim rng As Range
+    Dim ws As Worksheet
+    Dim lo As ListObject
+    Dim prev_screen As Boolean
+
+    On Error GoTo CleanFail
+
+    ' --- Validate the selection ---------------------------------------------
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "create_data_table: please select a cell inside the data " & _
+               "(or the whole block) first.", vbExclamation
+        Exit Sub
+    End If
+
+    ' Expand like Ctrl+Shift+8: the contiguous block around the selection.
+    Set rng = Selection.CurrentRegion
+    Set ws = rng.Worksheet
+
+    prev_screen = Application.ScreenUpdating
+    Application.ScreenUpdating = False
+
+    ' --- Create the table (top row treated as the header) -------------------
+    Set lo = ws.ListObjects.Add(xlSrcRange, rng, , xlYes)
+
+    ' Style: "Blue, Table Style Light 9".
+    lo.TableStyle = "TableStyleLight9"
+
+    ' Options: header row + filter buttons ON, everything else OFF (banded rows
+    ' are on by default, so turning them off is the point of this).
+    lo.ShowHeaders = True
+    lo.ShowAutoFilterDropDown = True
+    lo.ShowTotals = False
+    lo.ShowTableStyleRowStripes = False
+    lo.ShowTableStyleColumnStripes = False
+    lo.ShowTableStyleFirstColumn = False
+    lo.ShowTableStyleLastColumn = False
+
+    ' Name it "d", or the next free d_1, d_2, ...
+    lo.Name = next_table_name(ws.Parent)
+
+    ' Centre-align every cell in the table.
+    lo.Range.HorizontalAlignment = xlCenter
+
+CleanExit:
+    Application.ScreenUpdating = prev_screen
+    Exit Sub
+
+CleanFail:
+    MsgBox "create_data_table stopped because of this error:" & vbCrLf & vbCrLf & _
+           Err.Number & " - " & Err.Description, vbExclamation
+    Resume CleanExit
+End Sub
+
+' Returns "d" if that table name is free anywhere in wb, otherwise the first
+' free "d_1", "d_2", ... Table names are unique workbook-wide, so every sheet's
+' ListObjects are checked.
+Private Function next_table_name(ByVal wb As Workbook) As String
+    If table_name_free(wb, "d") Then
+        next_table_name = "d"
+        Exit Function
+    End If
+    Dim i As Long
+    i = 1
+    Do While Not table_name_free(wb, "d_" & i)
+        i = i + 1
+    Loop
+    next_table_name = "d_" & i
+End Function
+
+Private Function table_name_free(ByVal wb As Workbook, ByVal nm As String) As Boolean
+    Dim sh As Worksheet, lo As ListObject
+    For Each sh In wb.Worksheets
+        For Each lo In sh.ListObjects
+            If StrComp(lo.Name, nm, vbTextCompare) = 0 Then
+                table_name_free = False
+                Exit Function
+            End If
+        Next lo
+    Next sh
+    table_name_free = True
+End Function
+
+' -----------------------------------------------------------------------------
+' create_MEWC_level_table - what-if data-table scaffold for a level.
+' -----------------------------------------------------------------------------
+Public Sub create_MEWC_level_table()
     Dim case_sheet As Worksheet
     Dim table_sheet As Worksheet
     Dim input_range As Range
@@ -44,25 +142,25 @@ Public Sub make_level_data_table()
 
     ' --- Validate the selection ---------------------------------------------
     If TypeName(Selection) <> "Range" Then
-        MsgBox "make_level_data_table: please select the level's data range " & _
+        MsgBox "create_MEWC_level_table: please select the level's data range " & _
                "(header row plus one or more rows underneath) first.", _
                vbExclamation
         Exit Sub
     End If
     Set input_range = Selection
     If input_range.Cells.CountLarge < 2 Then
-        MsgBox "make_level_data_table: only one cell is selected. Please " & _
+        MsgBox "create_MEWC_level_table: only one cell is selected. Please " & _
                "select the array of data for the level (header row plus " & _
                "the rows underneath).", vbExclamation
         Exit Sub
     End If
     If input_range.Areas.count > 1 Then
-        MsgBox "make_level_data_table: please select a single rectangular " & _
+        MsgBox "create_MEWC_level_table: please select a single rectangular " & _
                "range, not multiple separate areas.", vbExclamation
         Exit Sub
     End If
     If input_range.Columns.count < 2 Then
-        MsgBox "make_level_data_table: the selection needs at least two " & _
+        MsgBox "create_MEWC_level_table: the selection needs at least two " & _
                "columns - a game-number column plus one or more data columns.", _
                vbExclamation
         Exit Sub
@@ -172,7 +270,7 @@ CleanExit:
     Exit Sub
 
 CleanFail:
-    MsgBox "make_level_data_table stopped because of this error:" & vbCrLf & vbCrLf & _
+    MsgBox "create_MEWC_level_table stopped because of this error:" & vbCrLf & vbCrLf & _
            Err.Number & " - " & Err.Description, vbExclamation
     Resume CleanExit
 End Sub

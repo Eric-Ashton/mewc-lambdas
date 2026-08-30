@@ -81,7 +81,8 @@ Public Sub run_vba_tests()
     RunGuarded "last_used_row_col"
     RunGuarded "find_yellow"
     RunGuarded "get_return_column_number"
-    RunGuarded "make_level_data_table"
+    RunGuarded "create_MEWC_level_table"
+    RunGuarded "create_data_table"
     RunGuarded "split_formulas"
     RunGuarded "split_cols"
     RunGuarded "split_rows"
@@ -126,7 +127,8 @@ Private Sub RunGuarded(ByVal which As String)
         Case "last_used_row_col": test_last_used_row_col
         Case "find_yellow": test_find_yellow
         Case "get_return_column_number": test_get_return_column_number
-        Case "make_level_data_table": test_make_level_data_table
+        Case "create_MEWC_level_table": test_create_MEWC_level_table
+        Case "create_data_table": test_create_data_table
         Case "split_formulas": test_split_formulas
         Case "split_cols": test_split_cols
         Case "split_rows": test_split_rows
@@ -671,8 +673,8 @@ Private Sub test_get_return_column_number()
     ws.Range("E1").Value = "GetReturnColumnNumber: C1 has a realistic XLOOKUP formula; C2 has too few colons"
 End Sub
 
-Private Sub test_make_level_data_table()
-    grp "make_level_data_table"
+Private Sub test_create_MEWC_level_table()
+    grp "create_MEWC_level_table"
     Dim ws As Worksheet, newWs As Worksheet, before As Object
     Set ws = AddSheet("zz_tmsrc"): ws.Activate
     ws.Range("A1").Value = "Game": ws.Range("B1").Value = "Answer"
@@ -680,7 +682,7 @@ Private Sub test_make_level_data_table()
     ws.Range("A1:B2").Select
 
     Set before = SnapshotSheetNames()
-    Application.Run "make_level_data_table"
+    Application.Run "create_MEWC_level_table"
     Set newWs = NewSheetSince(before)
 
     chkTrue "creates a new _Tn sheet", Not newWs Is Nothing
@@ -697,6 +699,52 @@ Private Sub test_make_level_data_table()
         chk "B2 XLOOKUP formula spills the matching row", _
             "=XLOOKUP(A2,zz_tmsrc!$A$2,zz_tmsrc!$B$2)", newWs.Range("B2").Formula2
         DeleteSheet newWs.Name
+    End If
+End Sub
+
+Private Sub test_create_data_table()
+    grp "create_data_table"
+    Dim ws As Worksheet, lo As ListObject
+    Set ws = AddSheet("zz_create_dt"): ws.Activate
+
+    ' Cells.Clear leaves any table shell behind, so drop leftover tables first -
+    ' otherwise a "d" from a prior run would push this run's name to "d_1".
+    Do While ws.ListObjects.count > 0
+        ws.ListObjects(1).Delete
+    Loop
+
+    ' Block with a header row; select a SINGLE cell inside it.
+    ws.Range("A1").Value = "Game": ws.Range("B1").Value = "X": ws.Range("C1").Value = "Y"
+    ws.Range("A2").Value = 101: ws.Range("B2").Value = 1: ws.Range("C2").Value = 2
+    ws.Range("A3").Value = 102: ws.Range("B3").Value = 3: ws.Range("C3").Value = 4
+    ws.Range("B2").Select
+
+    Application.Run "create_data_table"
+
+    chkTrue "one table created", ws.ListObjects.count = 1
+    If ws.ListObjects.count >= 1 Then
+        Set lo = ws.ListObjects(1)
+        chk "expanded to the whole block (Ctrl+Shift+8)", "$A$1:$C$3", lo.Range.Address
+        chk "named d", "d", lo.Name
+        chk "style is Table Style Light 9", "TableStyleLight9", lo.TableStyle
+        chkTrue "header row on", lo.ShowHeaders
+        chkTrue "filter buttons on", lo.ShowAutoFilterDropDown
+        chkTrue "banded rows off", Not lo.ShowTableStyleRowStripes
+        chkTrue "banded columns off", Not lo.ShowTableStyleColumnStripes
+        chkTrue "total row off", Not lo.ShowTotals
+        chkTrue "first/last column emphasis off", _
+            Not lo.ShowTableStyleFirstColumn And Not lo.ShowTableStyleLastColumn
+        chkTrue "every cell centre-aligned", lo.Range.HorizontalAlignment = xlCenter
+    End If
+
+    ' Second block, separated by a blank column -> the next name is d_1.
+    ws.Range("E1").Value = "P": ws.Range("F1").Value = "Q"
+    ws.Range("E2").Value = 9: ws.Range("F2").Value = 8
+    ws.Range("E1").Select
+    Application.Run "create_data_table"
+    chkTrue "second table created", ws.ListObjects.count = 2
+    If ws.ListObjects.count >= 2 Then
+        chk "second table named d_1", "d_1", ws.ListObjects(2).Name
     End If
 End Sub
 
