@@ -54,9 +54,8 @@ Public Sub create_data_table()
     Set rng = Selection.CurrentRegion
     Set ws = rng.Worksheet
 
-    ' Suppress events while building the table so third-party add-ins that hook
-    ' Application-level events (SheetChange/Calculate/SelectionChange/...) don't
-    ' fire mid-operation.
+    ' Suppress events/redraw while building the table so any Worksheet event
+    ' handlers don't fire mid-operation (matches create_MEWC_level_table).
     prev_screen = Application.ScreenUpdating
     prev_events = Application.EnableEvents
     Application.ScreenUpdating = False
