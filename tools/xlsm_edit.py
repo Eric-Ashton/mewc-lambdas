@@ -302,7 +302,11 @@ def _find_cell(row_xml, addr):
     """Return (start, end) span of <c r="addr" .../> or <c ...>...</c>, or None."""
     pat = _CELL_RE_CACHE.get(addr)
     if pat is None:
-        pat = re.compile(rf'<c r="{re.escape(addr)}"(?:\s[^>]*)?(?:/>|>.*?</c>)', re.S)
+        # NB: [^>]*? is LAZY on purpose. A greedy [^>]* consumes the '/' of a
+        # self-closed cell (<c r="M24" s="52"/>), which defeats the /> branch and
+        # forces >.*?</c> to overrun into the NEXT cell's </c> - deleting the
+        # cells in between. Lazy stops at /> for self-closed cells.
+        pat = re.compile(rf'<c r="{re.escape(addr)}"(?:\s[^>]*?)?(?:/>|>.*?</c>)', re.S)
         _CELL_RE_CACHE[addr] = pat
     m = pat.search(row_xml)
     return (m.start(), m.end()) if m else None
