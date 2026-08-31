@@ -2,13 +2,13 @@
 arrow_move(start_ad, arrow, [steps], [board_rng], [push_mode])
 
 === COMMENT ===
-Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction (arrow glyph, its numeric equivalent, or a letter code like "R"/"UL"), bounded by board_rng (default whole sheet). Returns a NUMERIC address. Out of bounds, push_mode: 1 stop at edge (default), 0 stay, -1 'oob'.
+Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction (arrow glyph, its numeric equivalent, or a letter code like "R"/"UL"), bounded by board_rng (default whole sheet). Returns a NUMERIC address. Out of bounds, push_mode: 0 = report "oob;<row>;<col>" with the intended (possibly zero/negative) coordinates (default), 1 = stop at edge, -1 = stay at start.
 
 === CODE ===
 =LAMBDA(start_ad, arrow, [steps], [board_rng], [push_mode],
   LET(
     step_n, IF(ISOMITTED(steps), 1, steps),
-    mode, IF(ISOMITTED(push_mode), 1, push_mode),
+    mode, IF(ISOMITTED(push_mode), 0, push_mode),
     start_num, num_ad(start_ad),
     start_row, INT(start_num / 1000000),
     start_col, MOD(start_num, 1000000),
@@ -27,9 +27,9 @@ Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction 
     IF(oob,
       SWITCH(mode,
         1, 1000000 * push_row + push_col,
-        0, 1000000 * start_row + start_col,
-        -1, "oob",
-        1000000 * push_row + push_col),
+        0, "oob;" & try_row & ";" & try_col,
+        -1, 1000000 * start_row + start_col,
+        "oob;" & try_row & ";" & try_col),
       1000000 * try_row + try_col)
   )
 )
@@ -42,10 +42,21 @@ Arguments:
   arrow       - direction as a standard arrow (↑↓←→↖↗↙↘), its numeric equivalent (1, -1000000, ...), or a letter code (U D L R UL UR DL DR).
   [steps]     - number of steps (default 1).
   [board_rng] - bounding range (default whole sheet).
-  [push_mode] - out-of-bounds behavior: 1 = stop at edge (default), 0 = stay at start, -1 = return "oob".
+  [push_mode] - out-of-bounds behavior:
+                  0 = report "oob" (default) - returns the string "oob;<row>;<col>"
+                      where row/col are the INTENDED coordinates, kept even when
+                      zero or negative so you can see where the move pointed.
+                  1 = stop at edge - clamp to the nearest in-bounds cell.
+                 -1 = stay at start - return the starting address unchanged.
 
 Returns:
-  The destination as a numeric address (or "oob" under push_mode -1).
+  The destination as a numeric address (mode 1 clamps to the edge, mode -1 stays
+  put), or the string "oob;<row>;<col>" under the default mode 0. In the oob
+  string, row and col are the intended landing coordinates (which may be 0 or
+  negative), reported on both axes even if only one is out of bounds.
 
 Example:
-  arrow_move("A1", "→", 3) -> 1000004   (str_ad -> "D1")
+  arrow_move("A1", "→", 3)       -> 1000004     (in bounds; str_ad -> "D1")
+  arrow_move("B1", "↖", 2)       -> "oob;-1;0"  (row 1-2=-1, col 2-2=0, both off)
+  arrow_move("B1", "↖", 2, , 1)  -> 1000001     (stop at edge -> A1)
+  arrow_move("B1", "↖", 2, , -1) -> 1000002     (stay at start -> B1)
