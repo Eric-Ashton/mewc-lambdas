@@ -10,7 +10,7 @@ TEXTJOIN that can also split back into an array or set, and beats the arg-count 
     sep, IF(ISOMITTED(delim), ";", delim),
     mode, IF(ISOMITTED(str_arr_set), 1, str_arr_set),
     row_strings, BYROW(arr, LAMBDA(one_row,
-      TEXTJOIN(sep, TRUE, IFERROR(one_row & "", "")))),
+      TEXTJOIN(sep, TRUE, IF(ISERROR(one_row & ""), "", one_row & "")))),
     has_any, SUM(--(row_strings <> "")) > 0,
     IF(
       NOT(has_any),

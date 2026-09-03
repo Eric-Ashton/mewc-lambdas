@@ -48,10 +48,9 @@ Permutations (order_matters=1) or combinations (=0) of size n from arr. countdow
         )
        )
       ),
-      IFERROR(
+      LET(_sel,
        MAP(UNICODE(MID(built_, seq_, 1)) - 20000, LAMBDA(pos_, INDEX(flat_, pos_))),
-       NA()
-      )
+       IF(ISERROR(_sel), NA(), _sel))
      )
     )
    ),

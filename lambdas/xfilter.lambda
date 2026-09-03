@@ -18,7 +18,7 @@ Multi-criteria FILTER. ANDs up to 5 boolean masks. A column-vector mask filters 
       * as_row_mask(filt3) * as_row_mask(filt4) * as_row_mask(filt5),
    col_mask, SEQUENCE(1, nc, 1, 0) * as_col_mask(f_1) * as_col_mask(filt2)
       * as_col_mask(filt3) * as_col_mask(filt4) * as_col_mask(filt5),
-   IFERROR(FILTER(FILTER(arr, row_mask), col_mask), "")
+   LET(_r, FILTER(FILTER(arr, row_mask), col_mask), IF(ISERROR(_r), "", _r))
 ))
 
 === DESCRIPTION ===

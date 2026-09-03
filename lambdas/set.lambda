@@ -6,14 +6,14 @@ Turns a range into a set: flattens, removes blanks and errors, uniques, and sort
 
 === CODE ===
 =LAMBDA(data_rng, [as_row],
-   IFERROR(
+   LET(_r,
       LET(
          _flat, TOCOL(data_rng, 3),
          _clean, FILTER(_flat, _flat <> ""),
          _res, SORT(UNIQUE(_clean)),
          IF(IF(ISOMITTED(as_row), 0, as_row), TOROW(_res), _res)
       ),
-      ""
+      IF(ISERROR(_r), "", _r)
    )
 )
 
