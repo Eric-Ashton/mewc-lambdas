@@ -339,8 +339,19 @@ def _insert_cell_in_row(row_xml, addr, col_num, new_cell):
 
 
 def _row_span(sheet_xml, row_num):
-    m = re.search(rf'<row r="{row_num}"(?:\s[^>]*)?(?:/>|>.*?</row>)', sheet_xml, re.S)
+    # [^>]*? is LAZY (see _find_cell): a greedy [^>]* eats the '/' of a self-
+    # closed row (<row r="35" ht="21.5"/>), defeating the /> branch and forcing
+    # >.*?</row> to overrun into the next row (or fail if it is the last row).
+    m = re.search(rf'<row r="{row_num}"(?:\s[^>]*?)?(?:/>|>.*?</row>)', sheet_xml, re.S)
     return (m.start(), m.end(), m.group(0)) if m else None
+
+
+def _open_row(row_xml):
+    """Normalize a self-closed <row .../> to open <row ...></row> so cells can be
+    inserted. Rows with custom height/style are stored self-closed when empty."""
+    if row_xml.endswith("/>"):
+        return row_xml[:-2] + "></row>"
+    return row_xml
 
 
 def _apply_sheet_edits(sheet_xml, edits):
@@ -361,6 +372,7 @@ def _apply_sheet_edits(sheet_xml, edits):
                 sheet_xml = _insert_row(sheet_xml, rownum, new_row)
                 continue
             rstart, rend, row_xml = span
+            row_xml = _open_row(row_xml)
             cellspan = _find_cell(row_xml, addr)
             if cellspan is None:
                 new_cell = f'<c r="{addr}" s="{rs}"/>'
@@ -387,6 +399,7 @@ def _apply_sheet_edits(sheet_xml, edits):
             continue
 
         rstart, rend, row_xml = span
+        row_xml = _open_row(row_xml)
         cellspan = _find_cell(row_xml, addr)
         if cellspan is not None:
             cs, ce = cellspan
