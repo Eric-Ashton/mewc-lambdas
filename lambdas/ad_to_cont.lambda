@@ -2,7 +2,7 @@
 ad_to_cont(ad_or_rng, arr)
 
 === COMMENT ===
-Non-volatile INDIRECT: the contents of arr at an address or range. A single address gives one value; a range gives the array of contents where it overlaps arr; an array of addresses gives their contents element-wise. Empty cells return "" (never 0). A valid address or range lying entirely outside arr returns "oob"; a non-address - or a range that appears as an element inside an array - returns "".
+Non-volatile INDIRECT: the contents of arr at an address or range. A single address gives one value; a range gives the array of contents where it overlaps arr; an array of addresses gives their contents element-wise. Empty cells return "" (never 0). A valid address or range lying entirely outside arr returns "oob". An invalid input returns "inv" - a non-address, or a range used as an element inside an array (a range is fine as a scalar input, but a range-within-an-array is not).
 
 === CODE ===
 =LAMBDA(ad_or_rng, arr,
@@ -11,12 +11,13 @@ Non-volatile INDIRECT: the contents of arr at an address or range. A single addr
     s_col, COLUMN(INDEX(arr, 1, 1)),
     a_rows, ROWS(arr),
     a_cols, COLUMNS(arr),
-    cell_at, LAMBDA(one, IFERROR(
-      LET(box, z_ad_box(one),
-        IF(OR(INDEX(box, 1) <> INDEX(box, 3), INDEX(box, 2) <> INDEX(box, 4)), "",
+    cell_at, LAMBDA(one,
+      LET(box, IFERROR(z_ad_box(one), 0),
+        IF(COUNT(box) <> 4, "inv",
+        IF(OR(INDEX(box, 1) <> INDEX(box, 3), INDEX(box, 2) <> INDEX(box, 4)), "inv",
           LET(rel_r, INDEX(box, 1) - s_row + 1, rel_c, INDEX(box, 2) - s_col + 1,
             IF(OR(rel_r < 1, rel_r > a_rows, rel_c < 1, rel_c > a_cols), "oob",
-              LET(cval, INDEX(arr, rel_r, rel_c), IF(cval = "", "", cval)))))), "")),
+              LET(cval, INDEX(arr, rel_r, rel_c), IF(cval = "", "", cval)))))))),
     box0, IFERROR(z_ad_box(ad_or_rng), 0),
     is_rng, IFERROR(AND(COUNT(box0) = 4, OR(INDEX(box0, 1) <> INDEX(box0, 3), INDEX(box0, 2) <> INDEX(box0, 4))), FALSE),
     IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1, MAP(ad_or_rng, cell_at),
@@ -40,17 +41,17 @@ Behaviour by input:
   single address inside arr        -> the value there ("" if that cell is empty)
   range overlapping arr            -> an array of the overlapping contents (clipped to arr)
   address or range fully outside arr -> "oob"
-  any other single value           -> ""
-  an array of addresses            -> element-wise contents; an out-of-bounds address -> "oob"; an empty in-bounds cell -> ""; anything that is not a single address (a range, junk) -> ""
+  any non-address single value     -> "inv"
+  an array of addresses            -> element-wise contents; an out-of-bounds address -> "oob"; an empty in-bounds cell -> ""; anything that is not a single address (a range element, or junk) -> "inv"
 
-Empty cells come back as "" rather than 0 - fake coerced zeros corrupt later aggregates. An in-bounds empty cell is still "", so "oob" is unambiguous: it means the address had nowhere to land in arr, not that the cell was blank. Address parsing is shared with the library via z_ad_box.
+Empty cells come back as "" rather than 0 - fake coerced zeros corrupt later aggregates. The three string sentinels are distinct: "" = an in-bounds cell that is blank; "oob" = a valid address/range that landed entirely outside arr; "inv" = the input was not a usable single address (a non-address, or a range used as an array element). A range is a valid scalar input (clipped to its overlap), but a range inside an array is invalid because it would nest an array within the array. Address parsing is shared with the library via z_ad_box.
 
 Arguments:
   ad_or_rng - a numeric address, A1 string, A1 range, numeric range, or an array of single addresses.
   arr       - the source range to read from.
 
 Returns:
-  A single value, a rectangle of values, or an element-wise array of values; "oob" for a valid address/range that lands entirely outside arr, and "" for an in-bounds empty cell or a non-address.
+  A single value, a rectangle of values, or an element-wise array of values; "oob" for a valid address/range that lands entirely outside arr; "inv" for a non-address or a range used as an array element; and "" only for an in-bounds empty cell.
 
 Example:
   ad_to_cont("C3", B2:Z10)      ->  the value at C3
