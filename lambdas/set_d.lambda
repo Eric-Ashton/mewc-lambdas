@@ -6,14 +6,14 @@ Set difference: the values in set a that are not in set b.
 
 === CODE ===
 =LAMBDA(val_a, val_b, [as_row],
-   IFERROR(
+   LET(_r,
       LET(
          list_a, set(val_a),
          list_b, set(val_b),
          res, FILTER(list_a, ISNA(XMATCH(list_a, list_b))),
          IF(IF(ISOMITTED(as_row), 0, as_row), TOROW(res), res)
       ),
-      ""
+      IF(ISERROR(_r), "", _r)
    )
 )
 

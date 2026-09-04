@@ -95,7 +95,7 @@ Shifts a 1D or 2D array by "steps" (default 1) in the dir direction (arrow glyph
          ))
       )
    ),
-   IFNA(result, "")
+   IF(ISNA(result), "", result)
 ))
 
 === DESCRIPTION ===

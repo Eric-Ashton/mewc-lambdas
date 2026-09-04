@@ -8,11 +8,11 @@ Turns an array into a frequency table sorted by frequency descending. min_freq f
 =LAMBDA(array, [min_freq], LET(
    mf, IF(ISOMITTED(min_freq), 1, min_freq),
    vec0, TOCOL(array, 1),
-   vec, IFERROR(FILTER(vec0, vec0 <> ""), NA()),
-   u, IFERROR(UNIQUE(vec), NA()),
+   vec, LET(_v, FILTER(vec0, vec0 <> ""), IF(ISERROR(_v), NA(), _v)),
+   u, LET(_u, UNIQUE(vec), IF(ISERROR(_u), NA(), _u)),
    cnt, IFERROR(MAP(u, LAMBDA(x, SUM(--(vec = x)))), NA()),
-   tab, IFERROR(FILTER(HSTACK(u, cnt), cnt >= mf), NA()),
-   IFERROR(SORT(tab, {2, 1}, {-1, 1}), NA())
+   tab, LET(_t, FILTER(HSTACK(u, cnt), cnt >= mf), IF(ISERROR(_t), NA(), _t)),
+   LET(_s, SORT(tab, {2, 1}, {-1, 1}), IF(ISERROR(_s), NA(), _s))
 ))
 
 === DESCRIPTION ===
