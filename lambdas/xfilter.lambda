@@ -2,7 +2,7 @@
 xfilter(arr, f_1, [f_2], [f_3], [f_4], [f_5])
 
 === COMMENT ===
-Multi-criteria FILTER. ANDs up to 5 boolean masks. A column-vector mask filters rows; a row-vector mask filters columns - so you can filter BOTH directions in one call. Omitted masks default to 1. Returns "" if nothing matches.
+Multi-criteria FILTER. ANDs up to 5 boolean masks. A column-vector mask filters rows; a row-vector mask filters columns - so you can filter BOTH directions in one call. Omitted masks default to 1. Returns "" if nothing matches. A single-row array is still row-filtered (a 1x1 mask is honoured, not treated as a no-op scalar), so xfilter works correctly inside a MAP over growing 1-row prefixes. Handles cells over 255 chars.
 
 === CODE ===
 =LAMBDA(arr, f_1, [f_2], [f_3], [f_4], [f_5], LET(
@@ -12,7 +12,7 @@ Multi-criteria FILTER. ANDs up to 5 boolean masks. A column-vector mask filters 
    filt3, IF(ISOMITTED(f_3), 1, f_3),
    filt4, IF(ISOMITTED(f_4), 1, f_4),
    filt5, IF(ISOMITTED(f_5), 1, f_5),
-   as_row_mask, LAMBDA(g, IF(AND(ROWS(g) = nr, COLUMNS(g) = 1, nr > 1), g, 1)),
+   as_row_mask, LAMBDA(g, IF(AND(ROWS(g) = nr, COLUMNS(g) = 1), g, 1)),
    as_col_mask, LAMBDA(g, IF(AND(COLUMNS(g) = nc, ROWS(g) = 1, nc > 1), g, 1)),
    row_mask, SEQUENCE(nr, 1, 1, 0) * as_row_mask(f_1) * as_row_mask(filt2)
       * as_row_mask(filt3) * as_row_mask(filt4) * as_row_mask(filt5),
@@ -30,6 +30,10 @@ Arguments:
   [f_2]..[f_5]  - further masks; any omitted one defaults to 1 (no effect).
 
 Each mask is applied by its shape: a column-vector mask (height = ROWS(arr)) filters ROWS; a row-vector mask (width = COLUMNS(arr)) filters COLUMNS. All row masks are multiplied together, all column masks are multiplied together, so a single call can filter BOTH rows and columns - which a native FILTER cannot.
+
+Single-row arrays are row-filtered too: a mask matching arr's height still applies even when that height is 1 (so a 1x1 FALSE mask drops the single row rather than being ignored). This matters when xfilter runs inside MAP over growing 1-row prefixes - each step filters correctly instead of returning the unfiltered value. (Column filtering still requires COLUMNS(arr) > 1, to avoid re-interpreting a 1x1 mask as a column filter.)
+
+No-match returns "" without wrapping the result in IFERROR (which would blank any element over 255 chars); genuine errors in arr propagate.
 
 Returns:
   The filtered array, or "" when nothing matches.
