@@ -12,7 +12,10 @@ Option Private Module   ' button entry points - hidden from Alt+F8, still callab
 ' Each wrapper forwards the ACTIVE hit count (correct among the currently-tested
 ' guesses, i.e. excluding already-confirmed answers) to guess_and_check.gc_feedback.
 ' Option Private Module keeps these out of Alt+F8 while their buttons still call
-' them; create_gc_sheet stays visible in module guess_and_check.
+' them; create_gc_sheet / create_gc_sheet_alt stay visible in module guess_and_check.
+'
+' The per-game-feedback variant (create_gc_sheet_alt) uses gc_alt_next (Next guess),
+' gc_alt_all / gc_alt_none (tick helpers) and the same gc_undo.
 '==============================================================================
 Option Explicit
 
@@ -89,4 +92,15 @@ Public Sub gc_reeval()
               vbQuestion + vbYesNo, "Guess and Check") = vbYes Then
         gc_do_reeval ws, CDbl(v)
     End If
+End Sub
+
+' ---- per-game feedback variant (create_gc_sheet_alt) ----
+Public Sub gc_alt_next()
+    gc_alt_feedback ActiveSheet
+End Sub
+Public Sub gc_alt_all()
+    gc_alt_set_ticks ActiveSheet, True
+End Sub
+Public Sub gc_alt_none()
+    gc_alt_set_ticks ActiveSheet, False
 End Sub
