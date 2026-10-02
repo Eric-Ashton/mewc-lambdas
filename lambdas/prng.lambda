@@ -1,0 +1,57 @@
+=== SIGNATURE ===
+prng(seed, [lo], [hi], [n])
+
+=== COMMENT ===
+Non-volatile pseudorandom integers: a vertical list of n values in lo..hi inclusive (defaults 0, 100, 1). Same arguments always give the same list; each integer is equally likely. Fully vectorised (no recursion) so large n is fast - built for Monte Carlo.
+
+=== CODE ===
+=LAMBDA(seed, [lo], [hi], [n],
+  LET(
+    low, IF(ISOMITTED(lo), 0, INT(lo)),
+    high, IF(ISOMITTED(hi), 100, INT(hi)),
+    n_out, IF(ISOMITTED(n), 1, INT(n)),
+    start, MIN(low, high),
+    span, ABS(high - low) + 1,
+    modulus, 4294967296,
+    mulmod, LAMBDA(val, mult,
+      MOD(val * MOD(mult, 65536) + MOD(val * INT(mult / 65536), 65536) * 65536, modulus)),
+    xorshift, LAMBDA(val, shift, BITXOR(val, BITRSHIFT(val, shift))),
+    mix, LAMBDA(val, LET(
+      step_a, xorshift(val, 16),
+      step_b, mulmod(step_a, 2146121005),
+      step_c, xorshift(step_b, 15),
+      step_d, mulmod(step_c, 2221713035),
+      xorshift(step_d, 16))),
+    seed_mix, mix(MOD(INT(seed), modulus)),
+    draw_ix, IF(n_out = 1, 1, SEQUENCE(n_out)),
+    keys, MOD(seed_mix + mulmod(draw_ix, 2654435761), modulus),
+    start + MOD(mix(keys), span)
+  )
+)
+
+=== DESCRIPTION ===
+Deterministic, non-volatile pseudorandom integers for simulation work.
+
+Arguments:
+  seed  - any integer. The same seed (with the same lo/hi/n) always produces the same list; different seeds give unrelated lists, even consecutive ones (1, 2, 3...).
+  [lo]  - lowest value, inclusive. Default 0.
+  [hi]  - highest value, inclusive. Default 100. (If lo > hi they are swapped.)
+  [n]   - how many numbers to return, 1 or more. Default 1.
+
+Returns:
+  A vertical array of n integers, each drawn independently and (near-)uniformly from lo..hi. With n = 1 the result is a true scalar (not a 1x1 array), so it is safe inside SEQUENCE, MAKEARRAY etc.
+
+How it works:
+  Each output is a 32-bit integer hash of (seed, position) - splitmix style: the seed is hashed, a golden-ratio Weyl step is added per position, and the result is run through a 3-round xorshift-multiply finaliser (lowbias32). All arithmetic stays below 2^53 (products are split at 16 bits) so it is bit-exact in Excel doubles. The 32-bit value is reduced with MOD to lo..hi; the bias from that is under span / 4.3 billion, i.e. negligible.
+
+Because it is stateless (no SCAN/REDUCE), the whole list is built with array arithmetic in one pass, so n of 100,000+ is fast. Unlike RAND/RANDBETWEEN/RANDARRAY it never recalculates on its own - results only change if the arguments change. Nothing else in the workbook (sheet, cell, time) affects it.
+
+Monte Carlo tips:
+  - One trial = one seed: MAP(SEQUENCE(trials), LAMBDA(t, <stat of prng(t, lo, hi, draws)>)). Use a different seed per trial, not slices of one long list.
+  - Or draw one long list prng(seed, lo, hi, trials*draws) and reshape it with WRAPROWS.
+  - Need a random real in [0,1)? prng(seed, 0, 999999, n) / 1000000.
+
+Examples:
+  prng(7)                 ->  one integer 0..100
+  prng(7, 1, 6, 10)       ->  ten dice rolls (always the same ten for seed 7)
+  prng(42, 1, 6, 10000)   ->  ten thousand dice rolls, roughly 1/6 each face
