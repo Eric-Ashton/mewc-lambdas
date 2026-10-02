@@ -40,6 +40,7 @@ Public level_link_rows() As Long
 ' effect. See FreezeEffectiveFont for the equivalent fix for cell fonts.
 Private gCaseSheets As Collection
 Private gCaseColWidths As Collection
+Private gSourceSheetNames As Collection   ' imported sheet names in the case file's own order (minus the case sheet) - drives order_worksheets
 Private gSetupAborted As Boolean    ' a stage bailed out - stop the pipeline cleanly
 
 ' Lightweight per-stage timing. TimeMark records the seconds elapsed since the
@@ -108,11 +109,6 @@ Sub setup_workbook()
     Call create_hints_sheet
     Err.Clear: Call TimeMark("14 create_hints_sheet")
 
-    ' Final UI nicety - guarded the same way (no _L1 sheet means earlier
-    ' stages failed; we don't want that to abort the cleanup).
-    Worksheets("_L1").Select
-    Err.Clear
-
     On Error GoTo ErrorHandler
     ' --- end best-effort pipeline --------------------------------------------
 
@@ -121,6 +117,16 @@ Cleanup:
     ' read-only case workbook open. import_case closes it itself on both the
     ' normal and error paths; this catches an abort raised anywhere else.
     Call CloseCaseWorkbook
+
+    ' Put the tabs in their final order (see order_worksheets). Best-effort and
+    ' skipped on an aborted run; it creates the ErrorLog sheet if needed so the
+    ' log lands in its slot rather than at the end.
+    If Not gSetupAborted Then
+        On Error Resume Next
+        Call order_worksheets
+        Err.Clear: Call TimeMark("15 order_worksheets")
+        On Error GoTo ErrorHandler
+    End If
 
     ' Write the per-stage timing breakdown to the ErrorLog sheet (columns F:H)
     ' before it is hidden, so a slow run can be diagnosed after the fact.
@@ -134,6 +140,12 @@ Cleanup:
         Set logSheet = ThisWorkbook.Sheets("ErrorLog")
         logSheet.Visible = xlSheetHidden
     End If
+
+    ' Land on _L1. Guarded: no _L1 means earlier stages failed, and that must
+    ' not abort the application-state cleanup below.
+    On Error Resume Next
+    Worksheets("_L1").Select
+    Err.Clear
 
     Application.ScreenUpdating = True
     Application.Calculation = xlCalculationAutomatic
@@ -551,6 +563,23 @@ Private Sub import_case()
     Next junk_i
     Application.DisplayAlerts = alerts_prev
 
+    ' Remember the imported sheets' names in the case file's own order, minus
+    ' the case sheet itself, for order_worksheets at the end of the run. Looked
+    ' up through the sheet objects captured at copy time, so renames (the case
+    ' sheet -> "Case", duplicates -> "Name (2)") are seen; a sheet deleted above
+    ' as add-in junk raises on .Name and is simply skipped.
+    Set gSourceSheetNames = New Collection
+    Dim src_nm As String
+    For k = 1 To srcSheetCount
+        src_nm = ""
+        On Error Resume Next
+        src_nm = copiedSheets(k).Name
+        On Error GoTo ErrorHandler
+        If src_nm <> "" Then
+            If Not copiedSheets(k) Is case_worksheet Then gSourceSheetNames.Add src_nm
+        End If
+    Next k
+
     case_worksheet.Tab.Color = RGB(255, 0, 0)
     Call TimeMark("06 locate + rename + junk-sheet cleanup")
     Exit Sub
@@ -603,13 +632,7 @@ Private Sub WriteTimingLog()
     If gTimeN = 0 Then Exit Sub
 
     Dim logSheet As Worksheet
-    If SheetExists(ThisWorkbook, "ErrorLog") Then
-        Set logSheet = ThisWorkbook.Sheets("ErrorLog")
-    Else
-        Set logSheet = ThisWorkbook.Sheets.Add( _
-            After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.count))
-        logSheet.Name = "ErrorLog"
-    End If
+    Set logSheet = ErrorLogSheet()
 
     logSheet.Range("F:H").ClearContents
     logSheet.Range("F1:H1").Value = Array("Stage", "Seconds", "Cumulative")
@@ -632,16 +655,130 @@ Private Sub WriteTimingLog()
 done:
 End Sub
 
+' Returns the ErrorLog sheet, creating it (appended to the tab strip) if it
+' doesn't exist yet. Shared by WriteTimingLog and order_worksheets.
+Private Function ErrorLogSheet() As Worksheet
+    If SheetExists(ThisWorkbook, "ErrorLog") Then
+        Set ErrorLogSheet = ThisWorkbook.Sheets("ErrorLog")
+    Else
+        Set ErrorLogSheet = ThisWorkbook.Sheets.Add( _
+            After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.count))
+        ErrorLogSheet.Name = "ErrorLog"
+    End If
+End Function
+
+' Puts the tabs in their final order:
+'   Prep, Lamb, Case, case copy (hidden), _L1, _L2, ..., AG, Hints, ErrorLog (hidden),
+'   then every other sheet imported from the case file in the case file's own
+'   order (hidden ones included, in place), then anything else that exists
+'   (sheets a user or an add-in created) in its current relative order.
+' Robustness rules, learned the hard way:
+'   * Every sheet is found BY NAME. Nothing assumes a sheet sits at a given
+'     index, because add-ins and case authors leave hidden / very-hidden sheets
+'     in unpredictable places. Names that don't exist are skipped.
+'   * Excel's Move ignores hidden neighbours: a sheet moved Before:= a hidden
+'     sheet lands before the next VISIBLE one, and a very-hidden sheet can't be
+'     moved at all. So every sheet is made visible for the duration of the
+'     shuffle and each one's original visibility is restored afterwards -
+'     including on the error path, so a very-hidden add-in sheet can never be
+'     left showing.
+'   * Positions are checked against the desired list, so a sheet that's already
+'     in place isn't touched.
+' Runs with ScreenUpdating off (setup_workbook's Cleanup), so the brief unhide
+' is never painted. Creates the ErrorLog sheet if it doesn't exist yet so the
+' log has a slot to land in.
+Private Sub order_worksheets()
+    Dim wb As Workbook
+    Set wb = attempt_workbook
+    If wb Is Nothing Then Exit Sub
+    If wb.ProtectStructure Then Exit Sub
+
+    Dim dummy As Worksheet
+    Set dummy = ErrorLogSheet()
+
+    Dim desired As Collection
+    Set desired = New Collection
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+    seen.CompareMode = vbTextCompare
+
+    Dim nm As Variant, i As Long
+    For Each nm In Array("Prep", "Lamb", "Case", "case copy")
+        Call AddSheetIfExists(wb, CStr(nm), desired, seen)
+    Next nm
+    For i = 1 To 99                       ' any _L<n> that exists, in numeric order
+        Call AddSheetIfExists(wb, "_L" & i, desired, seen)
+    Next i
+    For Each nm In Array("AG", "Hints", "ErrorLog")
+        Call AddSheetIfExists(wb, CStr(nm), desired, seen)
+    Next nm
+    If Not gSourceSheetNames Is Nothing Then
+        For Each nm In gSourceSheetNames
+            Call AddSheetIfExists(wb, CStr(nm), desired, seen)
+        Next nm
+    End If
+    Dim sh As Object
+    For Each sh In wb.Sheets               ' leftovers keep their current relative order
+        Call AddSheetIfExists(wb, sh.Name, desired, seen)
+    Next sh
+
+    ' Unhide everything (remembering what to restore), shuffle, restore.
+    Dim vis As Object
+    Set vis = CreateObject("Scripting.Dictionary")
+    For Each sh In wb.Sheets
+        vis(sh.Name) = sh.Visible
+    Next sh
+
+    On Error GoTo RestoreVis
+    For Each sh In wb.Sheets
+        If sh.Visible <> xlSheetVisible Then sh.Visible = xlSheetVisible
+    Next sh
+
+    Dim pos As Long
+    For pos = 1 To desired.count
+        Set sh = wb.Sheets(desired(pos))
+        If sh.Index <> pos Then sh.Move Before:=wb.Sheets(pos)
+    Next pos
+
+RestoreVis:
+    Dim e_num As Long, e_desc As String
+    e_num = Err.Number: e_desc = Err.Description
+    On Error Resume Next
+    For Each sh In wb.Sheets
+        If vis.Exists(sh.Name) Then
+            If sh.Visible <> vis(sh.Name) Then sh.Visible = vis(sh.Name)
+        End If
+    Next sh
+    If e_num <> 0 Then Call LogError(e_num, e_desc, "order_worksheets")
+    On Error GoTo 0
+End Sub
+
+' Appends nm to desired if a sheet (worksheet or chart sheet) of that name exists
+' and hasn't been listed yet.
+Private Sub AddSheetIfExists(ByVal wb As Workbook, ByVal nm As String, _
+                             ByVal desired As Collection, ByVal seen As Object)
+    If seen.Exists(nm) Then Exit Sub
+    Dim sh As Object
+    On Error Resume Next
+    Set sh = wb.Sheets(nm)
+    On Error GoTo 0
+    If sh Is Nothing Then Exit Sub
+    desired.Add nm
+    seen(nm) = True
+End Sub
+
 ' Freezes every cell's CURRENT effective font (Name + Size) in ws.UsedRange as
 ' direct formatting, so a later change to the workbook's shared "Normal" style
 ' (see set_normal_style) can't alter how this sheet displays. Reading a Font
 ' property back always returns the cell's true on-screen font, whether it
 ' came from direct formatting or from inheriting the Normal style -
 ' re-assigning that same value makes it direct without changing anything
-' visually. Batches a whole row in one call when that row's font is uniform
-' (the common case for body text) and only falls back to a per-cell loop for
-' rows with mixed fonts (e.g. a header cell in a different font from the rest
-' of its row), to keep this reasonably fast on a full case sheet.
+' visually. The work is done per property (Name, then Size) by FreezeFontProp,
+' which pins a whole block in one call when the block is uniform and otherwise
+' halves it and recurses - so a case sheet resolves into a few thousand block
+' writes instead of one write per cell. On the Elections case (Case 209x107 +
+' hidden Answers 209x221, header sizes mixed into most rows) that took stage
+' 05 from 21 s to under 3 s with identical results.
 Private Sub FreezeEffectiveFont(ByVal ws As Worksheet)
     On Error Resume Next
     Dim used As Range
@@ -666,24 +803,42 @@ Private Sub FreezeEffectiveFont(ByVal ws As Worksheet)
     Dim box As Range
     Set box = ws.Range(ws.Cells(1, 1), ws.Cells(lastR.Row, lastC.Column))
 
-    Dim r As Range, c As Range
-    Dim rowFontName As Variant, rowFontSize As Variant
-
-    For Each r In box.Rows
-        rowFontName = Null: rowFontSize = Null
-        rowFontName = r.Font.Name    ' Null when the row's font names differ
-        rowFontSize = r.Font.Size    ' Null when the row's font sizes differ
-        If Not IsNull(rowFontName) And Not IsNull(rowFontSize) Then
-            r.Font.Name = rowFontName
-            r.Font.Size = rowFontSize
-        Else
-            For Each c In r.Cells
-                c.Font.Name = c.Font.Name
-                c.Font.Size = c.Font.Size
-            Next c
-        End If
-    Next r
+    Call FreezeFontProp(box, True)     ' font names
+    Call FreezeFontProp(box, False)    ' font sizes
     On Error GoTo 0
+End Sub
+
+' Makes one font property (Name when doName, else Size) explicit on every cell
+' of rng, touching as few ranges as possible. Range.Font.Name / .Size return
+' the shared value when the whole block agrees and Null when it doesn't, so:
+' uniform block -> one read + one write pins every cell in it; mixed block ->
+' split in half along its longer side and recurse. Headers, tables and body
+' text form rectangular regions, which is why this converges fast. A single
+' cell that is still Null holds rich text with mixed fonts inside it; it is
+' left alone (the old per-cell loop skipped it too, via the error it raised).
+' Name and Size are handled separately because they are mixed in different
+' places - on a typical case sheet the name is uniform across whole regions
+' even where the size is not.
+Private Sub FreezeFontProp(ByVal rng As Range, ByVal doName As Boolean)
+    Dim v As Variant
+    If doName Then v = rng.Font.Name Else v = rng.Font.Size
+    If Not IsNull(v) Then
+        If doName Then rng.Font.Name = v Else rng.Font.Size = v
+        Exit Sub
+    End If
+    Dim nr As Long, nc As Long
+    nr = rng.Rows.count: nc = rng.Columns.count
+    If nr * nc <= 1 Then Exit Sub
+    Dim half As Long
+    If nr >= nc Then
+        half = nr \ 2
+        Call FreezeFontProp(rng.Resize(half, nc), doName)
+        Call FreezeFontProp(rng.Offset(half, 0).Resize(nr - half, nc), doName)
+    Else
+        half = nc \ 2
+        Call FreezeFontProp(rng.Resize(nr, half), doName)
+        Call FreezeFontProp(rng.Offset(0, half).Resize(nr, nc - half), doName)
+    End If
 End Sub
 
 ' Reads each column's CURRENT rendered width in points (an absolute, font-
