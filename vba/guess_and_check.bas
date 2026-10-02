@@ -219,8 +219,8 @@ Private Sub gc_build_sheet(ByVal alt As Boolean)
 
     ' ---- feedback labels ----
     If alt Then
-        gc.Range("E6").Value = "Tick each game the platform marked RIGHT, then click Next guess."
-        gc.Range("E7").Value = "Ticked = confirmed (stays in Submit). Un-tick a confirmed game to revoke it."
+        gc.Range("N6").Value = "Tick each game the platform marked RIGHT, then click Next guess."
+        gc.Range("N7").Value = "Ticked = confirmed (stays in Submit). Un-tick a confirmed game to revoke it."
     Else
         gc.Range("E6").Value = "Points on the platform (banked answers included):"
         gc.Range("N6").Value = "platform points"
@@ -285,8 +285,8 @@ Private Sub gc_build_sheet(ByVal alt As Boolean)
         gc_scan_regenerate gc, firstRow, lastRow, sig, (negAllowed <> 0)
         gc_format_sheet gc, firstRow, lastRow
         If alt Then
+            gc_alt_format gc, firstRow, lastRow            ' hides E:L first, so the controls are placed on final positions
             gc_alt_place_controls gc, firstRow, lastRow
-            gc_alt_format gc, firstRow, lastRow
             gc_alt_sync_ticks gc, firstRow, lastRow
         Else
             gc_place_buttons gc
@@ -1093,7 +1093,9 @@ End Sub
 ' One form-control tick box per game row, centred on its column-M cell and linked
 ' to it (so VBA reads the state from the cell, and writing the cell moves the box),
 ' plus the variant's buttons: Next guess, Undo (shared with the count version),
-' Tick all, Clear ticks.
+' Tick all, Clear ticks. With E:L hidden (gc_alt_format) column M sits right next
+' to Submit, so the box is beside the guess it refers to; the buttons go in N:R,
+' the first visible columns after it.
 Private Sub gc_alt_place_controls(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
     Dim r As Long, cell As Range, cb As Object
     For r = fr To lr
@@ -1102,12 +1104,13 @@ Private Sub gc_alt_place_controls(ByVal ws As Worksheet, ByVal fr As Long, ByVal
         cb.Name = "gc_chk_" & r
         cb.Caption = ""
         cb.LinkedCell = cell.Address(False, False)
+        cb.Placement = xlMoveAndSize
         cb.Value = xlOff
     Next r
-    gc_add_button ws, ws.Range("E8:H9"), "gc_alt_next", "gc_btnNext"
-    gc_add_button ws, ws.Range("I8:J9"), "gc_undo", "gc_btnUndo"
-    gc_add_button ws, ws.Range("E10:F11"), "gc_alt_all", "gc_btnTickAll"
-    gc_add_button ws, ws.Range("G10:H11"), "gc_alt_none", "gc_btnTickNone"
+    gc_add_button ws, ws.Range("N8:P9"), "gc_alt_next", "gc_btnNext"
+    gc_add_button ws, ws.Range("Q8:R9"), "gc_undo", "gc_btnUndo"
+    gc_add_button ws, ws.Range("N10:O11"), "gc_alt_all", "gc_btnTickAll"
+    gc_add_button ws, ws.Range("P10:Q11"), "gc_alt_none", "gc_btnTickNone"
     On Error Resume Next
     ws.Buttons("gc_btnNext").Caption = "Next guess"
     ws.Buttons("gc_btnNext").Font.Bold = True
@@ -1131,12 +1134,17 @@ Private Sub gc_alt_format(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As L
             .Borders.LineStyle = xlContinuous: .Borders.Color = RGB(200, 200, 200)
             .HorizontalAlignment = xlCenter
         End With
-        .Columns(COL_CHK).ColumnWidth = 7
-        .Columns("K:L").Hidden = True               ' attribution scratch - unused by this variant
+        .Columns(COL_CHK).ColumnWidth = 8
+        ' Hide the search's internal state (Elim Min/Max, Tried Extras, hint walls,
+        ' initial guess, attribution scratch) so the tick column lands right beside
+        ' Submit: the operator reads Game | Correct | Guess | Submit | Right?. Unhide
+        ' E:L to inspect the state; nothing there is edited by hand.
+        .Columns("E:L").Hidden = True
+        .Columns("N:R").ColumnWidth = 10
         With .Range(FB_CELL)                        ' no "8+ points" entry cell on this variant
             .Interior.ColorIndex = xlNone: .Borders.LineStyle = xlNone
         End With
-        .Range("E6").Font.Bold = True: .Range("E7").Font.Size = 9
+        .Range("N6").Font.Bold = True: .Range("N7").Font.Size = 9
     End With
 End Sub
 

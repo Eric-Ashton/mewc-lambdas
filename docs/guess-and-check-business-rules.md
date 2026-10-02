@@ -629,9 +629,9 @@ setup block (§5), the working table (§7, columns `A:L`), the value search (§8
 | | count version | per-game version |
 |---|---|---|
 | sheet name | `_GCN` | `_GCNalt` |
-| per-game input | — | column **M `Right?`**: one form-control tick box per game, linked to its `M` cell (`TRUE`/`FALSE`, hidden behind the box with `;;;`) |
-| buttons | `0…7`, `8+ pts`, `Undo`, `Re-evaluate` | **`Next guess`**, `Undo`, `Tick all`, `Clear ticks` |
-| attribution | §8.2 stack | none (`K:L` hidden, unused) |
+| per-game input | — | column **M `Right?`**: one form-control tick box per game, linked to its `M` cell (`TRUE`/`FALSE`, hidden behind the box with `;;;`). The state columns **`E:L` are hidden** on this sheet so `M` sits right beside `Submit` (unhide them to inspect `Elim`/`Tried`/hints; nothing there is hand-edited) |
+| buttons | `0…7`, `8+ pts`, `Undo`, `Re-evaluate` | **`Next guess`**, `Undo`, `Tick all`, `Clear ticks` (in `N:R`, the first visible columns after the tick column) |
+| attribution | §8.2 stack | none (`K:L` unused) |
 
 **`Next guess`** (`gc_alt_next` → `gc_alt_feedback`), per game row:
 
