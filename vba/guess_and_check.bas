@@ -30,6 +30,14 @@ Attribute VB_Name = "guess_and_check"
 ' Confirmed answers stay in the submitted column, so the leaderboard banks points
 ' continuously; the buttons show the ABSOLUTE score the platform will display.
 ' Every feedback snapshots state first, so one bad click can be undone.
+'
+' create_gc_sheet_alt is the PER-GAME-FEEDBACK variant, for the set-ups where the
+' platform shows a tick / cross against every game instead of only a level total.
+' It builds the same sheet ("_GCnalt") from the same parse, but instead of the
+' count buttons it has one tick box per game and a single "Next guess" button:
+' ticked guesses are confirmed, un-ticked guesses are eliminated, every unsolved
+' game moves to its next candidate (same value search as above). No attribution
+' search is needed because the platform already says which. Undo works the same.
 '==============================================================================
 Option Explicit
 
@@ -47,6 +55,9 @@ Private Const COL_INIT As Long = 10       'J  seed guess per game
 Private Const COL_ATTR As Long = 11       'K  parked candidate value during attribution
 Private Const COL_GRP As Long = 12        'L  attribution group tag (see below)
 Private Const LAST_COL As Long = 12
+Private Const COL_CHK As Long = 13        'M  per-game variant only: TRUE = platform marked this game right (tick box linked cell)
+Private Const SNAP_LAST_COL As Long = 13  ' undo snapshot covers B..M (M is simply blank on a count-feedback sheet)
+Private Const ALT_HEADER_TEXT As String = "Right?"
 
 ' Group tags in COL_GRP: blank = not a candidate; >0 = pending stacked group id;
 ' GRP_ACTIVE = the half submitted now; GRP_SIB = its held sibling.
@@ -83,7 +94,21 @@ Private Const OPEN_HI As Double = 1E+300
 '==============================================================================
 ' PUBLIC entry point
 '==============================================================================
+' Count-feedback version: the platform shows only the level's points.
 Public Sub create_gc_sheet()
+    gc_build_sheet False
+End Sub
+
+' Per-game-feedback version: the platform shows a tick / cross for every game.
+' Builds "_GCnalt" with one tick box per game and a "Next guess" button.
+Public Sub create_gc_sheet_alt()
+    gc_build_sheet True
+End Sub
+
+' Shared builder: parse the active _LX sheet, create the sheet, lay down the setup
+' block + working table, first guesses, formatting and the controls for either
+' variant (alt = per-game tick boxes; otherwise the count buttons).
+Private Sub gc_build_sheet(ByVal alt As Boolean)
     Dim src As Worksheet
     Set src = ActiveSheet
 
@@ -171,7 +196,7 @@ Public Sub create_gc_sheet()
     Application.ScreenUpdating = False
     Dim gc As Worksheet
     Set gc = src.Parent.Worksheets.Add(After:=src)
-    gc.Name = gc_unique_name(src.Parent, "_GC" & lvl)
+    gc.Name = gc_unique_name(src.Parent, IIf(alt, "_GC" & lvl & "alt", "_GC" & lvl))
 
     ' ---- setup block ----
     gc.Range("A2").Value = "Level N":            gc.Range("B2").Value = lvl
@@ -193,9 +218,14 @@ Public Sub create_gc_sheet()
     gc.Range("C5").Formula = "=IF(T5="""",""(no button pressed yet)"",""Last: ""&T5)"
 
     ' ---- feedback labels ----
-    gc.Range("E6").Value = "Points on the platform (banked answers included):"
-    gc.Range("N6").Value = "platform points"
-    gc.Range("N7").Value = "(8+ / re-eval):"
+    If alt Then
+        gc.Range("E6").Value = "Tick each game the platform marked RIGHT, then click Next guess."
+        gc.Range("E7").Value = "Ticked = confirmed (stays in Submit). Un-tick a confirmed game to revoke it."
+    Else
+        gc.Range("E6").Value = "Points on the platform (banked answers included):"
+        gc.Range("N6").Value = "platform points"
+        gc.Range("N7").Value = "(8+ / re-eval):"
+    End If
 
     ' ---- diagnostics ----
     gc.Range("A12").Formula = "=COUNT(A14:A1000)"
@@ -216,6 +246,7 @@ Public Sub create_gc_sheet()
     gc.Range("J13").Value = "Initial Guess"
     gc.Range("K13").Value = "Attribution"
     gc.Range("L13").Value = "Grp"
+    If alt Then gc.Range("M13").Value = ALT_HEADER_TEXT
 
     ' ---- one row per game ----
     Dim nGames As Long, rr As Long
@@ -253,8 +284,14 @@ Public Sub create_gc_sheet()
     If gc_locate(gc, firstRow, lastRow) Then
         gc_scan_regenerate gc, firstRow, lastRow, sig, (negAllowed <> 0)
         gc_format_sheet gc, firstRow, lastRow
-        gc_place_buttons gc
-        gc_recaption gc
+        If alt Then
+            gc_alt_place_controls gc, firstRow, lastRow
+            gc_alt_format gc, firstRow, lastRow
+            gc_alt_sync_ticks gc, firstRow, lastRow
+        Else
+            gc_place_buttons gc
+            gc_recaption gc
+        End If
         gc_copy_submit gc, firstRow, lastRow
     End If
 
@@ -342,11 +379,11 @@ Public Sub gc_apply_undo(ByVal ws As Worksheet)
     End If
     Application.ScreenUpdating = False
 
-    ' restore B,C (cols 2,3) and E..L (cols 5..12); D is a formula, leave it
+    ' restore B,C (cols 2,3) and E..M (cols 5..13; M = the alt variant's ticks); D is a formula, leave it
     ws.Range(ws.Cells(13, 2), ws.Cells(lastRow, 3)).Value = _
         ws.Range(ws.Cells(13, BAK_DATA_COL), ws.Cells(lastRow, BAK_DATA_COL + 1)).Value
-    ws.Range(ws.Cells(13, 5), ws.Cells(lastRow, LAST_COL)).Value = _
-        ws.Range(ws.Cells(13, BAK_DATA_COL + 3), ws.Cells(lastRow, BAK_DATA_COL + LAST_COL - 2)).Value
+    ws.Range(ws.Cells(13, 5), ws.Cells(lastRow, SNAP_LAST_COL)).Value = _
+        ws.Range(ws.Cells(13, BAK_DATA_COL + 3), ws.Cells(lastRow, BAK_DATA_COL + SNAP_LAST_COL - 2)).Value
     ' restore scalars + stack (T..V)
     ws.Range(ws.Cells(1, 20), ws.Cells(60, 22)).Value = _
         ws.Range(ws.Cells(1, BAK_STATE_COL), ws.Cells(60, BAK_STATE_COL + 2)).Value
@@ -932,11 +969,175 @@ Private Sub gc_log(ByVal ws As Worksheet, ByVal msg As String)
 End Sub
 
 ' Snapshot mutable state (values only, no clipboard) for one-level undo.
+' Covers B..M so the alt variant's tick column is restored with everything else.
 Private Sub gc_snapshot(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
-    ws.Range(ws.Cells(13, BAK_DATA_COL), ws.Cells(lr, BAK_DATA_COL + LAST_COL - 2)).Value = _
-        ws.Range(ws.Cells(13, 2), ws.Cells(lr, LAST_COL)).Value
+    ws.Range(ws.Cells(13, BAK_DATA_COL), ws.Cells(lr, BAK_DATA_COL + SNAP_LAST_COL - 2)).Value = _
+        ws.Range(ws.Cells(13, 2), ws.Cells(lr, SNAP_LAST_COL)).Value
     ws.Range(ws.Cells(1, BAK_STATE_COL), ws.Cells(60, BAK_STATE_COL + 2)).Value = _
         ws.Range(ws.Cells(1, 20), ws.Cells(60, 22)).Value
+End Sub
+
+
+'==============================================================================
+' Per-game feedback variant (create_gc_sheet_alt)
+'==============================================================================
+
+' PUBLIC "Next guess" handler for the per-game variant (called by gc_buttons; the
+' argument keeps it out of Alt+F8). Reads the tick column:
+'   guess out + ticked      -> confirmed (copied to Correct Answers)
+'   guess out + not ticked  -> wrong (eliminated: block / Tried Extras)
+'   confirmed + un-ticked   -> revoked (after a confirm prompt): its answer is
+'                              eliminated and the game is searched again
+' then every unsolved game gets its next candidate (same value search as the
+' count version) and the ticks are re-synced so ticked = confirmed.
+Public Sub gc_alt_feedback(ByVal ws As Worksheet)
+    Dim fr As Long, lr As Long
+    If Not gc_locate(ws, fr, lr) Then
+        MsgBox "This doesn't look like a guess-and-check sheet.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    If Not gc_alt_is_alt_sheet(ws, fr) Then
+        MsgBox "This sheet has no '" & ALT_HEADER_TEXT & "' tick column - use its own feedback buttons.", _
+               vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    Dim sig As Double: sig = CDbl(ws.Range(SIG_CELL).Value)
+    Dim nv As Variant: nv = ws.Range(NEG_CELL).Value
+    Dim neg As Boolean: neg = (IsNumeric(nv) And Val(CStr(nv)) <> 0)
+
+    ' ---- tally first (no state change until we know there is something to do) ----
+    Dim r As Long, nRight As Long, nWrong As Long, nRevoked As Long
+    For r = fr To lr
+        If gc_has(ws, r, COL_GUESS) Then
+            If gc_alt_ticked(ws, r) Then nRight = nRight + 1 Else nWrong = nWrong + 1
+        ElseIf gc_is_solved(ws, r) Then
+            If Not gc_alt_ticked(ws, r) Then nRevoked = nRevoked + 1
+        End If
+    Next r
+    If nRight + nWrong + nRevoked = 0 Then
+        MsgBox "Nothing to score: no guesses are out and no confirmed game has been un-ticked.", _
+               vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    If nRevoked > 0 Then
+        If MsgBox(nRevoked & " confirmed game(s) have been un-ticked." & vbLf & vbLf & _
+                  "Treat their answers as WRONG and search them again?" & vbLf & _
+                  "(No = keep them confirmed and score only the current guesses.)", _
+                  vbQuestion + vbYesNo, "Guess and Check") <> vbYes Then nRevoked = 0
+    End If
+
+    Application.ScreenUpdating = False
+    gc_snapshot ws, fr, lr                                   ' undo point BEFORE any change
+    For r = fr To lr
+        If gc_has(ws, r, COL_GUESS) Then
+            If gc_alt_ticked(ws, r) Then
+                ws.Cells(r, COL_CORRECT).Value = ws.Cells(r, COL_GUESS).Value
+            Else
+                gc_eliminate ws, r, CDbl(ws.Cells(r, COL_GUESS).Value), sig
+            End If
+            ws.Cells(r, COL_GUESS).ClearContents
+        ElseIf nRevoked > 0 And gc_is_solved(ws, r) Then
+            If Not gc_alt_ticked(ws, r) Then
+                gc_eliminate ws, r, CDbl(ws.Cells(r, COL_CORRECT).Value), sig
+                ws.Cells(r, COL_CORRECT).ClearContents
+            End If
+        End If
+    Next r
+    gc_scan_regenerate ws, fr, lr, sig, neg
+    gc_alt_sync_ticks ws, fr, lr
+
+    ws.Range(ST_ROUND).Value = CLng(ws.Range(ST_ROUND).Value) + 1
+    Dim msg As String: msg = nRight & " right, " & nWrong & " wrong"
+    If nRevoked > 0 Then msg = msg & ", " & nRevoked & " revoked"
+    gc_log ws, msg
+    gc_copy_submit ws, fr, lr
+    Application.ScreenUpdating = True
+End Sub
+
+' PUBLIC "Tick all" / "Clear ticks" (arg keeps it out of Alt+F8): sets the tick on
+' every game that currently has a guess out. Confirmed games keep their tick.
+Public Sub gc_alt_set_ticks(ByVal ws As Worksheet, ByVal tick As Boolean)
+    Dim fr As Long, lr As Long
+    If Not gc_locate(ws, fr, lr) Then
+        MsgBox "This doesn't look like a guess-and-check sheet.", vbExclamation, "Guess and Check"
+        Exit Sub
+    End If
+    If Not gc_alt_is_alt_sheet(ws, fr) Then Exit Sub
+    Dim r As Long
+    For r = fr To lr
+        If gc_has(ws, r, COL_GUESS) Then ws.Cells(r, COL_CHK).Value = tick
+    Next r
+End Sub
+
+' The per-game sheet is recognised by its "Right?" header over the tick column;
+' guards the alt handlers against a count-feedback sheet, where every guess
+' would otherwise read as un-ticked = wrong.
+Private Function gc_alt_is_alt_sheet(ByVal ws As Worksheet, ByVal fr As Long) As Boolean
+    gc_alt_is_alt_sheet = (LCase$(Trim$(CStr(ws.Cells(fr - 1, COL_CHK).Value))) = LCase$(ALT_HEADER_TEXT))
+End Function
+
+' Tick state of game r: the box's linked cell holds TRUE/FALSE (anything else = no tick).
+Private Function gc_alt_ticked(ByVal ws As Worksheet, ByVal r As Long) As Boolean
+    Dim v As Variant: v = ws.Cells(r, COL_CHK).Value
+    If VarType(v) = vbBoolean Then gc_alt_ticked = v
+End Function
+
+' After a round: ticked = confirmed, so the operator only ticks what is newly right.
+Private Sub gc_alt_sync_ticks(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
+    Dim r As Long
+    For r = fr To lr
+        ws.Cells(r, COL_CHK).Value = gc_is_solved(ws, r)
+    Next r
+End Sub
+
+' One form-control tick box per game row, centred on its column-M cell and linked
+' to it (so VBA reads the state from the cell, and writing the cell moves the box),
+' plus the variant's buttons: Next guess, Undo (shared with the count version),
+' Tick all, Clear ticks.
+Private Sub gc_alt_place_controls(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
+    Dim r As Long, cell As Range, cb As Object
+    For r = fr To lr
+        Set cell = ws.Cells(r, COL_CHK)
+        Set cb = ws.CheckBoxes.Add(cell.Left + (cell.Width - 14) / 2, cell.Top, 14, cell.Height)
+        cb.Name = "gc_chk_" & r
+        cb.Caption = ""
+        cb.LinkedCell = cell.Address(False, False)
+        cb.Value = xlOff
+    Next r
+    gc_add_button ws, ws.Range("E8:H9"), "gc_alt_next", "gc_btnNext"
+    gc_add_button ws, ws.Range("I8:J9"), "gc_undo", "gc_btnUndo"
+    gc_add_button ws, ws.Range("E10:F11"), "gc_alt_all", "gc_btnTickAll"
+    gc_add_button ws, ws.Range("G10:H11"), "gc_alt_none", "gc_btnTickNone"
+    On Error Resume Next
+    ws.Buttons("gc_btnNext").Caption = "Next guess"
+    ws.Buttons("gc_btnNext").Font.Bold = True
+    ws.Buttons("gc_btnUndo").Caption = "Undo"
+    ws.Buttons("gc_btnTickAll").Caption = "Tick all"
+    ws.Buttons("gc_btnTickNone").Caption = "Clear ticks"
+    On Error GoTo 0
+End Sub
+
+' Cosmetic tweaks on top of gc_format_sheet for the per-game variant.
+Private Sub gc_alt_format(ByVal ws As Worksheet, ByVal fr As Long, ByVal lr As Long)
+    Dim hdr As Long: hdr = fr - 1
+    With ws
+        .Range("A1").Value = "Guess & Check (per-game feedback)  -  Level " & .Range("B2").Value
+        With .Cells(hdr, COL_CHK)
+            .Interior.Color = RGB(47, 117, 181): .Font.Color = RGB(255, 255, 255): .Font.Bold = True
+            .HorizontalAlignment = xlCenter: .WrapText = True
+        End With
+        With .Range(.Cells(fr, COL_CHK), .Cells(lr, COL_CHK))
+            .NumberFormat = ";;;"                    ' TRUE/FALSE stays readable to VBA, invisible behind the box
+            .Borders.LineStyle = xlContinuous: .Borders.Color = RGB(200, 200, 200)
+            .HorizontalAlignment = xlCenter
+        End With
+        .Columns(COL_CHK).ColumnWidth = 7
+        .Columns("K:L").Hidden = True               ' attribution scratch - unused by this variant
+        With .Range(FB_CELL)                        ' no "8+ points" entry cell on this variant
+            .Interior.ColorIndex = xlNone: .Borders.LineStyle = xlNone
+        End With
+        .Range("E6").Font.Bold = True: .Range("E7").Font.Size = 9
+    End With
 End Sub
 
 

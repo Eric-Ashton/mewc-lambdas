@@ -609,3 +609,48 @@ working sheet readable at a glance.
 | 3 | Example answer non-numeric (text / alphanumeric / delimited series) | Abort: **"Guess and Check only works on numeric answers"**; no sheet created (§11.3). |
 | 4 | Multiple examples (`ExampleNa`, `ExampleNb`, …) | Use the mean of the examples as the example component; still 50/50 vs. hint mean (§11.6). |
 | 5 | `_GCN` already exists | Create the next free `_GCN(2)`, `_GCN(3)`, … — never overwrite (§11.1). |
+
+---
+
+## 12. Per-game feedback variant — `create_gc_sheet_alt`
+
+Some MEWC set-ups show a **tick / cross against every game** instead of only the
+level total. Then no attribution search is needed — the platform already says
+*which* — and the loop collapses to "mark what was right, get the next guesses".
+`create_gc_sheet_alt` (same module, also Alt+F8-visible) builds that sheet.
+
+**Same as the count version:** run it from an `_LX` tab; the parse (§11), the
+setup block (§5), the working table (§7, columns `A:L`), the value search (§8.4–
+8.5: priority values, outward scan, hint walls, `Elim`/`Tried` state), the
+`Submit` column, the `C5` last-action indicator, and one-level **Undo** (§8.6).
+
+**Different:**
+
+| | count version | per-game version |
+|---|---|---|
+| sheet name | `_GCN` | `_GCNalt` |
+| per-game input | — | column **M `Right?`**: one form-control tick box per game, linked to its `M` cell (`TRUE`/`FALSE`, hidden behind the box with `;;;`) |
+| buttons | `0…7`, `8+ pts`, `Undo`, `Re-evaluate` | **`Next guess`**, `Undo`, `Tick all`, `Clear ticks` |
+| attribution | §8.2 stack | none (`K:L` hidden, unused) |
+
+**`Next guess`** (`gc_alt_next` → `gc_alt_feedback`), per game row:
+
+- guess out **and ticked** → confirmed: the guess moves to `Correct Answers`.
+- guess out **and not ticked** → wrong: the guess is eliminated (§8.3), exactly as a
+  `k = 0` scan would do for it.
+- **confirmed but un-ticked** → *revoke*, after a Yes/No prompt: the confirmed value
+  is eliminated and the game is searched again (the way to fix a mis-tick from an
+  earlier round without an `Undo` chain; **No** keeps it confirmed).
+
+Then every unsolved game gets its next candidate (§8.4) and the ticks are re-synced
+so that **ticked = confirmed** — the operator only ticks what is *newly* right each
+round. The `Submit` column is copied to the clipboard as before.
+
+Guards: nothing out and nothing revoked → "Nothing to score" (no state change); the
+handlers refuse a sheet without the `Right?` header, so they can't be pointed at a
+count-feedback sheet (where every guess would read as un-ticked = wrong). Every
+`Next guess` snapshots first (the snapshot now covers `B:M`, so `Undo` restores the
+ticks too); the snapshot columns are unchanged for the count version.
+
+**Operator loop:** paste `Submit` → read the per-game ticks on the platform → tick
+the matching rows (or `Tick all` then un-tick the crosses) → `Next guess` → repeat.
