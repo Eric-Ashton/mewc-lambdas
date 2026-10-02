@@ -141,10 +141,12 @@ Cleanup:
         logSheet.Visible = xlSheetHidden
     End If
 
-    ' Land on _L1. Guarded: no _L1 means earlier stages failed, and that must
-    ' not abort the application-state cleanup below.
+    ' Land on the Case sheet scrolled to its general instructions, so the
+    ' operator can finish reading before moving to _L1. ScreenUpdating goes
+    ' back on right below, which paints this view. Guarded: must not abort
+    ' the application-state cleanup.
     On Error Resume Next
-    Worksheets("_L1").Select
+    Call show_case_instructions(False)
     Err.Clear
 
     Application.ScreenUpdating = True
@@ -393,52 +395,8 @@ Private Sub import_case()
     attempt_workbook.Sheets(destBase).Visible = anchorVis
     Call TimeMark("04 copy case sheets in")
 
-    ' Freeze each copied sheet's CURRENT effective font (name + size) as
-    ' direct cell formatting, and capture its CURRENT column widths in
-    ' points, before set_normal_style (the next pipeline stage) repoints the
-    ' workbook's shared "Normal" style to Aptos Narrow 11. Any cell here that
-    ' never had its own explicit font is currently inheriting from Normal,
-    ' and every column's ColumnWidth is denominated in Normal's character
-    ' metrics - so without this, both would silently reflow the moment
-    ' Normal changes, even though the on-screen appearance right now
-    ' (immediately after copy) is exactly right. Capturing worksheet OBJECT
-    ' references (not names/indices) so this survives the visibility restore
-    ' and junk-sheet cleanup below, and MakeCaseCopy's later same-workbook
-    ' .Copy of case_worksheet inherits both fixes for free.
-    Dim copiedSheets() As Worksheet
-    ReDim copiedSheets(1 To srcSheetCount)
-    Set gCaseSheets = New Collection
-    Set gCaseColWidths = New Collection
-    ' Prep's own columns are denominated in the OLD Normal font too, so capture
-    ' it alongside the copied sheets - otherwise set_normal_style leaves the
-    ' Prep sheet visibly shrunk once Normal becomes Aptos Narrow 11.
-    gCaseSheets.Add prep_worksheet
-    gCaseColWidths.Add CaptureColumnWidths(prep_worksheet)
-    For k = 1 To srcSheetCount
-        Set copiedSheets(k) = attempt_workbook.Sheets(destBase + k)
-        Call FreezeEffectiveFont(copiedSheets(k))
-        gCaseSheets.Add copiedSheets(k)
-        gCaseColWidths.Add CaptureColumnWidths(copiedSheets(k))
-    Next k
-
-    ' Adopt the case workbook's THEME COLORS (a separate mechanism from font
-    ' and column width, and unlike those, one we deliberately want to match
-    ' the case rather than the template - see AdoptCaseThemeColors). Must run
-    ' while case_workbook is still open, below.
-    Call AdoptCaseThemeColors
-
-    ' Move focus off the just-copied sheets so we can re-hide any of them
-    prep_worksheet.Activate
-
-    ' Restore each copied sheet's original visibility on the destination
-    For k = 1 To srcSheetCount
-        On Error Resume Next
-        attempt_workbook.Sheets(destBase + k).Visible = origVisibility(k)
-        On Error GoTo ErrorHandler
-    Next k
-
-    Call CloseCaseWorkbook
-    Call TimeMark("05 freeze fonts + theme + restore visibility")
+    ' Identify (and rename) the case sheet NOW - before the font freeze and
+    ' the rest of the build - so it can be put on screen while setup runs.
 
     ' --- Locate the case-content sheet among the sheets we just copied ---
     ' Only inspect the freshly-imported range (destBase+1 .. destBase+srcSheetCount)
@@ -510,6 +468,7 @@ Private Sub import_case()
     Else
         MsgBox "Error: none of " & Join(candidate_names, ", ") & _
                " worksheets were found in the imported case.", vbCritical
+        Call CloseCaseWorkbook
         Exit Sub
     End If
 
@@ -521,6 +480,55 @@ Private Sub import_case()
     ' position indexing (the new copy ends up BEFORE the veryHidden tail
     ' rather than after it). Delete them so downstream code (MakeCaseCopy,
     ' create_level_worksheets, etc.) operates on a clean workbook.
+    Call show_case_instructions(True)
+    Call TimeMark("04b locate case sheet + show instructions")
+
+    ' Freeze each copied sheet's CURRENT effective font (name + size) as
+    ' direct cell formatting, and capture its CURRENT column widths in
+    ' points, before set_normal_style (the next pipeline stage) repoints the
+    ' workbook's shared "Normal" style to Aptos Narrow 11. Any cell here that
+    ' never had its own explicit font is currently inheriting from Normal,
+    ' and every column's ColumnWidth is denominated in Normal's character
+    ' metrics - so without this, both would silently reflow the moment
+    ' Normal changes, even though the on-screen appearance right now
+    ' (immediately after copy) is exactly right. Capturing worksheet OBJECT
+    ' references (not names/indices) so this survives the visibility restore
+    ' and junk-sheet cleanup below, and MakeCaseCopy's later same-workbook
+    ' .Copy of case_worksheet inherits both fixes for free.
+    Dim copiedSheets() As Worksheet
+    ReDim copiedSheets(1 To srcSheetCount)
+    Set gCaseSheets = New Collection
+    Set gCaseColWidths = New Collection
+    ' Prep's own columns are denominated in the OLD Normal font too, so capture
+    ' it alongside the copied sheets - otherwise set_normal_style leaves the
+    ' Prep sheet visibly shrunk once Normal becomes Aptos Narrow 11.
+    gCaseSheets.Add prep_worksheet
+    gCaseColWidths.Add CaptureColumnWidths(prep_worksheet)
+    For k = 1 To srcSheetCount
+        Set copiedSheets(k) = attempt_workbook.Sheets(destBase + k)
+        Call FreezeEffectiveFont(copiedSheets(k))
+        gCaseSheets.Add copiedSheets(k)
+        gCaseColWidths.Add CaptureColumnWidths(copiedSheets(k))
+    Next k
+
+    ' Adopt the case workbook's THEME COLORS (a separate mechanism from font
+    ' and column width, and unlike those, one we deliberately want to match
+    ' the case rather than the template - see AdoptCaseThemeColors). Must run
+    ' while case_workbook is still open, below.
+    Call AdoptCaseThemeColors
+
+    ' Move focus off the just-copied sheets so we can re-hide any of them
+    prep_worksheet.Activate
+
+    ' Restore each copied sheet's original visibility on the destination
+    For k = 1 To srcSheetCount
+        On Error Resume Next
+        attempt_workbook.Sheets(destBase + k).Visible = origVisibility(k)
+        On Error GoTo ErrorHandler
+    Next k
+
+    Call CloseCaseWorkbook
+    Call TimeMark("05 freeze fonts + theme + restore visibility")
     alerts_prev = Application.DisplayAlerts
     Application.DisplayAlerts = False
     Dim junk_i As Long
@@ -581,7 +589,7 @@ Private Sub import_case()
     Next k
 
     case_worksheet.Tab.Color = RGB(255, 0, 0)
-    Call TimeMark("06 locate + rename + junk-sheet cleanup")
+    Call TimeMark("06 junk-sheet cleanup")
     Exit Sub
 
 ErrorHandler:
@@ -859,6 +867,51 @@ Private Function CaptureColumnWidths(ByVal ws As Worksheet) As Variant
     Next i
     CaptureColumnWidths = widths
 End Function
+
+' Puts the Case sheet on screen scrolled so its "Instructions" header sits at
+' the top of the window - the general instructions are the first thing worth
+' reading, and setup is otherwise dead time. Called twice:
+'   paint_now = True  - early in import_case, right after the case sheet is
+'                       identified: briefly turns ScreenUpdating on so Excel
+'                       paints this view, then turns it off again. Nothing
+'                       else repaints until setup ends, so the instructions
+'                       stay on screen for the whole build.
+'   paint_now = False - at the very end (setup_workbook's Cleanup), to leave
+'                       the operator on the same view; Cleanup turns
+'                       ScreenUpdating on right after, which paints it.
+' The header is looked up by value in column B ("Instructions" exactly, then
+' any cell containing it); if there is none the sheet is shown from row 1.
+' Best-effort: never raises.
+Private Sub show_case_instructions(ByVal paint_now As Boolean)
+    On Error Resume Next
+    If case_worksheet Is Nothing Then Exit Sub
+
+    Dim hit As Range
+    Dim top_row As Long
+    top_row = 1
+    Set hit = case_worksheet.Columns("B").Find(What:="Instructions", LookIn:=xlValues, _
+        LookAt:=xlWhole, SearchOrder:=xlByRows, MatchCase:=False)
+    If hit Is Nothing Then
+        Set hit = case_worksheet.Columns("B").Find(What:="Instructions", LookIn:=xlValues, _
+            LookAt:=xlPart, SearchOrder:=xlByRows, MatchCase:=False)
+    End If
+    If Not hit Is Nothing Then top_row = hit.Row
+
+    ' The read-only case workbook may still be open and active at this point;
+    ' make sure it is the attempt workbook's window we scroll and paint.
+    attempt_workbook.Activate
+    case_worksheet.Activate
+    With ActiveWindow
+        .ScrollColumn = 1
+        .ScrollRow = top_row
+    End With
+    If paint_now Then
+        Application.ScreenUpdating = True
+        DoEvents
+        Application.ScreenUpdating = False
+    End If
+    On Error GoTo 0
+End Sub
 
 ' Adopts the case workbook's THEME COLORS (Dark1/Light1, Dark2/Light2,
 ' Accent1-6, Hyperlink, FollowedHyperlink) so puzzle content that uses a
