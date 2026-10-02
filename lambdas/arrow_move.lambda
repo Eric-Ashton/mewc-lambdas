@@ -2,7 +2,7 @@
 arrow_move(start_ad, arrow, [steps], [board_rng], [push_mode])
 
 === COMMENT ===
-Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction (arrow glyph, its numeric equivalent, or a letter code like "R"/"UL"), bounded by board_rng (default whole sheet). Returns a NUMERIC address. Out of bounds, push_mode: 0 = report "oob;<row>;<col>" with the intended (possibly zero/negative) coordinates (default), 1 = stop at edge, -1 = stay at start.
+Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction (arrow glyph, its numeric equivalent, or a letter code like "R"/"UL"), bounded by board_rng - a range or a range string like "A1:Z100" (default whole sheet). Returns a NUMERIC address. Out of bounds, push_mode: 0 = report "oob;<row>;<col>" with the intended (possibly zero/negative) coordinates (default), 1 = stop at edge, -1 = stay at start.
 
 === CODE ===
 =LAMBDA(start_ad, arrow, [steps], [board_rng], [push_mode],
@@ -15,10 +15,17 @@ Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction 
     arr_norm, z_dir_to_arrow(arrow),
     d_row, SWITCH(arr_norm, "←", 0, "↖", -1, "↗", -1, "→", 0, "↙", 1, "↓", 1, "↘", 1, "↑", -1),
     d_col, SWITCH(arr_norm, "←", -1, "↖", -1, "↗", 1, "→", 1, "↙", -1, "↓", 0, "↘", 1, "↑", 0),
-    row_min, IF(ISOMITTED(board_rng), 1, MIN(ROW(board_rng))),
-    row_max, IF(ISOMITTED(board_rng), 1048576, MAX(ROW(board_rng))),
-    col_min, IF(ISOMITTED(board_rng), 1, MIN(COLUMN(board_rng))),
-    col_max, IF(ISOMITTED(board_rng), 16384, MAX(COLUMN(board_rng))),
+    one_val, IF(ISOMITTED(board_rng), FALSE, ROWS(board_rng) * COLUMNS(board_rng) = 1),
+    text_box, IF(one_val, IFERROR(z_ad_box(board_rng), 0), 0),
+    box, IF(ISOMITTED(board_rng), VSTACK(1, 1, 1048576, 16384),
+         IF(COUNT(text_box) = 4, text_box,
+         IF(ISREF(board_rng),
+            VSTACK(MIN(ROW(board_rng)), MIN(COLUMN(board_rng)), MAX(ROW(board_rng)), MAX(COLUMN(board_rng))),
+            #VALUE!))),
+    row_min, SUM(INDEX(box, 1)),
+    col_min, SUM(INDEX(box, 2)),
+    row_max, SUM(INDEX(box, 3)),
+    col_max, SUM(INDEX(box, 4)),
     try_row, start_row + d_row * step_n,
     try_col, start_col + d_col * step_n,
     push_row, MIN(MAX(try_row, row_min), row_max),
@@ -41,13 +48,18 @@ Arguments:
   start_ad    - starting cell as a numeric address or an A1 string (coerced with num_ad).
   arrow       - direction as a standard arrow (↑↓←→↖↗↙↘), its numeric equivalent (1, -1000000, ...), or a letter code (U D L R UL UR DL DR).
   [steps]     - number of steps (default 1).
-  [board_rng] - bounding range (default whole sheet).
+  [board_rng] - the board's bounds (default whole sheet): a range reference (A1:Z100) OR a range string ("A1:Z100") - see below.
   [push_mode] - out-of-bounds behavior:
                   0 = report "oob" (default) - returns the string "oob;<row>;<col>"
                       where row/col are the INTENDED coordinates, kept even when
                       zero or negative so you can see where the move pointed.
                   1 = stop at edge - clamp to the nearest in-bounds cell.
                  -1 = stay at start - return the starting address unchanged.
+
+How the board is read (a single shared rule, so a range and its text behave the same):
+  1. a single value whose CONTENT parses as an address or range - text like "A2:B5", "$A$2:$B$5", a reversed "B5:A2", a numeric range "2000001:5000002", or a single address "A2" (one cell) - is used as that range. It can be typed in the formula or sit in a cell (e.g. the output of expand_rng).
+  2. otherwise a range REFERENCE is used as its position (any size; its contents are ignored). A one-cell reference therefore means that cell - unless the cell happens to hold an address string, in which case rule 1 wins.
+  3. anything else (text that is not an address, a plain number that is not a numeric address) is invalid. An invalid board returns #VALUE!.
 
 Returns:
   The destination as a numeric address (mode 1 clamps to the edge, mode -1 stays
@@ -60,3 +72,5 @@ Example:
   arrow_move("B1", "↖", 2)       -> "oob;-1;0"  (row 1-2=-1, col 2-2=0, both off)
   arrow_move("B1", "↖", 2, , 1)  -> 1000001     (stop at edge -> A1)
   arrow_move("B1", "↖", 2, , -1) -> 1000002     (stay at start -> B1)
+  arrow_move("A1", "←", 2, A1:Z100, 1)   -> 1000001   range reference ...
+  arrow_move("A1", "←", 2, "A1:Z100", 1) -> 1000001   ... and its text give the same result

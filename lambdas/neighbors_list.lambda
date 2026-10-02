@@ -2,7 +2,7 @@
 neighbors_list(center_ad, [size], [boundary_rng], [diag_allowed])
 
 === COMMENT ===
-Lists the A1 addresses around a center cell within size (default 1), bounded by boundary_rng (default whole sheet). center_ad accepts a numeric address or an A1 string. diag_allowed 1 = chessboard (default), 0 = Manhattan.
+Lists the A1 addresses around a center cell within size (default 1), bounded by boundary_rng - a range or a range string like "A2:B5" (default whole sheet). center_ad accepts a numeric address or an A1 string. diag_allowed 1 = chessboard (default), 0 = Manhattan.
 
 === CODE ===
 =LAMBDA(center_ad, [size], [boundary_rng], [diag_allowed], LET(
@@ -11,11 +11,21 @@ Lists the A1 addresses around a center cell within size (default 1), bounded by 
    cen_num, num_ad(center_ad),
    cen_row, IFERROR(INT(cen_num / 1000000), NA()),
    cen_col, IFERROR(MOD(cen_num, 1000000), NA()),
-   rmin, IF(ISOMITTED(boundary_rng), 1, MIN(ROW(boundary_rng))),
-   rmax, IF(ISOMITTED(boundary_rng), 1048576, MAX(ROW(boundary_rng))),
-   cmin, IF(ISOMITTED(boundary_rng), 1, MIN(COLUMN(boundary_rng))),
-   cmax, IF(ISOMITTED(boundary_rng), 16384, MAX(COLUMN(boundary_rng))),
-   ok, ISNUMBER(cen_row) * ISNUMBER(cen_col),
+   sheet_box, VSTACK(1, 1, 1048576, 16384),
+   one_val, IF(ISOMITTED(boundary_rng), FALSE, ROWS(boundary_rng) * COLUMNS(boundary_rng) = 1),
+   text_box, IF(one_val, IFERROR(z_ad_box(boundary_rng), 0), 0),
+   box, IF(ISOMITTED(boundary_rng), sheet_box,
+        IF(COUNT(text_box) = 4, text_box,
+        IF(ISREF(boundary_rng),
+           VSTACK(MIN(ROW(boundary_rng)), MIN(COLUMN(boundary_rng)), MAX(ROW(boundary_rng)), MAX(COLUMN(boundary_rng))),
+           0))),
+   box_ok, COUNT(box) = 4,
+   bx, IF(box_ok, box, sheet_box),
+   rmin, SUM(INDEX(bx, 1)),
+   cmin, SUM(INDEX(bx, 2)),
+   rmax, SUM(INDEX(bx, 3)),
+   cmax, SUM(INDEX(bx, 4)),
+   ok, ISNUMBER(cen_row) * ISNUMBER(cen_col) * box_ok,
    IF(
       NOT(ok),
       NA(),
@@ -34,7 +44,7 @@ Lists the A1 addresses around a center cell within size (default 1), bounded by 
          k, ad <> "",
          lst, FILTER(ad, k),
          ord, FILTER(di, k),
-         IF(ROWS(lst) = 0, NA(), SORTBY(lst, ord, 1))
+         IF(SUM(k * 1) = 0, NA(), SORTBY(lst, ord, 1))
       )
    )
 ))
@@ -45,12 +55,19 @@ Lists the cell addresses around a center cell, ordered by distance (nearest firs
 Arguments:
   center_ad      - center cell as a numeric address (1e6*row+col) OR an A1 string; coerced with num_ad.
   [size]         - neighborhood radius (default 1).
-  [boundary_rng] - bounding range that trims off-board neighbors (default whole sheet).
+  [boundary_rng] - bounds that trim off-board neighbors (default whole sheet): a range reference (A2:B5) OR a range string ("A2:B5") - see below.
   [diag_allowed] - 1 = include diagonals / chessboard range (default), 0 = Manhattan (orthogonal) limit.
 
+How the boundary is read (a single shared rule, so a range and its text behave the same):
+  1. a single value whose CONTENT parses as an address or range - text like "A2:B5", "$A$2:$B$5", a reversed "B5:A2", a numeric range "2000001:5000002", or a single address "A2" (one cell) - is used as that range. It can be typed in the formula or sit in a cell (e.g. the output of expand_rng).
+  2. otherwise a range REFERENCE is used as its position (any size; its contents are ignored). A one-cell reference therefore means that cell - unless the cell happens to hold an address string, in which case rule 1 wins.
+  3. anything else (text that is not an address, a plain number that is not a numeric address) is invalid.
+
 Returns:
-  A column of neighboring cell addresses as A1 strings (the center itself is excluded); #N/A if the center cannot be parsed.
+  A column of neighboring cell addresses as A1 strings (the center itself is excluded); #N/A if the center cannot be parsed, if the boundary is invalid, or if no neighbor lies inside the boundary.
 
 Example:
   neighbors_list("C5", 1, , 0)
-  neighbors_list(5000003)          ; numeric address for C5
+  neighbors_list(5000003)                 ; numeric address for C5
+  neighbors_list("A1", 2, A2:B5)          ; range reference ...
+  neighbors_list("A1", 2, "A2:B5")        ; ... and its text give the same list
