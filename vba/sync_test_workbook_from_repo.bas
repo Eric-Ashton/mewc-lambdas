@@ -10,7 +10,7 @@ Attribute VB_Name = "sync_test_workbook_from_repo"
 '                  confirmation), and skip this module itself.
 '   sync_all       sync_lambdas, then sync_vba, then run lambda_update (pushes the
 '                  Name Manager + strips the "@" on test sheets), run_vba_tests,
-'                  and register_formula_shortcuts (arms Ctrl+Shift+J/K/Q here -
+'                  and register_formula_shortcuts (arms Ctrl+Shift+J/K/Q/W here -
 '                  formula_shortcuts' Auto_Open skips the "Unit Tests" workbook,
 '                  so a sync is where we (re)arm them for testing).
 '
