@@ -11,7 +11,7 @@ Option Private Module
 '                  'template', remove any stale standard module not in that set
 '                  (with a confirmation), and skip this module itself.
 '   sync_all       Run both (lambdas first, VBA last), then
-'                  register_formula_shortcuts so Ctrl+Shift+J/K/Q are armed
+'                  register_formula_shortcuts so Ctrl+Shift+J/K/Q/W are armed
 '                  after a mid-session sync (Auto_Open already arms them on open).
 '
 ' Option Private Module keeps sync_* out of the Alt+F8 macro list during

@@ -3,11 +3,12 @@ Attribute VB_Name = "formula_shortcuts"
 '==============================================================================
 ' formula_shortcuts - keyboard shortcuts for authoring. Two drop a starter
 ' formula skeleton into the ACTIVE cell (only when it is empty, so they can
-' never overwrite existing work); one runs the split_cols utility.
+' never overwrite existing work); two run utilities on the current selection.
 '
 '   Ctrl+Shift+J  ->  a SCAN(...) skeleton
 '   Ctrl+Shift+K  ->  a scan2(...) skeleton
 '   Ctrl+Shift+Q  ->  split_cols (split the selected spilled 2D formula into one CHOOSECOLS formula per column)
+'   Ctrl+Shift+W  ->  create_data_table (expand the selection to its block and make it a styled table named d, d_1, ...)
 '
 ' Both skeletons keep their line breaks, and use placeholder names (a_init,
 ' x_arr, new_a, ...) that you replace - so a freshly-inserted cell shows #NAME?
@@ -77,6 +78,7 @@ Public Sub register_formula_shortcuts()
     Application.OnKey "^+j", "'" & ThisWorkbook.Name & "'!insert_scan_template"
     Application.OnKey "^+k", "'" & ThisWorkbook.Name & "'!insert_scan2_template"
     Application.OnKey "^+q", "'" & ThisWorkbook.Name & "'!split_cols"
+    Application.OnKey "^+w", "'" & ThisWorkbook.Name & "'!create_data_table"
     On Error GoTo 0
 End Sub
 
@@ -85,6 +87,7 @@ Public Sub unregister_formula_shortcuts()
     Application.OnKey "^+j"
     Application.OnKey "^+k"
     Application.OnKey "^+q"
+    Application.OnKey "^+w"
     On Error GoTo 0
 End Sub
 
