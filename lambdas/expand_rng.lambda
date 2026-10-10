@@ -2,7 +2,7 @@
 expand_rng(ad_or_rng, [r_down], [c_right], [r_up], [c_left])
 
 === COMMENT ===
-Grow an address or range into a bigger rectangle and return it as a range string. Expands r_down rows down, c_right cols right, r_up rows up, c_left cols left (all 0 by default, non-negative integers). Clamps at row 1 / col 1. Output format mirrors the input (A1 or numeric). An array input, or a bad optional, returns #VALUE!.
+Grow or shrink an address or range and return it as a range string. r_down / c_right / r_up / c_left move the bottom / right / top / left edge outward by that many rows or cols (default 0); a NEGATIVE number pulls that edge inward. Clamps at row 1 / col 1. Format mirrors the input (A1 or numeric). A 1x1 result is a single address (no colon); a dimension of 0 or less, an array input or a non-integer returns #VALUE!.
 
 === CODE ===
 =LAMBDA(ad_or_rng, [r_down], [c_right], [r_up], [c_left],
@@ -12,7 +12,7 @@ Grow an address or range into a bigger rectangle and return it as a range string
     grow_up, IF(ISOMITTED(r_up), 0, r_up),
     grow_left, IF(ISOMITTED(c_left), 0, c_left),
     single, ROWS(ad_or_rng) * COLUMNS(ad_or_rng) = 1,
-    ok_int, LAMBDA(x, IFERROR(AND(ISNUMBER(x), x = INT(x), x >= 0), FALSE)),
+    ok_int, LAMBDA(x, IFERROR(AND(ISNUMBER(x), x = INT(x)), FALSE)),
     args_ok, AND(ok_int(grow_down), ok_int(grow_right), ok_int(grow_up), ok_int(grow_left)),
     box, IFERROR(z_ad_box(ad_or_rng), 0),
     IF(OR(NOT(single), NOT(args_ok), COUNT(box) <> 4), #VALUE!,
@@ -24,30 +24,35 @@ Grow an address or range into a bigger rectangle and return it as a range string
         num_fmt, OR(ISNUMBER(ad_or_rng), AND(ISTEXT(ad_or_rng), NOT(REGEXTEST(ad_or_rng, "[A-Za-z]")))),
         corner_tl, IF(num_fmt, 1000000 * top + lft, ADDRESS(top, lft, 4)),
         corner_br, IF(num_fmt, 1000000 * bot + rgt, ADDRESS(bot, rgt, 4)),
-        corner_tl & ":" & corner_br))
+        IF(OR(bot < top, rgt < lft), #VALUE!,
+          IF(AND(bot = top, rgt = lft), corner_tl, corner_tl & ":" & corner_br))))
   )
 )
 
 === DESCRIPTION ===
-Grow an address or range into a bigger rectangle, working purely on coordinates - it never reads or cares about the cell contents.
+Grow or shrink an address or range, working purely on coordinates - it never reads or cares about the cell contents.
 
-Starting from the box of ad_or_rng, it extends the bottom edge down by r_down, the right edge right by c_right, the top edge up by r_up, and the left edge left by c_left. Any edge pushed past the sheet is clamped to row 1 or column 1.
+Starting from the box of ad_or_rng, each optional moves one edge: r_down moves the bottom edge, c_right the right edge, r_up the top edge, c_left the left edge. A positive number moves that edge OUTWARD (the range grows); a negative number moves it INWARD (the range shrinks), so r_down = 2 adds two rows at the bottom and r_down = -2 removes the bottom two rows. Any edge pushed past the sheet is clamped to row 1 or column 1.
 
-The result is always a range string of the form "top-left:bottom-right", and its format mirrors the input: an A1 input gives an A1 range ("F10:M12"); a numeric input gives a numeric range ("1000001:4000002"). Even a single cell with no expansion comes back as a (degenerate) range string, so downstream callers like ad_to_cont always receive a consistent range form.
+The result mirrors the input's format: an A1 input gives A1 ("F10:M12"); a numeric input gives numeric ("1000001:4000002"). A range is returned as "top-left:bottom-right". When the result is exactly one cell - whether by shrinking or because a single address was passed with nothing to do - it is returned as that single address with no colon: "B3" for A1 input, the numeric address (a number, e.g. 3000004) for numeric input. If a shrink leaves 0 or fewer rows or columns the result is #VALUE!.
 
-ad_or_rng must be a single value of any of the four supported address/range types; an array returns #VALUE!. Each optional must be a non-negative integer, or the result is #VALUE!.
+ad_or_rng must be a single value of any of the four supported address/range types; an array returns #VALUE!. Each optional must be an integer (positive, zero or negative), or the result is #VALUE!.
 
 Arguments:
   ad_or_rng - a single numeric address, A1 string, A1 range, or numeric range.
-  [r_down]  - rows to add below   (default 0).
-  [c_right] - columns to add right (default 0).
-  [r_up]    - rows to add above    (default 0).
-  [c_left]  - columns to add left  (default 0).
+  [r_down]  - rows to add below (negative removes from the bottom)   (default 0).
+  [c_right] - columns to add right (negative removes from the right)  (default 0).
+  [r_up]    - rows to add above (negative removes from the top)       (default 0).
+  [c_left]  - columns to add left (negative removes from the left)    (default 0).
 
 Returns:
-  A range string covering the expanded rectangle, in the input's format. #VALUE! for an array input or a negative/non-integer optional.
+  A range string covering the resulting rectangle, in the input's format; a single address (no colon) when the result is one cell. #VALUE! for an array input, a non-integer optional, or a shrink that leaves no rows or columns.
 
 Example:
   expand_rng("J10:K11", 1, 2, 0, 4)  ->  "F10:M12"
   expand_rng("B3", 0, 0, 10, 0)       ->  "B1:B3"
   expand_rng("B3", 0, 0, 0, 10)       ->  "A3:B3"
+  expand_rng("B2:D6", -2)             ->  "B2:D4"     (two rows off the bottom)
+  expand_rng("B2:D6", 0, -1, -1, 0)   ->  "B3:C6"     (one row off the top, one column off the right)
+  expand_rng("B2:B3", -1)             ->  "B2"        (shrunk to one cell -> single address)
+  expand_rng("B2:D6", -5)             ->  #VALUE!     (no rows left)
