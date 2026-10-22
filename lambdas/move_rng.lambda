@@ -1,0 +1,64 @@
+=== SIGNATURE ===
+move_rng(ad_or_rng, arrow, [distance])
+
+=== COMMENT ===
+Slides an address or range 'distance' cells (default 1) in one of the 8 arrow directions (glyph, numeric delta or letter code). A string/numeric address or range returns the moved range as a string in the same format ("B2:C10" ↖ -> "A1:B9"); a real range returns the CONTENTS at the destination. Clipped to the sheet: a partial overlap returns the part that fits; nothing left -> "oob".
+
+=== CODE ===
+=LAMBDA(ad_or_rng, arrow, [distance],
+  LET(
+    step_n, IF(ISOMITTED(distance), 1, distance),
+    arr_norm, z_dir_to_arrow(arrow),
+    d_row, SWITCH(arr_norm, "←", 0, "↖", -1, "↗", -1, "→", 0, "↙", 1, "↓", 1, "↘", 1, "↑", -1),
+    d_col, SWITCH(arr_norm, "←", -1, "↖", -1, "↗", 1, "→", 1, "↙", -1, "↓", 0, "↘", 1, "↑", 0),
+    one_val, ROWS(ad_or_rng) * COLUMNS(ad_or_rng) = 1,
+    text_box, IF(one_val, IFERROR(z_ad_box(ad_or_rng), 0), 0),
+    is_text, COUNT(text_box) = 4,
+    is_ref, AND(NOT(is_text), ISREF(ad_or_rng)),
+    box, IF(is_text, text_box,
+         IF(is_ref, VSTACK(MIN(ROW(ad_or_rng)), MIN(COLUMN(ad_or_rng)), MAX(ROW(ad_or_rng)), MAX(COLUMN(ad_or_rng))), 0)),
+    ok, AND(COUNT(box) = 4, ISNUMBER(d_row), ISNUMBER(step_n), IFERROR(step_n = INT(step_n), FALSE)),
+    IF(NOT(ok), #VALUE!,
+      LET(
+        top_was, SUM(INDEX(box, 1)),
+        lft_was, SUM(INDEX(box, 2)),
+        top, MAX(1, top_was + d_row * step_n),
+        lft, MAX(1, lft_was + d_col * step_n),
+        bot, MIN(1048576, SUM(INDEX(box, 3)) + d_row * step_n),
+        rgt, MIN(16384, SUM(INDEX(box, 4)) + d_col * step_n),
+        IF(OR(bot < top, rgt < lft), "oob",
+          IF(is_ref,
+            OFFSET(ad_or_rng, top - top_was, lft - lft_was, bot - top + 1, rgt - lft + 1),
+            LET(
+              num_fmt, OR(ISNUMBER(ad_or_rng), NOT(REGEXTEST(ad_or_rng & "", "[A-Za-z]"))),
+              corner_tl, IF(num_fmt, 1000000 * top + lft, ADDRESS(top, lft, 4)),
+              corner_br, IF(num_fmt, 1000000 * bot + rgt, ADDRESS(bot, rgt, 4)),
+              IF(AND(bot = top, rgt = lft), corner_tl, corner_tl & ":" & corner_br))))))
+  )
+)
+
+=== DESCRIPTION ===
+Moves an address or range a number of cells in an arrow direction and tells you where it landed - or, for a real range, what is there.
+
+Arguments:
+  ad_or_rng  - what to move. Either
+               * a string / numeric address or range ("B2", "B2:C10", 2000002, "2000002:10000003"; "$" and reversed corners are fine), typed in the formula or held in a cell - the result is the moved range as text in the same format; or
+               * a real range reference (B2:C10) - the result is the CONTENTS of the destination cells, as an array (via OFFSET, so the formula is volatile like any OFFSET).
+               A one-cell reference is read as its position unless the cell holds an address/range string, in which case that text is used (the same rule as neighbors_list / arrow_move).
+  arrow      - one of the eight standard arrows (↑↓←→↖↗↙↘), its numeric-address delta (1, -1000000, ...) or a letter code (U D L R UL UR DL DR).
+  [distance] - how many cells to move (default 1). An integer; negative moves the opposite way.
+
+Clipping: the destination is cut to the sheet (A1:XFD1048576). If part of it falls off the sheet, the part that remains is returned ("B2:C10" moved ↖ by 2 would start at row 0 / column 0, so you get "A1:A8"). If none of it remains, the result is the text "oob".
+
+A one-cell result is returned as a single address with no colon ("E2", or the numeric address as a number), consistent with expand_rng.
+
+Returns:
+  A range string / single address in the input's format, the destination's contents for a range reference, "oob" when nothing is left on the sheet, or #VALUE! for an unrecognised arrow, a non-integer distance, or an input that is neither a range nor an address.
+
+Example:
+  move_rng("B2:C10", "↖")        ->  "A1:B9"
+  move_rng("B2:C10", "↖", 2)     ->  "A1:A8"          (first row and column fell off the sheet)
+  move_rng("B2", "→", 3)         ->  "E2"
+  move_rng("A1", "↑")            ->  "oob"
+  move_rng(2000002, "↘")         ->  3000003          (numeric in, numeric out)
+  move_rng(B2:C10, "↖")          ->  the values in A1:B9

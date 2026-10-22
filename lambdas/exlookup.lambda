@@ -1,0 +1,52 @@
+=== SIGNATURE ===
+exlookup(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])
+
+=== COMMENT ===
+Case-sensitive XLOOKUP: same arguments, same results, except text must match case exactly (via EXACT). match_mode 0 (default) exact; 2 wildcard (* ? ~, case-sensitive); -1 / 1 take an exact case-sensitive hit first, else XLOOKUP's next-smaller / next-larger. search_mode 1 (default) or -1 for last-to-first.
+
+=== CODE ===
+=LAMBDA(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode],
+  LET(
+    mode, IF(ISOMITTED(match_mode), 0, match_mode),
+    smode_raw, IF(ISOMITTED(search_mode), 1, search_mode),
+    smode, IF(ABS(smode_raw) = 2, SIGN(smode_raw), smode_raw),
+    not_found, IF(ISOMITTED(if_not_found), NA(), if_not_found),
+    one, LAMBDA(val,
+      LET(
+        hits, IFERROR(IF(mode = 2, REGEXTEST(lookup_array, z_wildcard_regex(val), 0), EXACT(lookup_array, val)), FALSE),
+        IF(OR(hits),
+          XLOOKUP(TRUE, hits, return_array, not_found, 0, smode),
+          IF(OR(mode = -1, mode = 1),
+            XLOOKUP(val, lookup_array, return_array, not_found, mode, smode),
+            not_found)))),
+    IF(ROWS(lookup_value) * COLUMNS(lookup_value) = 1, one(lookup_value), MAP(lookup_value, one))
+  )
+)
+
+=== DESCRIPTION ===
+XLOOKUP that is case-sensitive. Built-in XLOOKUP treats "Bat" and "bat" as the same key; exlookup only matches text whose case is identical, using EXACT. Everything else - argument order, defaults, spilling a multi-column return, #N/A when nothing matches - follows XLOOKUP.
+
+Arguments:
+  lookup_value   - the value to find. May be an array of values (see below).
+  lookup_array   - the row or column to search.
+  return_array   - the row(s)/column(s) to return; same length as lookup_array.
+  [if_not_found] - returned when nothing matches (default #N/A, like XLOOKUP).
+  [match_mode]   - 0  exact, case-sensitive (default).
+                   2  wildcard, case-sensitive: * any run, ? one character, ~ escapes (~*, ~?, ~~), as in XLOOKUP. Translated to a regular expression by z_wildcard_regex.
+                  -1 / 1  an exact case-sensitive match wins if there is one; otherwise XLOOKUP's own next-smaller / next-larger match (which, for text, uses Excel's case-insensitive ordering).
+  [search_mode]  - 1 first-to-last (default), -1 last-to-first. The binary modes 2 / -2 are treated as 1 / -1 (the case-sensitive test is a scan, not a sorted search).
+
+How it works: it builds a TRUE/FALSE mask of case-exact hits (EXACT, or REGEXTEST in wildcard mode) and asks XLOOKUP for the first TRUE, so the return shape, if_not_found and search direction all behave exactly as in XLOOKUP. Error cells in lookup_array count as no match.
+
+Array lookup values: an array of lookup values is handled element-wise (MAP), so return_array must be a single row or column in that case - a multi-column return per lookup value cannot be spilled and gives #CALC!.
+
+Numbers: EXACT compares text forms, so the number 2 matches the text "2" (XLOOKUP would not). Numbers against numbers behave as in XLOOKUP.
+
+Returns:
+  The matching return_array row/column (a scalar for a single-column return), if_not_found / #N/A when nothing matches.
+
+Example:
+  exlookup("b", {"A";"B";"b";"C"}, {1;2;3;4})          ->  3      (XLOOKUP gives 2)
+  exlookup("c", {"A";"B";"C"}, {1;2;3}, "none")         ->  "none"
+  exlookup("b*t", {"Bat";"bat";"cat"}, {1;2;3}, , 2)    ->  2      (wildcard, case-sensitive)
+  exlookup("b", {"b";"B";"b"}, {1;2;3}, , , -1)         ->  3      (last-to-first)
