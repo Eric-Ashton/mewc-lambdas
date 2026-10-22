@@ -1,0 +1,41 @@
+=== SIGNATURE ===
+z_wildcard_regex(pattern)
+
+=== COMMENT ===
+Helper: converts an Excel wildcard pattern (* any run, ? one character, ~ escapes ~* ~? ~~) into an anchored regular expression for REGEXTEST / REGEXEXTRACT. Every regex metacharacter in the pattern is escaped, so "a.c" means the literal text a.c.
+
+=== CODE ===
+=LAMBDA(pattern,
+  LET(
+    txt, pattern & "",
+    held, SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(txt, "~~", CHAR(1)), "~*", CHAR(2)), "~?", CHAR(3)),
+    specials, MID("\.^$+()[]{}|/", SEQUENCE(13), 1),
+    esc, REDUCE(held, specials, LAMBDA(acc, ch, SUBSTITUTE(acc, ch, "\" & ch))),
+    wild, SUBSTITUTE(SUBSTITUTE(esc, "*", ".*"), "?", "."),
+    back, SUBSTITUTE(SUBSTITUTE(SUBSTITUTE(wild, CHAR(1), "~"), CHAR(2), "\*"), CHAR(3), "\?"),
+    "^" & back & "$"
+  )
+)
+
+=== DESCRIPTION ===
+Private helper used by exlookup's wildcard mode (match_mode 2). Excel's own wildcard matching (XLOOKUP, COUNTIF, SEARCH) is case-insensitive; routing the pattern through REGEXTEST with its case-sensitive flag gives a case-sensitive wildcard match while keeping Excel's wildcard syntax.
+
+Steps:
+  1. The escape sequences ~~, ~*, ~? are parked in placeholder characters so the next steps leave them alone.
+  2. Every regex metacharacter (\ . ^ $ + ( ) [ ] { } | /) is escaped, backslash first.
+  3. * becomes .* and ? becomes . (regex any-character).
+  4. The placeholders come back as a literal ~, a literal \* and a literal \?.
+  5. The whole pattern is anchored with ^ and $ so, as in Excel, the pattern must match the entire cell.
+
+A lone ~ not followed by * ? or ~ is kept as a literal tilde.
+
+Arguments:
+  pattern - the Excel-style wildcard pattern (text; numbers are converted to text).
+
+Returns:
+  An anchored regular-expression string.
+
+Example:
+  z_wildcard_regex("b*t")    ->  "^b.*t$"
+  z_wildcard_regex("a.c")    ->  "^a\.c$"
+  z_wildcard_regex("~*x")    ->  "^\*x$"
