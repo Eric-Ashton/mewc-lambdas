@@ -379,9 +379,8 @@ Sub done()
         Exit Sub
     End If
     
-    ' Scroll to answers and pause for 2 seconds
+    ' Scroll to the answers (no pause - the paste below is what the operator is waiting for)
     ActiveWindow.ScrollRow = yellow_cell_row_n
-    Application.Wait Now + TimeValue("00:00:02")
 
     
     ' 1. Freeze Calculation
