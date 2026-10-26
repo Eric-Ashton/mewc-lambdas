@@ -91,6 +91,15 @@ how the header cells look themselves up (`B1` Signature, `B2` Code, `I1` Descrip
 
 Helpers (`z_*`) are exercised through their public wrapper's sheet — they don't get their own.
 
+**`round_trips` holds chain tests** - two or more lambdas composed the way a competition
+formula composes them (`str_ad(num_ad(x))`, `ad_to_cont(cont_to_ad(v, arr), arr)`,
+`load_array(save_array(arr))`, move/expand there and back, ...) with the identity as the
+expected value, so the *handoff* between lambdas (numeric vs A1 addresses, single address vs
+range string, `;`-joined lists, text-form numbers) is covered, not just each lambda alone. The
+cases live in `tools/build_round_trips.py`; edit the list and re-run it
+(`py tools/build_round_trips.py "<src.xlsm>" "<out.xlsm>"`), then re-run the shape generator,
+which also harvests the chains.
+
 **`shape_tests` is generated, not hand-written.** It holds one row per (test case,
 family) for the cases found on the lambda sheets - re-running each case with its arguments
 as 1×1 arrays (`tocol`), literals moved into cells (`cellref`), numbers as text
@@ -226,7 +235,8 @@ sep,  z_opt(";", delim, TRUE)       ' TRUE = keep numeric-looking text as text (
 ```
 
 `z_opt` applies the library-wide convention for optionals: **omitted, a blank cell, and
-`""` all mean "use the default"**; the value is collapsed to a true scalar (so
+`""` all mean "use the default"** (for a text option passed with `keep_text`, such as a
+delimiter, `""` is a real value instead); the value is collapsed to a true scalar (so
 `TOCOL(x)` / `{x}` behave like `x`); and a number stored as text (`"2"`) is read as the
 number unless `keep_text` is set. Required arguments that are numbers by nature (a
 count, a step, a row/column number, a seed) go through **`z_num(arg)`** for the same

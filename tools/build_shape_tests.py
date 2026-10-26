@@ -37,6 +37,9 @@ Deliberately NOT transformed, because the change would legitimately alter meanin
   * array on a range that contains an EMPTY cell (an array turns it into 0);
   * blank on exlookup's if_not_found (a blank there IS the fallback value).
 
+The hand-written `round_trips` sheet (chains of lambdas that must be identities) is
+harvested too: its families transform the arguments of the OUTERMOST library call.
+
 Usage
 -----
     py tools/build_shape_tests.py "<src.xlsm>" "<out.xlsm>"
@@ -62,6 +65,7 @@ from xlsm_edit import apply_edits, validate  # noqa: E402
 SHEET = "shape_tests"
 TEMPLATE_SHEET = "count_substring"          # layout donor for a fresh sheet
 NON_LAMBDA_SHEETS = {"Prep", "Lamb", "lambda_tests", "vba_tests", SHEET}
+EXTRA_SHEETS = {"round_trips"}               # hand-written chain tests: transform the OUTERMOST library call
 LAMBDA_DIR = HERE.parent / "lambdas"
 
 # (lambda, 1-based argument index) -> arguments the families must leave alone
@@ -194,8 +198,9 @@ def harvest(src: str):
     wbx = z.read("xl/workbook.xml").decode()
     rels = z.read("xl/_rels/workbook.xml.rels").decode()
     order = re.findall(r'<sheet [^>]*name="([^"]+)"', wbx)
-    lam_sheets = [n for n in order if n not in NON_LAMBDA_SHEETS and not n.startswith("zz_")]
+    lam_sheets = [n for n in order if n not in NON_LAMBDA_SHEETS and not n.startswith("zz_")]   # includes EXTRA_SHEETS
     sig = signatures()
+    lambda_names = set(sig)
     rows = []   # (sheet, cell, family, original_raw, variant_raw, helpers)
     for sn in lam_sheets:
         x = z.read(sheet_part(z, wbx, rels, sn)).decode()
@@ -225,18 +230,27 @@ def harvest(src: str):
             raw = unescape(fm.group(1))
             if addr in ("B1", "B2", "I1", "S1") or raw.startswith(("COUNTIF(", "IF(", "HYPERLINK(")):
                 continue
-            span = find_call(raw, sn)
+            if sn in EXTRA_SHEETS:
+                # chain test: pick the library call that starts earliest in the formula
+                found = [(find_call(raw, nm), nm) for nm in lambda_names if nm + "(" in raw]
+                found = [(sp, nm) for sp, nm in found if sp]
+                if not found:
+                    continue
+                span, call_name = min(found, key=lambda p: p[0][0])
+            else:
+                span, call_name = find_call(raw, sn), sn
             if not span:
                 continue
             i, j = span
-            args = split_args(raw[i + len(sn) + 1:j - 1])
+            args = split_args(raw[i + len(call_name) + 1:j - 1])
+            fn = call_name   # the lambda whose arguments are transformed (== sn except on EXTRA_SHEETS)
 
             def rebuild(new_args):
-                return raw[:i] + sn + "(" + ",".join(new_args) + ")" + raw[j:]
+                return raw[:i] + fn + "(" + ",".join(new_args) + ")" + raw[j:]
 
             def is_position(k, a):
-                return (sn, k + 1) in POSITION_ARGS or (
-                    sn in REF_ONLY_FIRST_ARG and k == 0 and (CELL_REF.match(a) or RANGE_ARG.match(a)))
+                return (fn, k + 1) in POSITION_ARGS or (
+                    fn in REF_ONLY_FIRST_ARG and k == 0 and (CELL_REF.match(a) or RANGE_ARG.match(a)))
 
             # tocol
             new, touched = list(args), False
@@ -259,7 +273,7 @@ def harvest(src: str):
             # textnum
             new, touched = list(args), False
             for k, a in enumerate(args):
-                if is_position(k, a) or (sn, k + 1) in DATA_ARGS or (sn, addr) in TEXTNUM_SKIP_CASES:
+                if is_position(k, a) or (fn, k + 1) in DATA_ARGS or (sn, addr) in TEXTNUM_SKIP_CASES:
                     continue
                 if NUM_LIT.match(a):
                     new[k] = '"' + a.strip() + '"'; touched = True
@@ -275,13 +289,13 @@ def harvest(src: str):
             if touched:
                 rows.append((sn, addr, "array", raw, rebuild(new), []))
             # blank
-            total, nopt = sig.get(sn, (len(args), 0))
+            total, nopt = sig.get(fn, (len(args), 0))
             new, touched = list(args), False
             for k, a in enumerate(args):
-                if a.strip() == "" and k >= total - nopt and (sn, k + 1) not in BLANK_SKIP:
+                if a.strip() == "" and k >= total - nopt and (fn, k + 1) not in BLANK_SKIP:
                     new[k] = BLANK_REF; touched = True
             while nopt > 0 and total - nopt <= len(new) < total:
-                if (sn, len(new) + 1) in BLANK_SKIP:
+                if (fn, len(new) + 1) in BLANK_SKIP:
                     new.append("")
                 else:
                     new.append(BLANK_REF)
