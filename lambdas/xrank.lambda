@@ -6,7 +6,7 @@ Like the built-in RANK but works on arrays.
 
 === CODE ===
 =LAMBDA(value, array, [order], LET(
-   rank_style_order, IF(ISOMITTED(order), 0, z_scalar(order)),
+   rank_style_order, z_opt(0, order),
    sort_style_order, IF(rank_style_order = 0, -1, 1),
    IFNA(XMATCH(z_scalar(value), SORT(TOCOL(array), 1, sort_style_order)), "")
 ))
@@ -20,6 +20,8 @@ Arguments:
   [order] - 0 = descending (default), 1 = ascending.
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The 1-based rank of value among array, or "" if value is not found in array.

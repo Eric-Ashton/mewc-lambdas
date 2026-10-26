@@ -3,26 +3,39 @@
 
 What it tests
 -------------
-Every lambda test case on the per-lambda sheets is re-run with each of its
-single-value arguments wrapped in TOCOL(...) - i.e. passed as a 1x1 ARRAY instead
-of a plain value - and the result is compared with the original. A 1x1 array is
-what a caller gets from TOCOL(x), an array literal {x}, or a one-element
-FILTER/INDEX/TEXTSPLIT result, and Excel does not unbox it: SEQUENCE(n),
-MAKEARRAY(n, ...), REGEXEXTRACT(x, ..., 1) and IF(flag, a, b) all *lift* over it
-and silently return a single element or a doubled result. (z_a1n once read "AM17"
-as column Z this way.) The library guards against it with z_scalar / CONCAT at the
-top of each scalar argument; this sheet is the regression net for that guard.
+Every lambda test case on the per-lambda sheets is re-run with its arguments
+transformed in ways that should NOT change the answer, and the result is compared
+with the original. One row per (case, family):
 
-One row per harvested case: the row's Match cell recomputes BOTH the original
-formula and the all-arguments-wrapped variant (with cell references qualified to
-the source sheet) and PASSes when they agree in shape and in every element
-(errors compare by ERROR.TYPE).
+  tocol    every single-value argument wrapped in TOCOL(...)  -> a 1x1 ARRAY
+           (what TOCOL(x), {x} or a one-element FILTER/INDEX/TEXTSPLIT result hands
+           a lambda; SEQUENCE/MAKEARRAY/REGEXEXTRACT/IF lift over it unless the
+           lambda collapses it - z_scalar / z_opt / z_num / CONCAT)
+  cellref  every literal argument moved into a helper cell and referenced
+  textnum  every numeric argument supplied as TEXT ("5" / D6&"")
+           (numbers stored as text are everywhere in case data; z_num / z_opt
+           convert them for arguments that are numbers by nature)
+  array    every multi-cell range argument replaced by a computed ARRAY of the
+           same values (CHOOSEROWS) - a FILTER/TAKE result instead of a range
+  blank    every omitted optional argument pointed at an EMPTY cell
+           (z_opt: blank or "" means "use the default")
 
-Arguments that are NOT wrapped (wrapping would legitimately change the meaning):
-  * range-reference arguments whose POSITION matters - ad_to_cont's arr,
-    arrow_move's board_rng, neighbors_list's boundary_rng, and a cell reference
-    passed as move_rng's ad_or_rng (TOCOL turns a reference into data);
-  * anything that is already a range (A1:B2), an array literal, or an expression.
+The Match cell recomputes BOTH the original formula and the variant (cell
+references qualified to the source sheet) and PASSes when they agree in shape and
+every element (errors compare by ERROR.TYPE).
+
+Deliberately NOT transformed, because the change would legitimately alter meaning:
+  * tocol/cellref/array on range-reference arguments whose POSITION matters -
+    ad_to_cont's arr, arrow_trip's rng, cont_to_ad's arr, route_cost's cost_map,
+    arrow_move's board_rng, neighbors_list's boundary_rng, a cell or range
+    reference passed as move_rng's ad_or_rng;
+  * textnum on values that are LOOKED UP in data or carried as data ("2" and 2 must
+    stay distinct) - exists, xrank, xcountif, cont_to_ad, exlookup's lookup/if_not_found,
+    neighbors_count's val, set_d/set_i/set_u operands, label_lookup labels,
+    update_arr's value, scan2/scan3 start values, shift_arr's fill, xfilter's arr,
+    and a case whose point is that an invalid input passes through unchanged;
+  * array on a range that contains an EMPTY cell (an array turns it into 0);
+  * blank on exlookup's if_not_found (a blank there IS the fallback value).
 
 Usage
 -----
@@ -34,25 +47,60 @@ workbook in Excel, run sync_all / lambda_update as usual, and check the tally.
 """
 from __future__ import annotations
 
+import glob
 import json
+import os
 import re
 import sys
 import zipfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 from xlsm_edit import apply_edits, validate  # noqa: E402
 
 SHEET = "shape_tests"
 TEMPLATE_SHEET = "count_substring"          # layout donor for a fresh sheet
 NON_LAMBDA_SHEETS = {"Prep", "Lamb", "lambda_tests", "vba_tests", SHEET}
-# (lambda, 1-based argument index) whose argument must stay a reference
-EXCLUDE = {("ad_to_cont", 2), ("arrow_move", 4), ("neighbors_list", 3)}
-REF_ONLY_FIRST_ARG = {"move_rng"}            # skip arg 1 only when it is a bare cell reference
+LAMBDA_DIR = HERE.parent / "lambdas"
+
+# (lambda, 1-based argument index) -> arguments the families must leave alone
+POSITION_ARGS = {("ad_to_cont", 2), ("arrow_trip", 1), ("cont_to_ad", 2), ("route_cost", 1),
+                 ("arrow_move", 4), ("neighbors_list", 3)}
+DATA_ARGS = {("exists", 2), ("xrank", 1), ("xcountif", 2), ("cont_to_ad", 1), ("exlookup", 1), ("exlookup", 4),
+             ("neighbors_count", 2), ("set_d", 1), ("set_d", 2), ("set_i", 1), ("set_i", 2), ("set_u", 1), ("set_u", 2),
+             ("label_lookup", 2), ("label_lookup", 3), ("update_arr", 4), ("freq_table", 1), ("make_change", 1),
+             ("biggest", 1), ("biggest", 2), ("smallest", 1), ("smallest", 2), ("textbetween", 2), ("textbetween", 3),
+             ("count_substring", 1), ("count_substring", 2), ("scan2", 1), ("scan2", 2), ("scan3", 1), ("scan3", 2), ("scan3", 3),
+             ("shift_arr", 3), ("xfilter", 1)}
+BLANK_SKIP = {("exlookup", 4)}
+# cases where the lambda PASSES AN INVALID INPUT THROUGH unchanged, so text in -> text out is correct
+TEXTNUM_SKIP_CASES = {("str_ad", "H10")}
+REF_ONLY_FIRST_ARG = {"move_rng"}            # a bare cell/range reference as arg 1 is a position
 
 WRAPPABLE = re.compile(r'^\s*(\$?[A-Z]{1,3}\$?\d+|"(?:[^"]|"")*"|-?\d+(?:\.\d+)?)\s*$')
 CELL_REF = re.compile(r'^\s*\$?[A-Z]{1,3}\$?\d+\s*$')
+RANGE_ARG = re.compile(r'^\s*\$?[A-Z]{1,3}\$?\d+:\$?[A-Z]{1,3}\$?\d+\s*$')
+NUM_LIT = re.compile(r'^\s*-?\d+(?:\.\d+)?\s*$')
+STR_LIT = re.compile(r'^\s*"((?:[^"]|"")*)"\s*$')
 REF_TOKEN = re.compile(r"(?<![A-Za-z_!'.$])(\$?[A-Z]{1,3}\$?\d+(?::\$?[A-Z]{1,3}\$?\d+)?)(?![A-Za-z_(\d])")
+HELPER_COLS = ["H", "I", "J", "K", "L", "M", "N", "O"]   # cellref helper values, same row
+BLANK_REF = f"{SHEET}!$Z$1"                             # never written -> empty
+
+
+def col_num(letters: str) -> int:
+    n = 0
+    for ch in letters:
+        n = n * 26 + ord(ch) - 64
+    return n
+
+
+def col_letters(n: int) -> str:
+    s = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
 
 
 def unescape(s: str) -> str:
@@ -84,7 +132,7 @@ def split_args(s: str) -> list[str]:
 
 
 def find_call(formula: str, name: str):
-    """(start, end) of the first top-level `name(...)` call whose name is a whole word."""
+    """(start, end) of the first `name(...)` call whose name is a whole word."""
     i = -1
     while True:
         i = formula.find(name + "(", i + 1)
@@ -109,16 +157,11 @@ def find_call(formula: str, name: str):
 
 def qualify(formula: str, sheet: str) -> str:
     """Prefix every bare cell reference outside quotes with 'sheet'!"""
-    out, inq, i = [], False, 0
-    buf = ""
+    out, inq, buf = [], False, ""
     for ch in formula:
         if ch == '"':
-            if not inq:
-                out.append(REF_TOKEN.sub(lambda m: f"'{sheet}'!{m.group(1)}", buf))
-                buf = ""
-            else:
-                out.append(buf)
-                buf = ""
+            out.append(buf if inq else REF_TOKEN.sub(lambda m: f"'{sheet}'!{m.group(1)}", buf))
+            buf = ""
             inq = not inq
             out.append(ch)
             continue
@@ -133,15 +176,47 @@ def sheet_part(z: zipfile.ZipFile, wbx: str, rels: str, name: str) -> str:
     return "xl/" + re.search(r'Target="([^"]+)"', m).group(1).replace("/xl/", "").lstrip("/")
 
 
+def signatures() -> dict:
+    """lambda -> (total params, optional params) from the .lambda files"""
+    sig = {}
+    for f in glob.glob(str(LAMBDA_DIR / "*.lambda")):
+        name = os.path.basename(f)[:-7]
+        txt = open(f, encoding="utf-8").read()
+        s = txt.split("=== SIGNATURE ===")[1].split("===")[0].strip()
+        inner = s[s.index("(") + 1:s.rindex(")")]
+        params = [p.strip() for p in split_args(inner)] if inner.strip() else []
+        sig[name] = (len(params), sum(1 for p in params if p.startswith("[")))
+    return sig
+
+
 def harvest(src: str):
     z = zipfile.ZipFile(src)
     wbx = z.read("xl/workbook.xml").decode()
     rels = z.read("xl/_rels/workbook.xml.rels").decode()
     order = re.findall(r'<sheet [^>]*name="([^"]+)"', wbx)
     lam_sheets = [n for n in order if n not in NON_LAMBDA_SHEETS and not n.startswith("zz_")]
-    cases = []
+    sig = signatures()
+    rows = []   # (sheet, cell, family, original_raw, variant_raw, helpers)
     for sn in lam_sheets:
         x = z.read(sheet_part(z, wbx, rels, sn)).decode()
+        numeric_cells, filled_cells = set(), set()
+        for m in re.finditer(r'<c r="([A-Z]+\d+)"([^>]*?)>(.*?)</c>', x, re.S):
+            addr, attrs, inner = m.groups()
+            if "<v>" in inner or "<is>" in inner or "<f" in inner:
+                filled_cells.add(addr)
+            if 't="' not in attrs and "<f" not in inner and re.search(r"<v>-?[\d.E+]+</v>", inner):
+                numeric_cells.add(addr)
+
+        def range_has_blank(a):
+            """True when any cell of the A1:B2 range is empty on the source sheet (an array would turn it into 0)."""
+            m_ = re.match(r'\s*\$?([A-Z]{1,3})\$?(\d+):\$?([A-Z]{1,3})\$?(\d+)', a)
+            c1, r1, c2, r2 = col_num(m_.group(1)), int(m_.group(2)), col_num(m_.group(3)), int(m_.group(4))
+            for rr_ in range(min(r1, r2), max(r1, r2) + 1):
+                for cc_ in range(min(c1, c2), max(c1, c2) + 1):
+                    if f"{col_letters(cc_)}{rr_}" not in filled_cells:
+                        return True
+            return False
+
         for m in re.finditer(r'<c r="([A-Z]+\d+)"([^>]*?)>(.*?)</c>', x, re.S):
             addr, _attrs, inner = m.groups()
             fm = re.search(r"<f[^>]*>(.*?)</f>", inner, re.S)
@@ -155,30 +230,75 @@ def harvest(src: str):
                 continue
             i, j = span
             args = split_args(raw[i + len(sn) + 1:j - 1])
-            wrap = []
+
+            def rebuild(new_args):
+                return raw[:i] + sn + "(" + ",".join(new_args) + ")" + raw[j:]
+
+            def is_position(k, a):
+                return (sn, k + 1) in POSITION_ARGS or (
+                    sn in REF_ONLY_FIRST_ARG and k == 0 and (CELL_REF.match(a) or RANGE_ARG.match(a)))
+
+            # tocol
+            new, touched = list(args), False
             for k, a in enumerate(args):
-                if not WRAPPABLE.match(a):
+                if WRAPPABLE.match(a) and not is_position(k, a):
+                    new[k] = "_xlfn.TOCOL(%s)" % a.strip(); touched = True
+            if touched:
+                rows.append((sn, addr, "tocol", raw, rebuild(new), []))
+            # cellref
+            new, touched, helpers = list(args), False, []
+            for k, a in enumerate(args):
+                if is_position(k, a):
                     continue
-                if (sn, k + 1) in EXCLUDE:
+                ms, mn = STR_LIT.match(a), NUM_LIT.match(a)
+                if (ms or mn) and len(helpers) < len(HELPER_COLS):
+                    helpers.append(ms.group(1).replace('""', '"') if ms else float(a))
+                    new[k] = f"{SHEET}!$%s$@ROW@" % HELPER_COLS[len(helpers) - 1]; touched = True
+            if touched:
+                rows.append((sn, addr, "cellref", raw, rebuild(new), helpers))
+            # textnum
+            new, touched = list(args), False
+            for k, a in enumerate(args):
+                if is_position(k, a) or (sn, k + 1) in DATA_ARGS or (sn, addr) in TEXTNUM_SKIP_CASES:
                     continue
-                if sn in REF_ONLY_FIRST_ARG and k == 0 and CELL_REF.match(a):
-                    continue
-                wrap.append(k)
-            if not wrap:
-                continue
-            new_args = [("_xlfn.TOCOL(%s)" % a.strip()) if k in wrap else a for k, a in enumerate(args)]
-            variant = raw[:i] + sn + "(" + ",".join(new_args) + ")" + raw[j:]
-            cases.append({"sheet": sn, "cell": addr, "original": raw, "variant": variant})
-    existing_cells = []
+                if NUM_LIT.match(a):
+                    new[k] = '"' + a.strip() + '"'; touched = True
+                elif CELL_REF.match(a) and a.strip().replace("$", "") in numeric_cells:
+                    new[k] = "(" + a.strip() + '&"")'; touched = True
+            if touched:
+                rows.append((sn, addr, "textnum", raw, rebuild(new), []))
+            # array
+            new, touched = list(args), False
+            for k, a in enumerate(args):
+                if RANGE_ARG.match(a) and not is_position(k, a) and not range_has_blank(a):
+                    r = a.strip(); new[k] = f"_xlfn.CHOOSEROWS({r},_xlfn.SEQUENCE(ROWS({r})))"; touched = True
+            if touched:
+                rows.append((sn, addr, "array", raw, rebuild(new), []))
+            # blank
+            total, nopt = sig.get(sn, (len(args), 0))
+            new, touched = list(args), False
+            for k, a in enumerate(args):
+                if a.strip() == "" and k >= total - nopt and (sn, k + 1) not in BLANK_SKIP:
+                    new[k] = BLANK_REF; touched = True
+            while nopt > 0 and total - nopt <= len(new) < total:
+                if (sn, len(new) + 1) in BLANK_SKIP:
+                    new.append("")
+                else:
+                    new.append(BLANK_REF)
+                touched = True
+            while new and new[-1] == "":
+                new.pop()
+            if touched:
+                rows.append((sn, addr, "blank", raw, rebuild(new), []))
+    existing_cells, donor_cells = [], []
     if SHEET in order:
         x = z.read(sheet_part(z, wbx, rels, SHEET)).decode()
         existing_cells = [a for a in re.findall(r'<c r="([A-Z]+\d+)"', x) if int(re.search(r"\d+", a).group()) >= 4]
-    donor_cells = []
-    if SHEET not in order:
+    else:
         x = z.read(sheet_part(z, wbx, rels, TEMPLATE_SHEET)).decode()
         donor_cells = [a for a in re.findall(r'<c r="([A-Z]+\d+)"', x) if int(re.search(r"\d+", a).group()) >= 4]
     lt = z.read(sheet_part(z, wbx, rels, "lambda_tests")).decode()
-    return order, lam_sheets, cases, existing_cells, donor_cells, lt
+    return order, lam_sheets, rows, existing_cells, donor_cells, lt
 
 
 def match_formula(orig_q: str, var_q: str) -> str:
@@ -193,7 +313,7 @@ def match_formula(orig_q: str, var_q: str) -> str:
 
 
 def main(src: str, out: str) -> int:
-    order, lam_sheets, cases, existing_cells, donor_cells, lt = harvest(src)
+    order, lam_sheets, rows, existing_cells, donor_cells, lt = harvest(src)
     new_sheet = SHEET not in order
     edits = []
 
@@ -209,20 +329,29 @@ def main(src: str, out: str) -> int:
     for a in (donor_cells if new_sheet else existing_cells):
         edits.append({"sheet": SHEET, "cell": a})
     if new_sheet:
-        put("B1", "1x1-array shape tests  (generated - do not edit by hand)")
+        put("B1", "shape tests  (generated - do not edit by hand)")
         put("B2", "py tools/build_shape_tests.py  <src.xlsm> <out.xlsm>   re-generates this sheet from the other test sheets")
-        put("I1", "Each row re-runs one existing test case with every single-value argument wrapped in TOCOL() - a 1x1 array - and PASSes when the result matches the plain call in shape and value. Guards the z_scalar / CONCAT unboxing in the library.")
-    put("A4", "shape_tests - every single-value argument passed as a 1x1 array (TOCOL) must give the same answer as the plain value. Excluded: reference arguments whose position matters (ad_to_cont arr, arrow_move board_rng, neighbors_list boundary_rng, a cell reference as move_rng's ad_or_rng).")
-    put("F4", formula='COUNTIF(F6:F2000,"PASS")&" / %d PASS"' % len(cases))
-    for c, v in zip("ABCDF", ["#", "Lambda", "Source case", "Variant (TOCOL-wrapped arguments)", "Match"]):
+        put("I1", "Each row re-runs one existing test case with its arguments transformed in a way that must not change the answer (1x1 array, value in a cell, number as text, computed array instead of range, blank cell for an omitted optional) and PASSes when the result matches in shape and value.")
+    fam_counts = {}
+    for r in rows:
+        fam_counts[r[2]] = fam_counts.get(r[2], 0) + 1
+    put("A4", "shape_tests - families: tocol (1x1 array), cellref (literal moved to a cell), textnum (number as text), array (computed array for a range), blank (empty cell for an omitted optional). Each must equal the plain call. Excluded on purpose: position-only range args, data lookup values, exlookup's if_not_found. "
+        + "  ".join(f"{k}={v}" for k, v in sorted(fam_counts.items())))
+    put("F4", formula='COUNTIF(F6:F5000,"PASS")&" / %d PASS"' % len(rows))
+    for c, v in zip("ABCDEF", ["#", "Lambda", "Source case", "Family", "Variant", "Match"]):
         put(f"{c}5", v)
-    for n, cs in enumerate(cases, 1):
+    put("H5", "helper values (cellref)")
+    for n, (sn, addr, fam, raw, variant, helpers) in enumerate(rows, 1):
         r = 5 + n
+        variant = variant.replace("@ROW@", str(r))
         put(f"A{r}", n)
-        put(f"B{r}", cs["sheet"])
-        put(f"C{r}", f"{cs['sheet']}!{cs['cell']}")
-        put(f"D{r}", cs["variant"].replace("_xlfn.", "").replace("_xlpm.", ""))
-        put(f"F{r}", formula=match_formula(qualify(cs["original"], cs["sheet"]), qualify(cs["variant"], cs["sheet"])), array_ref=f"F{r}")
+        put(f"B{r}", sn)
+        put(f"C{r}", f"{sn}!{addr}")
+        put(f"D{r}", fam)
+        put(f"E{r}", variant.replace("_xlfn.", "").replace("_xlpm.", ""))
+        for k, h in enumerate(helpers):
+            put(f"{HELPER_COLS[k]}{r}", h)
+        put(f"F{r}", formula=match_formula(qualify(raw, sn), qualify(variant, sn)), array_ref=f"F{r}")
 
     dups, new_order = None, None
     if new_sheet:
@@ -231,7 +360,7 @@ def main(src: str, out: str) -> int:
         new_order = list(order)
         prev = names[names.index(SHEET) - 1]
         new_order.insert(new_order.index(prev) + 1, SHEET)
-        # roll-up: rewrite from the inserted position; TOTAL shifts down one row
+
         def style_of(addr):
             m = re.search(r'<c r="%s"(?:\s[^>]*?)?(?:/>|>)' % addr, lt)
             s = re.search(r' s="(\d+)"', m.group(0)) if m else None
@@ -241,15 +370,15 @@ def main(src: str, out: str) -> int:
         total = {c: style_of(f"{c}{old_total}") for c in "ABCDE"}
         first = 5 + names.index(SHEET)
         for i, nm in enumerate(names):
-            r = 5 + i
-            if r < first:
+            rr = 5 + i
+            if rr < first:
                 continue
             edits += [
-                {"sheet": "lambda_tests", "cell": f"A{r}", "formula": f"HYPERLINK(\"#'{nm}'!A1\",\"{nm}\")", "style": normal["A"]},
-                {"sheet": "lambda_tests", "cell": f"B{r}", "formula": f'COUNTIF({nm}!$A:$BZ,"PASS")', "style": normal["B"]},
-                {"sheet": "lambda_tests", "cell": f"C{r}", "formula": f'COUNTIF({nm}!$A:$BZ,"FAIL")', "style": normal["C"]},
-                {"sheet": "lambda_tests", "cell": f"D{r}", "formula": f"B{r}+C{r}", "style": normal["D"]},
-                {"sheet": "lambda_tests", "cell": f"E{r}", "formula": f'IF(C{r}>0,"FAIL ("&C{r}&")",IF(D{r}=0,"-","all pass"))', "style": normal["E"]},
+                {"sheet": "lambda_tests", "cell": f"A{rr}", "formula": f"HYPERLINK(\"#'{nm}'!A1\",\"{nm}\")", "style": normal["A"]},
+                {"sheet": "lambda_tests", "cell": f"B{rr}", "formula": f'COUNTIF({nm}!$A:$BZ,"PASS")', "style": normal["B"]},
+                {"sheet": "lambda_tests", "cell": f"C{rr}", "formula": f'COUNTIF({nm}!$A:$BZ,"FAIL")', "style": normal["C"]},
+                {"sheet": "lambda_tests", "cell": f"D{rr}", "formula": f"B{rr}+C{rr}", "style": normal["D"]},
+                {"sheet": "lambda_tests", "cell": f"E{rr}", "formula": f'IF(C{rr}>0,"FAIL ("&C{rr}&")",IF(D{rr}=0,"-","all pass"))', "style": normal["E"]},
             ]
         nt = 5 + len(names)
         edits += [
@@ -263,7 +392,7 @@ def main(src: str, out: str) -> int:
     edits = [e for e in edits if ("value" in e or "formula" in e) or (e["sheet"], e["cell"]) not in written]
     apply_edits(src, out, edits, duplicates=dups, sheet_order=new_order)
     res = validate(src, out, edits, duplicates=dups, sheet_order=new_order)
-    print(f"shape_tests: {len(cases)} cases from {len(lam_sheets)} sheets; new sheet: {new_sheet}")
+    print(f"shape_tests: {len(rows)} rows from {len(lam_sheets)} sheets {fam_counts}; new sheet: {new_sheet}")
     print("validate:", json.dumps({k: res[k] for k in ("ok", "edits_verified", "edits_failed", "unexpected_changes")}, default=str)[:400])
     return 0 if res.get("ok") else 1
 

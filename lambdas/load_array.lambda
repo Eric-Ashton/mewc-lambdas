@@ -12,8 +12,8 @@ Rebuilds an array from a delimited string (inverse of save_array). Defaults matc
          one = "",
          "",
          LET(
-            cd, IF(ISOMITTED(col_delimiter), "|", z_scalar(col_delimiter)),
-            rd, IF(ISOMITTED(row_delimiter), ";", z_scalar(row_delimiter)),
+            cd, z_opt("|", col_delimiter, TRUE),
+            rd, z_opt(";", row_delimiter, TRUE),
             arr, TEXTSPLIT(one, cd, rd, FALSE),
             MAP(arr, LAMBDA(val, IF(val = "", "", IFERROR(--val, val))))
          )
@@ -30,6 +30,8 @@ Arguments:
   [row_delimiter] - row separator (default ";").
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The reconstructed array.

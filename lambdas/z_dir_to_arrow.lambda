@@ -5,7 +5,8 @@ z_dir_to_arrow(x)
 Helper: normalize a direction to a standard arrow glyph. Accepts a numeric-address delta (1, -1000000, ...) or a letter code (U D L R UL UR DL DR) and returns the matching arrow; an arrow or anything unrecognized passes through unchanged.
 
 === CODE ===
-=LAMBDA(x, LET(
+=LAMBDA(x_in, LET(
+   x, z_num(x_in),
    arrows, "↑↓←→↖↗↙↘",
    nums, {-1000000; 1000000; -1; 1; -1000001; -999999; 999999; 1000001},
    codes, {"U"; "D"; "L"; "R"; "UL"; "UR"; "DL"; "DR"},
@@ -23,6 +24,8 @@ Arguments:
 
 Mapping (letter code / number -> arrow):
   U/-1000000 up, D/1000000 down, L/-1 left, R/1 right, UL/-1000001, UR/-999999, DL/999999, DR/1000001.
+
+A numeric delta given as text ("1", "-1000000") or as a 1x1 array is read as the number (z_num).
 
 Returns:
   The standard arrow for a known number or code, else x unchanged. Letter codes are matched case-insensitively.

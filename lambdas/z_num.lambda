@@ -1,0 +1,33 @@
+=== SIGNATURE ===
+z_num(x)
+
+=== COMMENT ===
+Helper for required numeric arguments (counts, steps, row/column numbers, seeds): collapses a 1x1 array to a scalar (z_scalar) and converts a number stored as text ("5") to the number. Anything else - real numbers, booleans, non-numeric text, blanks, errors, larger arrays - passes through unchanged.
+
+=== CODE ===
+=LAMBDA(x,
+  LET(v, z_scalar(x), IF(ISTEXT(v), IFERROR(VALUE(v), v), v))
+)
+
+=== DESCRIPTION ===
+Private helper: the numeric twin of z_scalar, for REQUIRED arguments that are numbers by nature (a count, a step, a distance, a row or column number, a seed). Optional arguments use z_opt instead, which also handles omitted / blank.
+
+Why: case data and intermediate results often carry numbers as text - a TEXTSPLIT of "7000005;8000004", a cell formatted as text, a value typed with a leading apostrophe. Arithmetic coerces such text silently, but comparisons (n < 1), SEQUENCE / MAKEARRAY sizes and SWITCH / XMATCH on numeric codes do not, so a lambda can take the wrong branch or return one element without any error.
+
+Behaviour:
+  5, TOCOL(5), {5}   -> 5
+  "5", TOCOL("5")    -> 5
+  "abc", TRUE, blank, an error, a 2x3 array -> unchanged (an array of text numbers is converted element-wise)
+
+It never changes the meaning of a value that is looked up in data; use it only where the argument is a number by definition.
+
+Arguments:
+  x - the argument to normalise.
+
+Returns:
+  A true numeric scalar when x is (or holds) a number; otherwise x unchanged.
+
+Example:
+  z_num("3")        ->  3
+  z_num(TOCOL(3))   ->  3
+  z_num("UL")       ->  "UL"

@@ -25,7 +25,7 @@ Dijkstra over cost_map (numbers = cost, text = walls): least cost to reach each 
       OR(_rr < 1, _rr > _nr, _rc < 1, _rc > _nc),
       "X",
       LET(
-         _dg, IF(ISOMITTED(diag_allowed), 1, z_scalar(diag_allowed)),
+         _dg, z_opt(1, diag_allowed),
          _rd, IF(_dg, {-1, 1, 0, 0, -1, -1, 1, 1}, {-1, 1, 0, 0}),
          _cd, IF(_dg, {0, 0, -1, 1, -1, 1, -1, 1}, {0, 0, -1, 1}),
          _sq, (INT(SEQUENCE(_nr, _nc, 0, 1) / _nc) + 1) & "|"
@@ -43,12 +43,16 @@ Dijkstra over cost_map (numbers = cost, text = walls): least cost to reach each 
 === DESCRIPTION ===
 Least-cost distance from a start cell to every reachable cell (Dijkstra).
 
+cost_map (when start_ref is an address rather than {row,col}) must be a real range reference - its position on the sheet is used. A computed array (the output of FILTER, TAKE, CHOOSEROWS, ...) has no position and gives #VALUE!.
+
 Arguments:
   cost_map       - a grid where numbers are entry costs and text cells are impassable walls.
   start_ref      - starting cell as A1 text, a numeric address (1e6*row+col), or a {row, col} coordinate pair (relative to the top-left of cost_map).
   [diag_allowed] - 1 to allow diagonal moves (default 1).
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   An array the same size as cost_map giving the minimum total cost to reach each cell. The destination cell's cost is included; the start cell's cost is ignored. Unreachable cells are left blank/impassable. A start point outside cost_map returns "X".

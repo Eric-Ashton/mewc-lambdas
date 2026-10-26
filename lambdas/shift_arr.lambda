@@ -6,8 +6,8 @@ Shifts a 1D or 2D array by "steps" (default 1) in the dir direction (arrow glyph
 
 === CODE ===
 =LAMBDA(arr, dir, [fill], [steps], LET(
-   s, IF(ISOMITTED(steps), 1, z_scalar(steps)),
-   wrap_mode, IF(ISOMITTED(fill), TRUE, z_scalar(fill) = "wrap"),
+   s, z_opt(1, steps),
+   wrap_mode, (z_opt("wrap", fill, TRUE) = "wrap"),
    num_rows, ROWS(arr),
    num_cols, COLUMNS(arr),
    dir_norm, z_dir_to_arrow(dir),
@@ -108,6 +108,8 @@ Arguments:
   [steps] - number of cells to shift (default 1).
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The shifted array, same shape as arr, or "" if dir is not a recognized direction.

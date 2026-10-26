@@ -7,7 +7,7 @@ Reverse lookup: find a value in arr and return its address. Numeric address by d
 === CODE ===
 =LAMBDA(cont, arr, [str],
   LET(
-    want_str, IF(ISOMITTED(str), 0, str),
+    want_str, z_opt(0, str),
     s_row, ROW(INDEX(arr, 1, 1)),
     s_col, COLUMN(INDEX(arr, 1, 1)),
     a_rows, ROWS(arr),
@@ -36,10 +36,14 @@ Matching follows Excel's = operator, i.e. the same rules as XMATCH: case-insensi
 
 A value found once returns a single address (a number, or an A1 string when str = 1). A value found more than once returns every address in row-major order, joined by ";" into one string ("1000001;2000003" or "A1;C2") - a delimited string rather than a spilled array, so the result stays a single value even inside an array. A value not found returns "".
 
+arr must be a real range reference - its position on the sheet is used. A computed array (the output of FILTER, TAKE, CHOOSEROWS, ...) has no position and gives #VALUE!.
+
 Arguments:
   cont  - the value to find, or an array of values.
   arr   - the range to search.
   [str] - 0 (default) returns numeric addresses; 1 returns A1 strings.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The address of the match, a ";"-joined list of addresses for multiple matches, or "" when not found; element-wise over an array of values.

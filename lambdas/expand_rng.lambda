@@ -7,10 +7,10 @@ Grow or shrink an address or range and return it as a range string. r_down / c_r
 === CODE ===
 =LAMBDA(ad_or_rng, [r_down], [c_right], [r_up], [c_left],
   LET(
-    grow_down, IF(ISOMITTED(r_down), 0, r_down),
-    grow_right, IF(ISOMITTED(c_right), 0, c_right),
-    grow_up, IF(ISOMITTED(r_up), 0, r_up),
-    grow_left, IF(ISOMITTED(c_left), 0, c_left),
+    grow_down, z_opt(0, r_down),
+    grow_right, z_opt(0, c_right),
+    grow_up, z_opt(0, r_up),
+    grow_left, z_opt(0, c_left),
     single, ROWS(ad_or_rng) * COLUMNS(ad_or_rng) = 1,
     ok_int, LAMBDA(x, IFERROR(AND(ISNUMBER(x), x = INT(x)), FALSE)),
     args_ok, AND(ok_int(grow_down), ok_int(grow_right), ok_int(grow_up), ok_int(grow_left)),
@@ -44,6 +44,8 @@ Arguments:
   [c_right] - columns to add right (negative removes from the right)  (default 0).
   [r_up]    - rows to add above (negative removes from the top)       (default 0).
   [c_left]  - columns to add left (negative removes from the left)    (default 0).
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   A range string covering the resulting rectangle, in the input's format; a single address (no colon) when the result is one cell. #VALUE! for an array input, a non-integer optional, or a shrink that leaves no rows or columns.

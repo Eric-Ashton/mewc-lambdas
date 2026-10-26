@@ -6,8 +6,8 @@ Like DEC2BIN but handles up to 53 binary places instead of 10 (beyond 53 the val
 
 === CODE ===
 =LAMBDA(number, [places], LET(
-   n, ROUND(number, 0),
-   p, IF(ISOMITTED(places), 0, places),
+   n, ROUND(z_num(number), 0),
+   p, z_opt(0, places),
    IF(
       n >= 0,
       BASE(n, 2, MAX(p, 1)),
@@ -28,6 +28,8 @@ Converts a decimal integer to a binary string, extended range.
 Arguments:
   number   - the decimal integer to convert.
   [places] - minimum width, zero-padded (optional).
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The binary representation as text, supporting up to 53 places (past 53 the value can no longer be stored exactly in a double).

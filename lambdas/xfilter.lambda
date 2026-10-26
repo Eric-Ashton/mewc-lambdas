@@ -8,15 +8,16 @@ Multi-criteria FILTER. ANDs up to 5 boolean masks. A column-vector mask filters 
 =LAMBDA(arr, f_1, [f_2], [f_3], [f_4], [f_5], LET(
    nr, ROWS(arr),
    nc, COLUMNS(arr),
-   filt2, IF(ISOMITTED(f_2), 1, f_2),
-   filt3, IF(ISOMITTED(f_3), 1, f_3),
-   filt4, IF(ISOMITTED(f_4), 1, f_4),
-   filt5, IF(ISOMITTED(f_5), 1, f_5),
+   filt1, z_opt(1, f_1),
+   filt2, z_opt(1, f_2),
+   filt3, z_opt(1, f_3),
+   filt4, z_opt(1, f_4),
+   filt5, z_opt(1, f_5),
    as_row_mask, LAMBDA(g, IF(AND(ROWS(g) = nr, COLUMNS(g) = 1), g, 1)),
    as_col_mask, LAMBDA(g, IF(AND(COLUMNS(g) = nc, ROWS(g) = 1, nc > 1), g, 1)),
-   row_mask, SEQUENCE(nr, 1, 1, 0) * as_row_mask(f_1) * as_row_mask(filt2)
+   row_mask, SEQUENCE(nr, 1, 1, 0) * as_row_mask(filt1) * as_row_mask(filt2)
       * as_row_mask(filt3) * as_row_mask(filt4) * as_row_mask(filt5),
-   col_mask, SEQUENCE(1, nc, 1, 0) * as_col_mask(f_1) * as_col_mask(filt2)
+   col_mask, SEQUENCE(1, nc, 1, 0) * as_col_mask(filt1) * as_col_mask(filt2)
       * as_col_mask(filt3) * as_col_mask(filt4) * as_col_mask(filt5),
    LET(_r, FILTER(FILTER(arr, row_mask), col_mask), IF(ISERROR(_r), "", _r))
 ))
@@ -34,6 +35,8 @@ Each mask is applied by its shape: a column-vector mask (height = ROWS(arr)) fil
 Single-row arrays are row-filtered too: a mask matching arr's height still applies even when that height is 1 (so a 1x1 FALSE mask drops the single row rather than being ignored). This matters when xfilter runs inside MAP over growing 1-row prefixes - each step filters correctly instead of returning the unfiltered value. (Column filtering still requires COLUMNS(arr) > 1, to avoid re-interpreting a 1x1 mask as a column filter.)
 
 No-match returns "" without wrapping the result in IFERROR (which would blank any element over 255 chars); genuine errors in arr propagate.
+
+Masks: a mask pointed at a blank cell or "" (or omitted) is treated as 1 = no filtering, so an unused slot can safely reference an empty cell (z_opt).
 
 Returns:
   The filtered array, or "" when nothing matches.

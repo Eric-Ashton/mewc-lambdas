@@ -13,8 +13,8 @@ Distance from start_ad to end_ad (each numeric or A1). diag_allowed: 1 chessboar
     start_col, MOD(s, 1000000),
     end_row, INT(e / 1000000),
     end_col, MOD(e, 1000000),
-    mode, IF(ISOMITTED(diag_allowed), 1, z_scalar(diag_allowed)),
-    show_components, IF(ISOMITTED(print_components), 0, z_scalar(print_components)),
+    mode, z_opt(1, diag_allowed),
+    show_components, z_opt(0, print_components),
     row_diff, end_row - start_row,
     col_diff, end_col - start_col,
     abs_row, ABS(row_diff),
@@ -44,6 +44,8 @@ Arguments:
   [print_components] - 1 to return the directional arrows and component distances instead of the scalar (default 0).
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The distance as a number, or the component breakdown when print_components = 1.

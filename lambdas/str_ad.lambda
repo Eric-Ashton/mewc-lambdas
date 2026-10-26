@@ -8,7 +8,7 @@ Convert any address or range to an A1 string address or an array of them. A nume
 =LAMBDA(ad_or_rng,
   LET(
     to_str_1, LAMBDA(one, IF(one = "", "",
-      IFERROR(LET(num, z_numval(one), ADDRESS(INT(num / 1000000), MOD(num, 1000000), 4)), one))),
+      IFERROR(LET(num, z_numval(z_num(one)), ADDRESS(INT(num / 1000000), MOD(num, 1000000), 4)), one))),
     IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1,
       MAP(ad_or_rng, to_str_1),
       LET(
@@ -39,6 +39,8 @@ A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/IND
 
 Arguments:
   ad_or_rng - a numeric address, A1 string, A1 range, numeric range, or an array of these.
+
+A numeric address stored as text ("3000004") converts like the number.
 
 Returns:
   An A1 string for a single address, an array of A1 strings for a single range, "" for empty, the input unchanged otherwise; element-wise over an array.

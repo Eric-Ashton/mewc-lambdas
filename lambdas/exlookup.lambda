@@ -7,8 +7,8 @@ Case-sensitive XLOOKUP: same arguments, same results, except text must match cas
 === CODE ===
 =LAMBDA(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode],
   LET(
-    mode, IF(ISOMITTED(match_mode), 0, z_scalar(match_mode)),
-    smode_raw, IF(ISOMITTED(search_mode), 1, z_scalar(search_mode)),
+    mode, z_opt(0, match_mode),
+    smode_raw, z_opt(1, search_mode),
     smode, IF(ABS(smode_raw) = 2, SIGN(smode_raw), smode_raw),
     not_found, IF(ISOMITTED(if_not_found), NA(), if_not_found),
     one, LAMBDA(val,
@@ -43,6 +43,8 @@ Array lookup values: an array of lookup values is handled element-wise (MAP), so
 Numbers: EXACT compares text forms, so the number 2 matches the text "2" (XLOOKUP would not). Numbers against numbers behave as in XLOOKUP.
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The matching return_array row/column (a scalar for a single-column return), if_not_found / #N/A when nothing matches.

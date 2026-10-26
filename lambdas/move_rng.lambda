@@ -7,7 +7,7 @@ Slides an address or range 'distance' cells (default 1) in one of the 8 arrow di
 === CODE ===
 =LAMBDA(ad_or_rng, arrow, [distance],
   LET(
-    step_n, IF(ISOMITTED(distance), 1, z_scalar(distance)),
+    step_n, z_opt(1, distance),
     arr_norm, z_dir_to_arrow(arrow),
     d_row, SWITCH(arr_norm, "←", 0, "↖", -1, "↗", -1, "→", 0, "↙", 1, "↓", 1, "↘", 1, "↑", -1),
     d_col, SWITCH(arr_norm, "←", -1, "↖", -1, "↗", 1, "→", 1, "↙", -1, "↓", 0, "↘", 1, "↑", 0),
@@ -40,6 +40,8 @@ Slides an address or range 'distance' cells (default 1) in one of the 8 arrow di
 === DESCRIPTION ===
 Moves an address or range a number of cells in an arrow direction and tells you where it landed - or, for a real range, what is there.
 
+A range input (as opposed to a range string) must be a real range reference - its position on the sheet is used. A computed array (the output of FILTER, TAKE, CHOOSEROWS, ...) has no position and gives #VALUE!.
+
 Arguments:
   ad_or_rng  - what to move. Either
                * a string / numeric address or range ("B2", "B2:C10", 2000002, "2000002:10000003"; "$" and reversed corners are fine), typed in the formula or held in a cell - the result is the moved range as text in the same format; or
@@ -53,6 +55,8 @@ Clipping: the destination is cut to the sheet (A1:XFD1048576). If part of it fal
 A one-cell result is returned as a single address with no colon ("E2", or the numeric address as a number), consistent with expand_rng.
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   A range string / single address in the input's format, the destination's contents for a range reference, "oob" when nothing is left on the sheet, or #VALUE! for an unrecognised arrow, a non-integer distance, or an input that is neither a range nor an address.

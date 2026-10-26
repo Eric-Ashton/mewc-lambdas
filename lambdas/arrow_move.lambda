@@ -7,8 +7,8 @@ Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction 
 === CODE ===
 =LAMBDA(start_ad, arrow, [steps], [board_rng], [push_mode],
   LET(
-    step_n, IF(ISOMITTED(steps), 1, z_scalar(steps)),
-    mode, IF(ISOMITTED(push_mode), 0, z_scalar(push_mode)),
+    step_n, z_opt(1, steps),
+    mode, z_opt(0, push_mode),
     start_num, num_ad(start_ad),
     start_row, INT(start_num / 1000000),
     start_col, MOD(start_num, 1000000),
@@ -18,10 +18,11 @@ Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction 
     one_val, IF(ISOMITTED(board_rng), FALSE, ROWS(board_rng) * COLUMNS(board_rng) = 1),
     text_box, IF(one_val, IFERROR(z_ad_box(board_rng), 0), 0),
     box, IF(ISOMITTED(board_rng), VSTACK(1, 1, 1048576, 16384),
+         IF(AND(one_val, OR(ISBLANK(board_rng))), VSTACK(1, 1, 1048576, 16384),
          IF(COUNT(text_box) = 4, text_box,
          IF(ISREF(board_rng),
             VSTACK(MIN(ROW(board_rng)), MIN(COLUMN(board_rng)), MAX(ROW(board_rng)), MAX(COLUMN(board_rng))),
-            #VALUE!))),
+            #VALUE!)))),
     row_min, SUM(INDEX(box, 1)),
     col_min, SUM(INDEX(box, 2)),
     row_max, SUM(INDEX(box, 3)),
@@ -62,6 +63,10 @@ How the board is read (a single shared rule, so a range and its text behave the 
   3. anything else (text that is not an address, a plain number that is not a numeric address) is invalid. An invalid board returns #VALUE!.
 
 steps may be a 1x1 array (TOCOL(x), {x}); it is collapsed to a scalar so the result stays a true scalar.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
+
+A board_rng that is a single EMPTY cell is treated as omitted (whole sheet), so pointing the argument at an unused cell does not shrink the board to that cell.
 
 Returns:
   The destination as a numeric address (mode 1 clamps to the edge, mode -1 stays

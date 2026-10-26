@@ -6,7 +6,7 @@ Helper: bounding box of any address or range, as {top; left; bottom; right} abso
 
 === CODE ===
 =LAMBDA(ref_in,
-  LET(ref, z_scalar(ref_in),
+  LET(ref, z_num(ref_in),
   IFERROR(
     IF(AND(ISTEXT(ref), ISNUMBER(SEARCH(":", ref))),
       LET(
@@ -40,7 +40,7 @@ A1 ranges are normalised with MIN/MAX so "D4:B2" and "B2:D4" give the same box. 
 
 A single cell is the degenerate box where top = bottom and left = right - that is how a caller tells a cell from a range. Parsing is delegated to z_a1n and z_numval, never to num_ad, so there is no circular reference.
 
-The input is first collapsed with z_scalar, so a 1x1 array (TOCOL(x), {x}) parses exactly like the plain value instead of producing a box of zeros.
+The input is first collapsed with z_num (so a numeric address stored as TEXT, e.g. "8000005" from a TEXTSPLIT, parses as the number, and a 1x1 array parses as its value), so a 1x1 array (TOCOL(x), {x}) parses exactly like the plain value instead of producing a box of zeros.
 
 Arguments:
   ref - a numeric address, an A1 string, an A1 range, or a numeric range.

@@ -6,7 +6,7 @@ Turns an array into a frequency table sorted by frequency descending. min_freq f
 
 === CODE ===
 =LAMBDA(array, [min_freq], LET(
-   mf, IF(ISOMITTED(min_freq), 1, min_freq),
+   mf, z_opt(1, min_freq),
    vec0, TOCOL(array, 1),
    vec, LET(_v, FILTER(vec0, vec0 <> ""), IF(ISERROR(_v), NA(), _v)),
    u, LET(_u, UNIQUE(vec), IF(ISERROR(_u), NA(), _u)),
@@ -21,6 +21,8 @@ Builds a frequency table from an array.
 Arguments:
   array      - the values to tally.
   [min_freq] - minimum frequency to keep a row (default 1).
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   A 2-column array of value and count, sorted by count descending. Blanks and "" are ignored. Errors if all rows fall below min_freq.

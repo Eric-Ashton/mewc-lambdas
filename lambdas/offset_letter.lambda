@@ -35,7 +35,7 @@ Shifts each letter in a string by an integer offset with wraparound (e.g. "xyz" 
       LAMBDA(i, j,
          f(
             INDEX(st, i, j),
-            IF(ROWS(offset) * COLUMNS(offset) = 1, z_scalar(offset), INDEX(offset, i, j))
+            IF(ROWS(offset) * COLUMNS(offset) = 1, z_num(offset), INDEX(offset, i, j))
          )
       )
    )

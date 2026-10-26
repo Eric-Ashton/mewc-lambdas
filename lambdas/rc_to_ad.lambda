@@ -7,9 +7,9 @@ Build an address from a row and column number. Returns the numeric address (1e6*
 === CODE ===
 =LAMBDA(row_in, col_in, [str],
   LET(
-    row_n, z_scalar(row_in),
-    col_n, z_scalar(col_in),
-    want_str, IF(ISOMITTED(str), 0, z_scalar(str)),
+    row_n, z_num(row_in),
+    col_n, z_num(col_in),
+    want_str, z_opt(0, str),
     ok, IFERROR(AND(ISNUMBER(row_n), ISNUMBER(col_n),
                     row_n = INT(row_n), col_n = INT(col_n),
                     row_n >= 1, row_n <= 1048576,
@@ -32,6 +32,8 @@ Arguments:
   [str] - 0 (default) returns the numeric address; 1 returns an A1 string.
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The address in the requested form. Returns #VALUE! if either coordinate is non-numeric, non-integer, or outside the sheet.

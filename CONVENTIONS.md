@@ -91,9 +91,11 @@ how the header cells look themselves up (`B1` Signature, `B2` Code, `I1` Descrip
 
 Helpers (`z_*`) are exercised through their public wrapper's sheet — they don't get their own.
 
-**`shape_tests` is generated, not hand-written.** It holds one row per test case found on
-the lambda sheets, re-running that case with every single-value argument passed as a 1×1
-array (`TOCOL(x)`) and comparing with the original (shape and every element; errors by
+**`shape_tests` is generated, not hand-written.** It holds one row per (test case,
+family) for the cases found on the lambda sheets - re-running each case with its arguments
+as 1×1 arrays (`tocol`), literals moved into cells (`cellref`), numbers as text
+(`textnum`), ranges as computed arrays (`array`) and omitted optionals pointed at an empty
+cell (`blank`) - and compares with the original (shape and every element; errors by
 `ERROR.TYPE`). After you add or change cases on any lambda sheet, rebuild it:
 `py tools/build_shape_tests.py "MEWC Lambda and VBA Unit Tests.xlsm" out.xlsm`, then copy
 `out.xlsm` over the workbook. It creates the sheet, its roll-up row and tab position on
@@ -214,8 +216,24 @@ forgetting the brackets makes the argument required.
 =LAMBDA(arr, [as_row], …)      correct
 =LAMBDA(arr, as_row, …)        wrong — as_row is now required
 ```
-Test optional args inside with `ISOMITTED`, and put required args first, all
-optional (bracketed) args after them.
+Put required args first, all optional (bracketed) args after them, and read each
+optional **single-value** argument through **`z_opt(default, arg)`** instead of a bare
+`IF(ISOMITTED(arg), default, arg)`:
+
+```
+mode, z_opt(0, match_mode)          ' flag / count
+sep,  z_opt(";", delim, TRUE)       ' TRUE = keep numeric-looking text as text (delimiters)
+```
+
+`z_opt` applies the library-wide convention for optionals: **omitted, a blank cell, and
+`""` all mean "use the default"**; the value is collapsed to a true scalar (so
+`TOCOL(x)` / `{x}` behave like `x`); and a number stored as text (`"2"`) is read as the
+number unless `keep_text` is set. Required arguments that are numbers by nature (a
+count, a step, a row/column number, a seed) go through **`z_num(arg)`** for the same
+scalar + text-to-number treatment. Neither is used on an argument whose *position*
+matters (a board / boundary range) or on a value that is looked up in data (`"2"` and
+`2` must stay distinct there). Arguments that must be real ranges (ROW/COLUMN are taken
+from them) say so in their description.
 
 ## 5. Stay under 2048 characters
 The Name Manager caps a definition at **2048 characters**, and whitespace counts.
@@ -285,11 +303,14 @@ array-shaping function.
   is a no-op otherwise (text helpers may use `CONCAT(x)` directly). Never use it on an
   argument that must stay a **range reference** (a board/boundary whose position
   matters) - it reads the value and the reference is lost.
-- **The regression net.** The `shape_tests` sheet re-runs every test case with each
-  single-value argument wrapped in `TOCOL()` and PASSes only when the answer is
-  identical. Regenerate it after adding or changing test cases:
-  `py tools/build_shape_tests.py "<src.xlsm>" "<out.xlsm>"` (see the tool's docstring
-  for the few reference arguments it deliberately leaves unwrapped).
+- **The regression net.** The generated `shape_tests` sheet re-runs every test case
+  in five "shape" families that must not change the answer - **tocol** (each
+  single-value argument as a 1×1 array), **cellref** (each literal moved into a cell),
+  **textnum** (each number as text), **array** (each range as a computed array) and
+  **blank** (each omitted optional pointed at an empty cell) - and PASSes only when the
+  result is identical. Regenerate it after adding or changing test cases:
+  `py tools/build_shape_tests.py "<src.xlsm>" "<out.xlsm>"` (its docstring lists the
+  arguments each family deliberately leaves alone, and why).
 
 ## 10. Pre-commit checklist
 1. No inline comments anywhere.

@@ -7,8 +7,8 @@ Returns a copy of the array with the cell at row r, column c replaced by value.
 === CODE ===
 =LAMBDA(array, r_in, c_in, value, LET(
    arr, array,
-   r, z_scalar(r_in),
-   c, z_scalar(c_in),
+   r, z_num(r_in),
+   c, z_num(c_in),
    MAKEARRAY(
       ROWS(arr),
       COLUMNS(arr),

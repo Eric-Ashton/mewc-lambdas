@@ -6,21 +6,21 @@ Permutations (order_matters=1) or combinations (=0) of size n from arr. countdow
 
 === CODE ===
 =LAMBDA(arr, n_in, [order_matters], [repeats_allowed], [countdown_n], [clean_input],
- LET(n, z_scalar(n_in),
+ LET(n, z_num(n_in),
  IF(
   n < 1,
   NA(),
   LET(
-   ci_, IF(ISOMITTED(clean_input), 1, z_scalar(clean_input)),
+   ci_, z_opt(1, clean_input),
    flat_, IF(
     ci_ = 1,
     LET(r_, TOCOL(arr, 3), UNIQUE(FILTER(r_, r_ <> ""))),
     TOCOL(arr)
    ),
    m_, ROWS(flat_),
-   om_, IF(ISOMITTED(order_matters), 0, z_scalar(order_matters)),
-   rep_, IF(ISOMITTED(repeats_allowed), 0, z_scalar(repeats_allowed)),
-   cd_, IF(ISOMITTED(countdown_n), 0, z_scalar(countdown_n)),
+   om_, z_opt(0, order_matters),
+   rep_, z_opt(0, repeats_allowed),
+   cd_, z_opt(0, countdown_n),
    chars_, UNICHAR(SEQUENCE(, m_, 20001)),
    one_k_, LAMBDA(k_,
     IF(
@@ -89,6 +89,8 @@ Arguments:
   [clean_input]     - 1 to de-duplicate and drop blanks from arr first (default 1).
 
 Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   An array of the generated selections, one per row.
