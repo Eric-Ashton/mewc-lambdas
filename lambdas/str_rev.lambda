@@ -8,7 +8,7 @@ Reverses a string (character by character), respecting whole multi-character sym
 =LAMBDA(str,
    IF(
       ROWS(str) * COLUMNS(str) = 1,
-      TEXTJOIN("", , MID(str, SEQUENCE(LEN(str), , LEN(str), -1), 1)),
+      LET(one, CONCAT(str), TEXTJOIN("", , MID(one, SEQUENCE(LEN(one), , LEN(one), -1), 1))),
       BYROW(
          str,
          LAMBDA(x, TEXTJOIN("", , MID(x, SEQUENCE(LEN(x), , LEN(x), -1), 1)))
@@ -21,6 +21,8 @@ Reverses the characters of a string.
 
 Arguments:
   str - the text to reverse.
+
+A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX result) is collapsed to a scalar first, so it behaves exactly like the plain value.
 
 Returns:
   The string reversed. Works on arrays of strings.

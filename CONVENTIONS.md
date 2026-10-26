@@ -262,6 +262,14 @@ array-shaping function.
   an array re-wraps a scalar into a 1×1 array.
 - **The fix.** Unbox with `INDEX(x, 1)` (or `@x`), and guard the "single vs many"
   split with a **scalar** condition like `ROWS(x) * COLUMNS(x) = 1`.
+- **The mirror trap - a 1×1 array coming IN.** A caller can hand a lambda a 1×1
+  array instead of a scalar (`TOCOL(x)`, `{x}`, a one-cell `FILTER`/`INDEX` result).
+  Any `SEQUENCE(LEN(x))`, `SEQUENCE(n)`, `MAKEARRAY(n, …)` or `REGEXEXTRACT(x, …, 1)`
+  built from it then *lifts* over the array and silently returns one element
+  (`z_a1n(TOCOL("AM17"))` read the column as Z, not AM). `INDEX(x, 1)` does **not**
+  reliably unbox here. Collapse single inputs first: **`CONCAT(x)` for text,
+  `SUM(x * 1)` for numbers** - both are aggregations, so they always yield a true
+  scalar and are no-ops on a plain value.
 
 ## 10. Pre-commit checklist
 1. No inline comments anywhere.

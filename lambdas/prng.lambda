@@ -9,7 +9,7 @@ Non-volatile pseudorandom integers: a vertical list of n values in lo..hi inclus
   LET(
     low, IF(ISOMITTED(lo), 0, INT(lo)),
     high, IF(ISOMITTED(hi), 100, INT(hi)),
-    n_out, IF(ISOMITTED(n), 1, INT(n)),
+    n_out, IF(ISOMITTED(n), 1, SUM(INT(n) * 1)),
     start, MIN(low, high),
     span, ABS(high - low) + 1,
     modulus, 4294967296,
@@ -37,6 +37,8 @@ Arguments:
   [lo]  - lowest value, inclusive. Default 0.
   [hi]  - highest value, inclusive. Default 100. (If lo > hi they are swapped.)
   [n]   - how many numbers to return, 1 or more. Default 1.
+
+n may be a 1x1 array (TOCOL(x), {x}); it is collapsed to a scalar before SEQUENCE.
 
 Returns:
   A vertical array of n integers, each drawn independently and (near-)uniformly from lo..hi. With n = 1 the result is a true scalar (not a 1x1 array), so it is safe inside SEQUENCE, MAKEARRAY etc.

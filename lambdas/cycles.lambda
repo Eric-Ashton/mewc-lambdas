@@ -6,8 +6,10 @@ Simulates two nested loops: a 2-column array with outer_n*inner_n rows. Column 1
 
 === CODE ===
 =LAMBDA(outer_n, inner_n, LET(
-   seq, SEQUENCE(outer_n * inner_n, 1, 0),
-   HSTACK(INT(seq / inner_n) + 1, MOD(seq, inner_n) + 1)
+   o_n, SUM(outer_n * 1),
+   i_n, SUM(inner_n * 1),
+   seq, SEQUENCE(o_n * i_n, 1, 0),
+   HSTACK(INT(seq / i_n) + 1, MOD(seq, i_n) + 1)
 ))
 
 === DESCRIPTION ===
@@ -16,6 +18,8 @@ Generates the index pairs of two nested loops.
 Arguments:
   outer_n - number of outer iterations.
   inner_n - number of inner iterations.
+
+outer_n / inner_n may be 1x1 arrays (TOCOL(x), {x}); they are collapsed to scalars before SEQUENCE.
 
 Returns:
   A 2-column array with outer_n*inner_n rows. Column 1 holds the outer index (each value repeated inner_n times); column 2 holds the inner index cycling 1..inner_n.

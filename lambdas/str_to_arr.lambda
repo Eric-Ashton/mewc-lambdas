@@ -13,7 +13,7 @@ Splits a string into a vertical array (horizontal if as_row=1), keeping multi-ch
  IF(
   r * c = 1,
   LET(
-   val, a & "",
+   val, CONCAT(a),
    IF(
     val = "",
     "",
@@ -103,6 +103,8 @@ Explodes a string into an array of its characters.
 Arguments:
   str_or_array - the string to split (or an array of strings).
   [as_row]     - 1 for a horizontal result; default 0 vertical.
+
+A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX result) is collapsed to a scalar first, so it behaves exactly like the plain value.
 
 Returns:
   One character per cell, using the \X grapheme pattern so multi-character Unicode symbols stay intact. 1D array input splits into the unused axis; 2D input is concatenated row-major first. Digit characters are returned as numbers.

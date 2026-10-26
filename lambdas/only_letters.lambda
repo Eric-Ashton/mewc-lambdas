@@ -6,7 +6,7 @@ Keeps only the letters in a string (or array), dropping all other characters.
 
 === CODE ===
 =LAMBDA(arr, LET(
-   f, LAMBDA(x, IFERROR(CONCAT(REGEXEXTRACT(x, "[a-z]", 1, 1)), "")),
+   f, LAMBDA(x, IFERROR(CONCAT(REGEXEXTRACT(CONCAT(x), "[a-z]", 1, 1)), "")),
    IF(ROWS(arr) * COLUMNS(arr) = 1, f(arr), MAP(arr, f))
 ))
 
@@ -15,6 +15,8 @@ Strips everything except letters from text.
 
 Arguments:
   st - a string or array of strings.
+
+A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX result) is collapsed to a scalar first, so it behaves exactly like the plain value.
 
 Returns:
   The input with all non-letter characters removed.
