@@ -5,21 +5,22 @@ selections(arr, n, [order_matters], [repeats_allowed], [countdown_mode], [clean_
 Permutations (order_matters=1) or combinations (=0) of size n from arr. countdown_mode stacks sizes n..1. clean_input (default 1) de-dupes/drops blanks; other flags default 0.
 
 === CODE ===
-=LAMBDA(arr, n, [order_matters], [repeats_allowed], [countdown_n], [clean_input],
+=LAMBDA(arr, n_in, [order_matters], [repeats_allowed], [countdown_n], [clean_input],
+ LET(n, z_scalar(n_in),
  IF(
   n < 1,
   NA(),
   LET(
-   ci_, IF(ISOMITTED(clean_input), 1, clean_input),
+   ci_, IF(ISOMITTED(clean_input), 1, z_scalar(clean_input)),
    flat_, IF(
     ci_ = 1,
     LET(r_, TOCOL(arr, 3), UNIQUE(FILTER(r_, r_ <> ""))),
     TOCOL(arr)
    ),
    m_, ROWS(flat_),
-   om_, IF(ISOMITTED(order_matters), 0, order_matters),
-   rep_, IF(ISOMITTED(repeats_allowed), 0, repeats_allowed),
-   cd_, IF(ISOMITTED(countdown_n), 0, countdown_n),
+   om_, IF(ISOMITTED(order_matters), 0, z_scalar(order_matters)),
+   rep_, IF(ISOMITTED(repeats_allowed), 0, z_scalar(repeats_allowed)),
+   cd_, IF(ISOMITTED(countdown_n), 0, z_scalar(countdown_n)),
    chars_, UNICHAR(SEQUENCE(, m_, 20001)),
    one_k_, LAMBDA(k_,
     IF(
@@ -74,7 +75,7 @@ Permutations (order_matters=1) or combinations (=0) of size n from arr. countdow
    )
   )
  )
-)
+))
 
 === DESCRIPTION ===
 Generates permutations or combinations drawn from an array.
@@ -86,6 +87,8 @@ Arguments:
   [repeats_allowed] - 1 to allow an item to be reused within a selection (default 0).
   [countdown_mode]  - 1 to also include selections of size n-1, n-2, ... 1 (default 0).
   [clean_input]     - 1 to de-duplicate and drop blanks from arr first (default 1).
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   An array of the generated selections, one per row.

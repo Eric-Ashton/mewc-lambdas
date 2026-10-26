@@ -5,12 +5,14 @@ update_arr( array, r, c, value)
 Returns a copy of the array with the cell at row r, column c replaced by value.
 
 === CODE ===
-=LAMBDA(array, r, c, value, LET(
+=LAMBDA(array, r_in, c_in, value, LET(
    arr, array,
+   r, z_scalar(r_in),
+   c, z_scalar(c_in),
    MAKEARRAY(
       ROWS(arr),
       COLUMNS(arr),
-      LAMBDA(i, j, IF((i = r) * (j = c), value, INDEX(arr, i, j)))
+      LAMBDA(i, j, IF((i = r) * (j = c), z_scalar(value), INDEX(arr, i, j)))
    )
 ))
 
@@ -22,6 +24,8 @@ Arguments:
   r     - row index of the cell to change.
   c     - column index of the cell to change.
   value - the new value for that cell.
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   A copy of array with (r, c) set to value.

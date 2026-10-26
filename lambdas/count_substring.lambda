@@ -6,7 +6,7 @@ Counts how many times sub appears in str. case_sensitive is 0 by default. Either
 
 === CODE ===
 =LAMBDA(input_text, sub, [case_sensitive], LET(
-   cs, IF(ISOMITTED(case_sensitive), 0, case_sensitive),
+   cs, IF(ISOMITTED(case_sensitive), 0, z_scalar(case_sensitive)),
    norm, LAMBDA(t, IF(cs = 1, t, LOWER(t))),
    count_one, LAMBDA(txt, subtxt, LET(
       t_norm, norm(txt),
@@ -58,6 +58,8 @@ Arguments:
   str              - the text to search in.
   sub              - the substring to count.
   [case_sensitive] - 1 for case-sensitive, 0 to ignore case (default 0).
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   The count of non-overlapping occurrences. If str OR sub is an array (not both), returns an array of counts. Non-text cells count as 0.

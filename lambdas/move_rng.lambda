@@ -7,7 +7,7 @@ Slides an address or range 'distance' cells (default 1) in one of the 8 arrow di
 === CODE ===
 =LAMBDA(ad_or_rng, arrow, [distance],
   LET(
-    step_n, IF(ISOMITTED(distance), 1, distance),
+    step_n, IF(ISOMITTED(distance), 1, z_scalar(distance)),
     arr_norm, z_dir_to_arrow(arrow),
     d_row, SWITCH(arr_norm, "←", 0, "↖", -1, "↗", -1, "→", 0, "↙", 1, "↓", 1, "↘", 1, "↑", -1),
     d_col, SWITCH(arr_norm, "←", -1, "↖", -1, "↗", 1, "→", 1, "↙", -1, "↓", 0, "↘", 1, "↑", 0),
@@ -51,6 +51,8 @@ Arguments:
 Clipping: the destination is cut to the sheet (A1:XFD1048576). If part of it falls off the sheet, the part that remains is returned ("B2:C10" moved ↖ by 2 would start at row 0 / column 0, so you get "A1:A8"). If none of it remains, the result is the text "oob".
 
 A one-cell result is returned as a single address with no colon ("E2", or the numeric address as a number), consistent with expand_rng.
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   A range string / single address in the input's format, the destination's contents for a range reference, "oob" when nothing is left on the sheet, or #VALUE! for an unrecognised arrow, a non-integer distance, or an input that is neither a range nor an address.

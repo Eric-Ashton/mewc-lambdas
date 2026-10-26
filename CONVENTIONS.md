@@ -91,6 +91,16 @@ how the header cells look themselves up (`B1` Signature, `B2` Code, `I1` Descrip
 
 Helpers (`z_*`) are exercised through their public wrapper's sheet — they don't get their own.
 
+**`shape_tests` is generated, not hand-written.** It holds one row per test case found on
+the lambda sheets, re-running that case with every single-value argument passed as a 1×1
+array (`TOCOL(x)`) and comparing with the original (shape and every element; errors by
+`ERROR.TYPE`). After you add or change cases on any lambda sheet, rebuild it:
+`py tools/build_shape_tests.py "MEWC Lambda and VBA Unit Tests.xlsm" out.xlsm`, then copy
+`out.xlsm` over the workbook. It creates the sheet, its roll-up row and tab position on
+first use and rewrites the rows afterwards. Reference-position arguments (`ad_to_cont`'s
+`arr`, `arrow_move`'s `board_rng`, `neighbors_list`'s `boundary_rng`, a cell reference as
+`move_rng`'s first argument) are left unwrapped on purpose - wrapping them changes meaning.
+
 **Removing a lambda.** Delete `lambdas/<name>.lambda`, drop its entry from `LIB_LAMBDAS`
 in `tools/lambda_check.py`, and in the workbook `apply_edits(..., deletes=["<name>"])` to
 remove its test sheet. First rewrite anything that references it — its `lambda_tests`
@@ -266,10 +276,20 @@ array-shaping function.
   array instead of a scalar (`TOCOL(x)`, `{x}`, a one-cell `FILTER`/`INDEX` result).
   Any `SEQUENCE(LEN(x))`, `SEQUENCE(n)`, `MAKEARRAY(n, …)` or `REGEXEXTRACT(x, …, 1)`
   built from it then *lifts* over the array and silently returns one element
-  (`z_a1n(TOCOL("AM17"))` read the column as Z, not AM). `INDEX(x, 1)` does **not**
-  reliably unbox here. Collapse single inputs first: **`CONCAT(x)` for text,
-  `SUM(x * 1)` for numbers** - both are aggregations, so they always yield a true
-  scalar and are no-ops on a plain value.
+  (`z_a1n(TOCOL("AM17"))` read the column as Z, not AM; `set(rng, TOCOL(1))` returned
+  its result three times because `IF(as_row, …)` lifted). `INDEX(x, 1)` does **not**
+  reliably unbox here. **Pass every single-value argument - option flags, counts,
+  delimiters, a lone lookup value - through `z_scalar(x)`** at the top of the lambda,
+  usually inside the `ISOMITTED` default: `mode, IF(ISOMITTED(match_mode), 0,
+  z_scalar(match_mode))`. It collapses a 1×1 array to a scalar of the same type and
+  is a no-op otherwise (text helpers may use `CONCAT(x)` directly). Never use it on an
+  argument that must stay a **range reference** (a board/boundary whose position
+  matters) - it reads the value and the reference is lost.
+- **The regression net.** The `shape_tests` sheet re-runs every test case with each
+  single-value argument wrapped in `TOCOL()` and PASSes only when the answer is
+  identical. Regenerate it after adding or changing test cases:
+  `py tools/build_shape_tests.py "<src.xlsm>" "<out.xlsm>"` (see the tool's docstring
+  for the few reference arguments it deliberately leaves unwrapped).
 
 ## 10. Pre-commit checklist
 1. No inline comments anywhere.

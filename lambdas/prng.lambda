@@ -7,9 +7,9 @@ Non-volatile pseudorandom integers: a vertical list of n values in lo..hi inclus
 === CODE ===
 =LAMBDA(seed, [lo], [hi], [n],
   LET(
-    low, IF(ISOMITTED(lo), 0, INT(lo)),
-    high, IF(ISOMITTED(hi), 100, INT(hi)),
-    n_out, IF(ISOMITTED(n), 1, SUM(INT(n) * 1)),
+    low, IF(ISOMITTED(lo), 0, INT(z_scalar(lo))),
+    high, IF(ISOMITTED(hi), 100, INT(z_scalar(hi))),
+    n_out, IF(ISOMITTED(n), 1, INT(z_scalar(n))),
     start, MIN(low, high),
     span, ABS(high - low) + 1,
     modulus, 4294967296,
@@ -22,7 +22,7 @@ Non-volatile pseudorandom integers: a vertical list of n values in lo..hi inclus
       step_c, xorshift(step_b, 15),
       step_d, mulmod(step_c, 2221713035),
       xorshift(step_d, 16))),
-    seed_mix, mix(MOD(INT(seed), modulus)),
+    seed_mix, mix(MOD(INT(z_scalar(seed)), modulus)),
     draw_ix, IF(n_out = 1, 1, SEQUENCE(n_out)),
     keys, MOD(seed_mix + mulmod(draw_ix, 2654435761), modulus),
     start + MOD(mix(keys), span)

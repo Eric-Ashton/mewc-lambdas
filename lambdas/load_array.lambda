@@ -6,14 +6,15 @@ Rebuilds an array from a delimited string (inverse of save_array). Defaults matc
 
 === CODE ===
 =LAMBDA(input_string, [col_delimiter], [row_delimiter],
-   IF(
-      input_string = "",
-      "",
-      LET(
-         cd, IF(ISOMITTED(col_delimiter), "|", col_delimiter),
-         rd, IF(ISOMITTED(row_delimiter), ";", row_delimiter),
+   LET(
+      one, z_scalar(input_string),
+      IF(
+         one = "",
+         "",
          LET(
-            arr, TEXTSPLIT(input_string, cd, rd, FALSE),
+            cd, IF(ISOMITTED(col_delimiter), "|", z_scalar(col_delimiter)),
+            rd, IF(ISOMITTED(row_delimiter), ";", z_scalar(row_delimiter)),
+            arr, TEXTSPLIT(one, cd, rd, FALSE),
             MAP(arr, LAMBDA(val, IF(val = "", "", IFERROR(--val, val))))
          )
       )
@@ -27,6 +28,8 @@ Arguments:
   input_string    - the delimited text to parse.
   [col_delimiter] - column separator (default "|").
   [row_delimiter] - row separator (default ";").
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   The reconstructed array.

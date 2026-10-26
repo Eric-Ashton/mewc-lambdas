@@ -6,8 +6,8 @@ Simulates two nested loops: a 2-column array with outer_n*inner_n rows. Column 1
 
 === CODE ===
 =LAMBDA(outer_n, inner_n, LET(
-   o_n, SUM(outer_n * 1),
-   i_n, SUM(inner_n * 1),
+   o_n, z_scalar(outer_n),
+   i_n, z_scalar(inner_n),
    seq, SEQUENCE(o_n * i_n, 1, 0),
    HSTACK(INT(seq / i_n) + 1, MOD(seq, i_n) + 1)
 ))

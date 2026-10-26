@@ -6,10 +6,10 @@ Flattens a 2D range to a column. show_addr (default 1) adds an address column; c
 
 === CODE ===
 =LAMBDA(rng, [show_addr], [clean], [dir], [snake], LET(
- _show, IF(ISOMITTED(show_addr), 1, show_addr),
- _clean, IF(ISOMITTED(clean), 1, clean),
- _in_dir, IF(ISOMITTED(dir), "→↓", dir),
- _snake, IF(ISOMITTED(snake), 0, snake),
+ _show, IF(ISOMITTED(show_addr), 1, z_scalar(show_addr)),
+ _clean, IF(ISOMITTED(clean), 1, z_scalar(clean)),
+ _in_dir, IF(ISOMITTED(dir), "→↓", z_scalar(dir)),
+ _snake, IF(ISOMITTED(snake), 0, z_scalar(snake)),
  _len, LEN(_in_dir),
  _d, IF(
   _len = 2,
@@ -92,6 +92,8 @@ Arguments:
   [clean]      - 1 to drop blanks, errors, and "" (default 1).
   [dir]        - scan order as arrows; "→↓" (default) is row-major (right, then down).
   [snake]      - 1 to snake back and forth across rows/columns (default 0).
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   The flattened values as a column (address + value when show_addr = 1). Returns #VALUE! if dir is not a valid one- or two-arrow scan direction.

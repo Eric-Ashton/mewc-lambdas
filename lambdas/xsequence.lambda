@@ -6,11 +6,11 @@ Vertical sequence from start to stop inclusive, counting by step. Can repeat eac
 
 === CODE ===
 =LAMBDA(start, stop, [step], [repeat_element], [repeat_array], LET(
-   s, start,
-   t, stop,
-   stp, IF(ISOMITTED(step), IF(t >= s, 1, -1), step),
-   re, IF(ISOMITTED(repeat_element), 1, SUM(repeat_element * 1)),
-   ra, IF(ISOMITTED(repeat_array), 1, SUM(repeat_array * 1)),
+   s, z_scalar(start),
+   t, z_scalar(stop),
+   stp, IF(ISOMITTED(step), IF(t >= s, 1, -1), z_scalar(step)),
+   re, IF(ISOMITTED(repeat_element), 1, z_scalar(repeat_element)),
+   ra, IF(ISOMITTED(repeat_array), 1, z_scalar(repeat_array)),
    d, t - s,
    ok_dir, OR(d = 0, SIGN(stp) = SIGN(d)),
    ok_div, MOD(ABS(d), ABS(stp)) = 0,

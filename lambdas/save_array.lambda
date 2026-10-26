@@ -6,8 +6,8 @@ Flattens an array into a delimited text string (inverse of load_array). Defaults
 
 === CODE ===
 =LAMBDA(input_array, [col_delimiter], [row_delimiter], LET(
-   cd, IF(ISOMITTED(col_delimiter), "|", col_delimiter),
-   rd, IF(ISOMITTED(row_delimiter), ";", row_delimiter),
+   cd, IF(ISOMITTED(col_delimiter), "|", z_scalar(col_delimiter)),
+   rd, IF(ISOMITTED(row_delimiter), ";", z_scalar(row_delimiter)),
    TEXTJOIN(
       rd,
       FALSE,
@@ -22,6 +22,8 @@ Arguments:
   input_array     - the array to serialize.
   [col_delimiter] - column separator (default "|").
   [row_delimiter] - row separator (default ";").
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   A text string encoding the array.

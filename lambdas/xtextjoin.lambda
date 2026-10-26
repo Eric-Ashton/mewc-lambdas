@@ -7,8 +7,8 @@ TEXTJOIN that can also split back into an array or set, and beats the arg-count 
 === CODE ===
 =LAMBDA(arr, [delim], [str_arr_set],
   LET(
-    sep, IF(ISOMITTED(delim), ";", delim),
-    mode, IF(ISOMITTED(str_arr_set), 1, str_arr_set),
+    sep, IF(ISOMITTED(delim), ";", z_scalar(delim)),
+    mode, IF(ISOMITTED(str_arr_set), 1, z_scalar(str_arr_set)),
     row_strings, BYROW(arr, LAMBDA(one_row,
       TEXTJOIN(sep, TRUE, IF(ISERROR(one_row & ""), "", one_row & "")))),
     has_any, SUM(--(row_strings <> "")) > 0,
@@ -55,6 +55,8 @@ Modes:
   3 set    - the array output with UNIQUE then SORT applied.
 
 To stay within Excel's limits on big inputs, each input row is joined and re-split on its own and the pieces are stacked, so no single intermediate string has to hold the whole output. Each individual input row must still fit in 32,767 characters.
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   A single string (mode 1), a vertical array (mode 2), or a sorted set (mode 3). Empty input returns "".

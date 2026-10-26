@@ -6,8 +6,8 @@ Lists the A1 addresses around a center cell within size (default 1), bounded by 
 
 === CODE ===
 =LAMBDA(center_ad, [size], [boundary_rng], [diag_allowed], LET(
-   s, IF(ISOMITTED(size), 1, SUM(size * 1)),
-   d, IF(ISOMITTED(diag_allowed), 1, diag_allowed),
+   s, IF(ISOMITTED(size), 1, z_scalar(size)),
+   d, IF(ISOMITTED(diag_allowed), 1, z_scalar(diag_allowed)),
    cen_num, num_ad(center_ad),
    cen_row, IFERROR(INT(cen_num / 1000000), NA()),
    cen_col, IFERROR(MOD(cen_num, 1000000), NA()),

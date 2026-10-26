@@ -7,8 +7,8 @@ Moves a start address (numeric or A1) 'steps' (default 1) in an arrow direction 
 === CODE ===
 =LAMBDA(start_ad, arrow, [steps], [board_rng], [push_mode],
   LET(
-    step_n, IF(ISOMITTED(steps), 1, SUM(steps * 1)),
-    mode, IF(ISOMITTED(push_mode), 0, push_mode),
+    step_n, IF(ISOMITTED(steps), 1, z_scalar(steps)),
+    mode, IF(ISOMITTED(push_mode), 0, z_scalar(push_mode)),
     start_num, num_ad(start_ad),
     start_row, INT(start_num / 1000000),
     start_col, MOD(start_num, 1000000),
