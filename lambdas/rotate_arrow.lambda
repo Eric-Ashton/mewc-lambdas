@@ -9,10 +9,12 @@ Rotates an arrow by 45 degrees times steps. arrow may be a standard arrow, its n
    arrows, "↑↗→↘↓↙←↖",
    arrow_list, MID(arrows, SEQUENCE(8), 1),
    idx, XMATCH(z_dir_to_arrow(arrow), arrow_list),
-   turn, IF(ISOMITTED(clockwise), steps, IF(OR(clockwise = 0, clockwise = "ccw"), -steps, steps)),
+   stp, z_num(steps),
+   cw, z_opt(1, clockwise),
+   turn, IF(OR(cw = 0, cw = "ccw"), -stp, stp),
    pos, MOD(idx - 1 + turn, 8) + 1,
    out, IFNA(MID(arrows, pos, 1), ""),
-   IF(IF(ISOMITTED(as_num), 0, as_num) = 1, z_arrow_to_num(out), out)
+   IF(z_opt(0, as_num) = 1, z_arrow_to_num(out), out)
 ))
 
 === DESCRIPTION ===
@@ -23,6 +25,10 @@ Arguments:
   steps       - number of 45-degree turns.
   [clockwise] - 1 = clockwise (default), 0 = counter-clockwise (the string "ccw" also means counter-clockwise).
   [as_num]    - 0 = return the arrow glyph (default), 1 = return its numeric equivalent.
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The rotated arrow (or, with as_num = 1, its numeric equivalent), or "" if arrow is not one of the eight directions.

@@ -6,15 +6,15 @@ Vertical sequence from start to stop inclusive, counting by step. Can repeat eac
 
 === CODE ===
 =LAMBDA(start, stop, [step], [repeat_element], [repeat_array], LET(
-   s, start,
-   t, stop,
-   stp, IF(ISOMITTED(step), IF(t >= s, 1, -1), step),
-   re, IF(ISOMITTED(repeat_element), 1, repeat_element),
-   ra, IF(ISOMITTED(repeat_array), 1, repeat_array),
+   s, z_num(start),
+   t, z_num(stop),
+   stp, z_opt(IF(t >= s, 1, -1), step),
+   re, z_opt(1, repeat_element),
+   ra, z_opt(1, repeat_array),
    d, t - s,
    ok_dir, OR(d = 0, SIGN(stp) = SIGN(d)),
    ok_div, MOD(ABS(d), ABS(stp)) = 0,
-   n, QUOTIENT(ABS(d), ABS(stp)) + 1,
+   n, SUM(QUOTIENT(ABS(d), ABS(stp)) * 1) + 1,
    out, s + stp * INT(MOD(SEQUENCE(n * re * ra) - 1, n * re) / re),
    IF(AND(stp <> 0, ok_dir, ok_div), out, #VALUE!)
 ))
@@ -28,6 +28,10 @@ Arguments:
   [step]           - increment (default 1).
   [repeat_element] - times to repeat each element in place (default 1).
   [repeat_array]   - times to repeat the whole sequence (default 1).
+
+start/stop/step and the repeat counts may be 1x1 arrays (TOCOL(x), {x}); the element count is collapsed to a true scalar before SEQUENCE.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   A vertical array from start to stop, or #VALUE! if step is 0, points the wrong way, or does not divide the span evenly. Decimal steps may introduce floating-point error.

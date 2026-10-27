@@ -91,6 +91,27 @@ how the header cells look themselves up (`B1` Signature, `B2` Code, `I1` Descrip
 
 Helpers (`z_*`) are exercised through their public wrapper's sheet — they don't get their own.
 
+**`round_trips` holds chain tests** - two or more lambdas composed the way a competition
+formula composes them (`str_ad(num_ad(x))`, `ad_to_cont(cont_to_ad(v, arr), arr)`,
+`load_array(save_array(arr))`, move/expand there and back, ...) with the identity as the
+expected value, so the *handoff* between lambdas (numeric vs A1 addresses, single address vs
+range string, `;`-joined lists, text-form numbers) is covered, not just each lambda alone. The
+cases live in `tools/build_round_trips.py`; edit the list and re-run it
+(`py tools/build_round_trips.py "<src.xlsm>" "<out.xlsm>"`), then re-run the shape generator,
+which also harvests the chains.
+
+**`shape_tests` is generated, not hand-written.** It holds one row per (test case,
+family) for the cases found on the lambda sheets - re-running each case with its arguments
+as 1×1 arrays (`tocol`), literals moved into cells (`cellref`), numbers as text
+(`textnum`), ranges as computed arrays (`array`) and omitted optionals pointed at an empty
+cell (`blank`) - and compares with the original (shape and every element; errors by
+`ERROR.TYPE`). After you add or change cases on any lambda sheet, rebuild it:
+`py tools/build_shape_tests.py "MEWC Lambda and VBA Unit Tests.xlsm" out.xlsm`, then copy
+`out.xlsm` over the workbook. It creates the sheet, its roll-up row and tab position on
+first use and rewrites the rows afterwards. Reference-position arguments (`ad_to_cont`'s
+`arr`, `arrow_move`'s `board_rng`, `neighbors_list`'s `boundary_rng`, a cell reference as
+`move_rng`'s first argument) are left unwrapped on purpose - wrapping them changes meaning.
+
 **Removing a lambda.** Delete `lambdas/<name>.lambda`, drop its entry from `LIB_LAMBDAS`
 in `tools/lambda_check.py`, and in the workbook `apply_edits(..., deletes=["<name>"])` to
 remove its test sheet. First rewrite anything that references it — its `lambda_tests`
@@ -204,8 +225,25 @@ forgetting the brackets makes the argument required.
 =LAMBDA(arr, [as_row], …)      correct
 =LAMBDA(arr, as_row, …)        wrong — as_row is now required
 ```
-Test optional args inside with `ISOMITTED`, and put required args first, all
-optional (bracketed) args after them.
+Put required args first, all optional (bracketed) args after them, and read each
+optional **single-value** argument through **`z_opt(default, arg)`** instead of a bare
+`IF(ISOMITTED(arg), default, arg)`:
+
+```
+mode, z_opt(0, match_mode)          ' flag / count
+sep,  z_opt(";", delim, TRUE)       ' TRUE = keep numeric-looking text as text (delimiters)
+```
+
+`z_opt` applies the library-wide convention for optionals: **omitted, a blank cell, and
+`""` all mean "use the default"** (for a text option passed with `keep_text`, such as a
+delimiter, `""` is a real value instead); the value is collapsed to a true scalar (so
+`TOCOL(x)` / `{x}` behave like `x`); and a number stored as text (`"2"`) is read as the
+number unless `keep_text` is set. Required arguments that are numbers by nature (a
+count, a step, a row/column number, a seed) go through **`z_num(arg)`** for the same
+scalar + text-to-number treatment. Neither is used on an argument whose *position*
+matters (a board / boundary range) or on a value that is looked up in data (`"2"` and
+`2` must stay distinct there). Arguments that must be real ranges (ROW/COLUMN are taken
+from them) say so in their description.
 
 ## 5. Stay under 2048 characters
 The Name Manager caps a definition at **2048 characters**, and whitespace counts.
@@ -262,6 +300,27 @@ array-shaping function.
   an array re-wraps a scalar into a 1×1 array.
 - **The fix.** Unbox with `INDEX(x, 1)` (or `@x`), and guard the "single vs many"
   split with a **scalar** condition like `ROWS(x) * COLUMNS(x) = 1`.
+- **The mirror trap - a 1×1 array coming IN.** A caller can hand a lambda a 1×1
+  array instead of a scalar (`TOCOL(x)`, `{x}`, a one-cell `FILTER`/`INDEX` result).
+  Any `SEQUENCE(LEN(x))`, `SEQUENCE(n)`, `MAKEARRAY(n, …)` or `REGEXEXTRACT(x, …, 1)`
+  built from it then *lifts* over the array and silently returns one element
+  (`z_a1n(TOCOL("AM17"))` read the column as Z, not AM; `set(rng, TOCOL(1))` returned
+  its result three times because `IF(as_row, …)` lifted). `INDEX(x, 1)` does **not**
+  reliably unbox here. **Pass every single-value argument - option flags, counts,
+  delimiters, a lone lookup value - through `z_scalar(x)`** at the top of the lambda,
+  usually inside the `ISOMITTED` default: `mode, IF(ISOMITTED(match_mode), 0,
+  z_scalar(match_mode))`. It collapses a 1×1 array to a scalar of the same type and
+  is a no-op otherwise (text helpers may use `CONCAT(x)` directly). Never use it on an
+  argument that must stay a **range reference** (a board/boundary whose position
+  matters) - it reads the value and the reference is lost.
+- **The regression net.** The generated `shape_tests` sheet re-runs every test case
+  in five "shape" families that must not change the answer - **tocol** (each
+  single-value argument as a 1×1 array), **cellref** (each literal moved into a cell),
+  **textnum** (each number as text), **array** (each range as a computed array) and
+  **blank** (each omitted optional pointed at an empty cell) - and PASSes only when the
+  result is identical. Regenerate it after adding or changing test cases:
+  `py tools/build_shape_tests.py "<src.xlsm>" "<out.xlsm>"` (its docstring lists the
+  arguments each family deliberately leaves alone, and why).
 
 ## 10. Pre-commit checklist
 1. No inline comments anywhere.

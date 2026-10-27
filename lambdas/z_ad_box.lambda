@@ -5,7 +5,8 @@ z_ad_box(ref)
 Helper: bounding box of any address or range, as {top; left; bottom; right} absolute row/column numbers. Accepts all four types - numeric address, A1 string, A1 range ("B2:D4"), numeric range ("1000001:4000002"). Returns #VALUE! for anything else.
 
 === CODE ===
-=LAMBDA(ref,
+=LAMBDA(ref_in,
+  LET(ref, z_num(ref_in),
   IFERROR(
     IF(AND(ISTEXT(ref), ISNUMBER(SEARCH(":", ref))),
       LET(
@@ -24,7 +25,7 @@ Helper: bounding box of any address or range, as {top; left; bottom; right} abso
         row_num, INT(packed / 1000000), col_num, MOD(packed, 1000000),
         VSTACK(row_num, col_num, row_num, col_num))
     ), #VALUE!)
-)
+))
 
 === DESCRIPTION ===
 Private helper - the one parser the whole address library shares, so callers do not each re-implement address/range validation. num_ad, str_ad, ad_to_rc, ad_to_cont and expand_rng all build on it.
@@ -38,6 +39,8 @@ Handles every supported form:
 A1 ranges are normalised with MIN/MAX so "D4:B2" and "B2:D4" give the same box. Numeric ranges are held to the stricter rule from the spec: the first address's row and column must each be <= the second's, otherwise it is not a valid numeric range.
 
 A single cell is the degenerate box where top = bottom and left = right - that is how a caller tells a cell from a range. Parsing is delegated to z_a1n and z_numval, never to num_ad, so there is no circular reference.
+
+The input is first collapsed with z_num (so a numeric address stored as TEXT, e.g. "8000005" from a TEXTSPLIT, parses as the number, and a 1x1 array parses as its value), so a 1x1 array (TOCOL(x), {x}) parses exactly like the plain value instead of producing a box of zeros.
 
 Arguments:
   ref - a numeric address, an A1 string, an A1 range, or a numeric range.

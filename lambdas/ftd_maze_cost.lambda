@@ -13,7 +13,7 @@ Directed maze costs. ftd_lambda(from,to,dir) returns a nonnegative edge cost or 
     dir_list, {"↑"; "↓"; "←"; "→"; "↖"; "↗"; "↙"; "↘"},
     row_delta, {-1; 1; 0; 0; -1; -1; 1; 1},
     col_delta, {0; 0; -1; 1; -1; 1; -1; 1},
-    step_count, MAX(1, INT(IF(ISOMITTED(max_steps), MAX(row_count, col_count) - 1, max_steps))),
+    step_count, MAX(1, INT(z_opt(MAX(row_count, col_count) - 1, max_steps))),
     start_coords, IF(
       ROWS(start_ref) * COLUMNS(start_ref) = 1,
       LET(
@@ -64,6 +64,8 @@ Arguments:
   start_ref   - starting cell as A1 text, a numeric address (1e6*row+col), or a {row, col} coordinate pair relative to board.
   ftd_lambda  - LAMBDA(from_cell, to_cell, dir). Return a nonnegative move cost for a legal move; return NA(), text, or a negative value for an illegal move. Other Excel errors remain visible. It may be written inline or supplied as the name of a defined LAMBDA.
   [max_steps] - maximum edges allowed in a route. Defaults to the larger board dimension minus one. If that is insufficient for a winding route, the function returns "MORE STEPS"; rerun with a larger value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   An array the same size as board containing the least cost from the start to every reachable cell. The start is 0. Unreachable cells are blank. An out-of-range start returns "X". If another relaxation can still improve a cost after max_steps, returns "MORE STEPS" instead of an incomplete distance map.

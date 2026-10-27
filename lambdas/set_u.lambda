@@ -6,7 +6,7 @@ Set union: all distinct values from set a and set b combined.
 
 === CODE ===
 =LAMBDA(val_a, val_b, [as_row],
-   set(VSTACK(val_a, val_b), IF(ISOMITTED(as_row), 0, as_row))
+   set(VSTACK(val_a, val_b), z_opt(0, as_row))
 )
 
 === DESCRIPTION ===
@@ -16,6 +16,8 @@ Arguments:
   a        - first range/set.
   b        - second range/set.
   [as_row] - 1 for a horizontal result; default 0 vertical.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The cleaned, sorted values found in either a or b.

@@ -7,8 +7,9 @@ Converts die-face pip characters (⚀-⚅) to their numbers. Handles a concatena
 === CODE ===
 =LAMBDA(st, LET(
    toVals, LAMBDA(txt, LET(
-      seq, SEQUENCE(LEN(txt)),
-      chars, MID(txt, seq, 1),
+      one, CONCAT(txt),
+      seq, SEQUENCE(LEN(one)),
+      chars, MID(one, seq, 1),
       codes, UNICODE(chars),
       isDie, (codes >= 9856) * (codes <= 9861),
       vals, FILTER(codes - 9855, isDie, ""),
@@ -26,6 +27,8 @@ Converts die-face pip glyphs to their numeric values.
 
 Arguments:
   st - one or more die-face characters (⚀ ⚁ ⚂ ⚃ ⚄ ⚅), either concatenated in a string or as an array with one die per cell.
+
+A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX result) is collapsed to a scalar first, so it behaves exactly like the plain value.
 
 Returns:
   The pip value(s) as numbers. Cells with no die glyph return "" (blank), so it can be applied to mixed arrays. For multiple dice within a single cell, concatenate them into one string first.

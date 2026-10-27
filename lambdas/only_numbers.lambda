@@ -6,7 +6,8 @@ Pulls numbers out of a string via regex "-?\d+(?:\.\d+)?". Can return several nu
 
 === CODE ===
 =LAMBDA(txt, LET(
-   matches, IFERROR(--REGEXEXTRACT(txt, "-?\d+(?:\.\d+)?", 1), ""),
+   one, IF(ROWS(txt) * COLUMNS(txt) = 1, CONCAT(txt), txt),
+   matches, IFERROR(--REGEXEXTRACT(one, "-?\d+(?:\.\d+)?", 1), ""),
    IF(ROWS(matches) * COLUMNS(matches) = 1, INDEX(matches, 1), matches)
 ))
 
@@ -15,6 +16,8 @@ Extracts numeric values from a string.
 
 Arguments:
   st - the text to pull numbers from.
+
+A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX result) is collapsed to a scalar first, so it behaves exactly like the plain value.
 
 Returns:
   The number(s) found, using the pattern -?\d+(?:\.\d+)?. A single string can yield several numbers, so this is not array-safe; wrap in MAP when applying one-to-one across an array.

@@ -7,16 +7,18 @@ Convert any address or range to a numeric address (1e6*row+col) or an array of t
 === CODE ===
 =LAMBDA(ad_or_rng,
   LET(
-    to_num_1, LAMBDA(one, IF(one = "", "", LET(av, z_arrow_to_num(one), IF(ISNUMBER(av), av, IFERROR(z_a1n(one), one))))),
+    to_num_1, LAMBDA(one, IF(one = "", "", LET(av, z_arrow_to_num(one), IF(ISNUMBER(av), av,
+      IFERROR(z_a1n(one), LET(nv, z_num(one), IF(ISNUMBER(nv), IFERROR(z_numval(nv), one), one))))))),
     IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1,
       MAP(ad_or_rng, to_num_1),
       LET(
-        has_colon, AND(ISTEXT(ad_or_rng), ISNUMBER(SEARCH(":", ad_or_rng))),
-        box, IFERROR(z_ad_box(ad_or_rng), 0),
+        one, z_scalar(ad_or_rng),
+        has_colon, AND(ISTEXT(one), ISNUMBER(SEARCH(":", one))),
+        box, IFERROR(z_ad_box(one), 0),
         IF(AND(has_colon, COUNT(box) = 4),
           LET(top, SUM(INDEX(box, 1)), lft, SUM(INDEX(box, 2)), bot, SUM(INDEX(box, 3)), rgt, SUM(INDEX(box, 4)),
               MAKEARRAY(bot - top + 1, rgt - lft + 1, LAMBDA(dr, dc, 1000000 * (top + dr - 1) + (lft + dc - 1)))),
-          to_num_1(ad_or_rng))))
+          to_num_1(one))))
   )
 )
 
@@ -36,8 +38,12 @@ A single string/numeric address returns a scalar, so the many callers that conve
 
 Empty cells become "" rather than 0 - fake coerced zeros corrupt later aggregates. Parsing is shared with str_ad and the rest of the library via z_a1n / z_ad_box.
 
+A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX result) is collapsed with z_scalar first, so the result is a true scalar exactly as for the plain value.
+
 Arguments:
   ad_or_rng - a numeric address, A1 string, A1 range, numeric range, or an array of these.
+
+A numeric address stored as text ("3000004", e.g. from a TEXTSPLIT) is returned as the number; other numeric text that is not a valid address still passes through unchanged.
 
 Returns:
   A number for a single address, an array of numbers for a single range, "" for empty, the input unchanged otherwise; element-wise over an array.

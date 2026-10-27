@@ -5,7 +5,7 @@ exists(arr, value)
 Checks whether value is present anywhere in arr; returns 1 or 0.
 
 === CODE ===
-=LAMBDA(Arr, Val, IF(ISNUMBER(XMATCH(Val, TOCOL(Arr), 0)), 1, 0))
+=LAMBDA(Arr, Val, IF(ISNUMBER(XMATCH(z_scalar(Val), TOCOL(Arr), 0)), 1, 0))
 
 === DESCRIPTION ===
 Membership test: is a value present in an array.
@@ -13,6 +13,8 @@ Membership test: is a value present in an array.
 Arguments:
   arr   - array to search (flattened before testing).
   value - the scalar value to look for.
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   1 if value occurs in arr, otherwise 0.

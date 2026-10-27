@@ -6,10 +6,10 @@ Flattens a 2D range to a column. show_addr (default 1) adds an address column; c
 
 === CODE ===
 =LAMBDA(rng, [show_addr], [clean], [dir], [snake], LET(
- _show, IF(ISOMITTED(show_addr), 1, show_addr),
- _clean, IF(ISOMITTED(clean), 1, clean),
- _in_dir, IF(ISOMITTED(dir), "→↓", dir),
- _snake, IF(ISOMITTED(snake), 0, snake),
+ _show, z_opt(1, show_addr),
+ _clean, z_opt(1, clean),
+ _in_dir, z_opt("→↓", dir, TRUE),
+ _snake, z_opt(0, snake),
  _len, LEN(_in_dir),
  _d, IF(
   _len = 2,
@@ -86,12 +86,18 @@ Flattens a 2D range to a column. show_addr (default 1) adds an address column; c
 === DESCRIPTION ===
 Flattens a 2D range into a single column, with scan and cleaning options.
 
+rng, when show_addr is 1, must be a real range reference - its position on the sheet is used. A computed array (the output of FILTER, TAKE, CHOOSEROWS, ...) has no position and gives #VALUE!.
+
 Arguments:
   rng          - the range to flatten.
   [show_addr]  - 1 to also return a cell-address column (default 1).
   [clean]      - 1 to drop blanks, errors, and "" (default 1).
   [dir]        - scan order as arrows; "→↓" (default) is row-major (right, then down).
   [snake]      - 1 to snake back and forth across rows/columns (default 0).
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The flattened values as a column (address + value when show_addr = 1). Returns #VALUE! if dir is not a valid one- or two-arrow scan direction.

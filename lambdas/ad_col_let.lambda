@@ -15,12 +15,13 @@ Column letters from a column number OR an address. A scalar integer 1..16384 bec
               bot, SUM(INDEX(box, 3)), rgt, SUM(INDEX(box, 4)),
             IF(AND(top = bot, lft = rgt, top >= 1, lft >= 1), col_to_let(lft), one)),
           one))),
-    to_let, LAMBDA(one,
+    to_let, LAMBDA(one_in,
+      LET(one, z_num(one_in),
       IF(ISNUMBER(one),
          IF(AND(one = INT(one), one >= 1, one <= 16384),
             col_to_let(one),
             addr_col(one)),
-         addr_col(one))),
+         addr_col(one)))),
     IF(ROWS(col_n_or_ad) * COLUMNS(col_n_or_ad) > 1,
        MAP(col_n_or_ad, to_let),
        to_let(col_n_or_ad))
@@ -40,6 +41,8 @@ Precedence: a whole number in 1..16384 is read as a column index first (that is 
 
 Arguments:
   col_n_or_ad - a column number, a single address (numeric or A1), or an array of such values.
+
+A column number given as text ("45") or as a 1x1 array is read as the number (z_num).
 
 Returns:
   A column-letter string, the array of per-element results, or the input unchanged where it is neither a 1..16384 integer nor a single address.

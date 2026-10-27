@@ -9,11 +9,11 @@ Splits a string into a vertical array (horizontal if as_row=1), keeping multi-ch
  a, str_or_array,
  r, ROWS(a),
  c, COLUMNS(a),
- _as_row, IF(ISOMITTED(as_row), 0, as_row),
+ _as_row, z_opt(0, as_row),
  IF(
   r * c = 1,
   LET(
-   val, a & "",
+   val, CONCAT(a),
    IF(
     val = "",
     "",
@@ -103,6 +103,12 @@ Explodes a string into an array of its characters.
 Arguments:
   str_or_array - the string to split (or an array of strings).
   [as_row]     - 1 for a horizontal result; default 0 vertical.
+
+A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX result) is collapsed to a scalar first, so it behaves exactly like the plain value.
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   One character per cell, using the \X grapheme pattern so multi-character Unicode symbols stay intact. 1D array input splits into the unused axis; 2D input is concatenated row-major first. Digit characters are returned as numbers.

@@ -1,0 +1,40 @@
+=== SIGNATURE ===
+z_scalar(x)
+
+=== COMMENT ===
+Helper: collapses a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX/TEXTSPLIT result) to a true scalar of the same type - number, text or boolean. A blank cell reference, an error, and anything larger than 1x1 pass through unchanged. Apply it to every argument a lambda treats as a single value or flag.
+
+=== CODE ===
+=LAMBDA(x,
+  IF(ROWS(x) * COLUMNS(x) <> 1, x,
+  IF(OR(ISBLANK(x)), x,
+  IF(OR(ISNUMBER(x)), SUM(x * 1),
+  IF(OR(ISLOGICAL(x)), AND(x),
+  IF(OR(ISERROR(x)), x, CONCAT(x))))))
+)
+
+=== DESCRIPTION ===
+Private helper that makes a lambda's scalar arguments safe against the "1x1 array" trap.
+
+The trap: a caller can hand a lambda a 1x1 array where a plain value is expected - TOCOL(x), an array literal {x}, or the one-element result of FILTER, INDEX, TEXTSPLIT, UNIQUE and friends. Excel does not unbox it. Any SEQUENCE(n), MAKEARRAY(n, ...), REGEXEXTRACT(x, ..., 1) or IF(flag, a, b) that receives it then LIFTS over the array and silently returns a single element or a doubled result (z_a1n once read "AM17" as column Z this way; set(..., TOCOL(1)) returned its result three times). INDEX(x, 1) does not reliably fix it. Aggregations do: SUM collapses a numeric 1x1 array, CONCAT a text one, AND a boolean one - and all three are no-ops on an ordinary scalar.
+
+Behaviour:
+  anything that is not 1x1        -> returned unchanged (real arrays are left alone)
+  a blank cell reference          -> returned unchanged (so IF(flag, ...) still sees blank as FALSE)
+  a number (or 1x1 array of one)  -> the number
+  TRUE/FALSE (or 1x1 array of one)-> the boolean
+  an error                        -> returned unchanged
+  text (or 1x1 array of one)      -> the text
+
+Where to use it: at the top of a lambda, on every argument that is read as a single value - option flags (as_row, diag_allowed, dir, mode), counts (n, steps, size), delimiters, a single lookup value - typically inside the ISOMITTED default, e.g. `mode, IF(ISOMITTED(match_mode), 0, z_scalar(match_mode))`. Do NOT use it on an argument that must stay a range reference (a board / boundary whose position matters) - z_scalar reads the cell's value and the reference is lost.
+
+Arguments:
+  x - the value to normalise.
+
+Returns:
+  x as a true scalar when it was a 1x1 array; otherwise x unchanged.
+
+Example:
+  z_scalar(TOCOL(3))      ->  3        (a true scalar: SEQUENCE(z_scalar(TOCOL(3))) spills 3 rows)
+  z_scalar({"abc"})       ->  "abc"
+  z_scalar(A1:B2)         ->  A1:B2    (unchanged)

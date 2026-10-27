@@ -8,9 +8,9 @@ Returns an array the same size as arr where each value is the count of val withi
 =LAMBDA(arr, val, dist, [diag_allowed], [self_count], LET(
    r, ROWS(arr),
    c, COLUMNS(arr),
-   d, dist,
-   diag, IF(ISOMITTED(diag_allowed), TRUE, diag_allowed),
-   self, IF(ISOMITTED(self_count), TRUE, self_count),
+   d, z_num(dist),
+   diag, z_opt(TRUE, diag_allowed),
+   self, z_opt(TRUE, self_count),
    sz, 2 * d + 1,
    ro, MAKEARRAY(sz, sz, LAMBDA(a, b, a - (d + 1))),
    co, MAKEARRAY(sz, sz, LAMBDA(a, b, b - (d + 1))),
@@ -39,6 +39,10 @@ Arguments:
   dist           - neighborhood radius in cells.
   [diag_allowed] - 1 to include diagonal neighbors (default 1).
   [self_count]   - 1 to include the cell itself in its own count (default 1).
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   An array the same size as arr, each cell holding its neighbor count.

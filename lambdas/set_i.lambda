@@ -11,7 +11,7 @@ Set intersection: the values present in both set a and set b.
          list_a, set(val_a),
          list_b, set(val_b),
          res, FILTER(list_a, ISNUMBER(XMATCH(list_a, list_b))),
-         IF(IF(ISOMITTED(as_row), 0, as_row), TOROW(res), res)
+         IF(z_opt(0, as_row), TOROW(res), res)
       ),
       IF(ISERROR(_r), "", _r)
    )
@@ -24,6 +24,10 @@ Arguments:
   a        - first range/set.
   b        - second range/set.
   [as_row] - 1 for a horizontal result; default 0 vertical.
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   The cleaned, sorted values common to both a and b.

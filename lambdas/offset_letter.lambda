@@ -9,7 +9,7 @@ Shifts each letter in a string by an integer offset with wraparound (e.g. "xyz" 
    r, ROWS(st),
    c, COLUMNS(st),
    f, LAMBDA(s, o, LET(
-      s_text, s & "",
+      s_text, z_scalar(s) & "",
       n, LEN(s_text),
       chars, IF(n = 0, "", MID(s_text, SEQUENCE(n), 1)),
       shifted, IF(
@@ -35,7 +35,7 @@ Shifts each letter in a string by an integer offset with wraparound (e.g. "xyz" 
       LAMBDA(i, j,
          f(
             INDEX(st, i, j),
-            IF(ROWS(offset) * COLUMNS(offset) = 1, offset, INDEX(offset, i, j))
+            IF(ROWS(offset) * COLUMNS(offset) = 1, z_num(offset), INDEX(offset, i, j))
          )
       )
    )
@@ -47,6 +47,8 @@ Caesar-shifts the letters of a string by a fixed offset.
 Arguments:
   st     - the text (or array of text) to shift.
   offset - integer number of positions to advance each letter (wraps A-Z).
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   The shifted text, preserving case and leaving non-letters untouched. Works on arrays.

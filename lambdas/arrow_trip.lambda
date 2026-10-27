@@ -33,8 +33,8 @@ Walks from start_ad (numeric or A1) in a straight arrow direction (arrow glyph, 
         trip_cols, start_col + steps * col_delta,
         num_list, 1000000 * trip_rows + trip_cols,
         val_list, MAP(num_list, LAMBDA(a, LET(v, ad_to_cont(a, rng), IF(OR(v = "", ISBLANK(v)), "", v)))),
-        use_stop, NOT(ISOMITTED(stopper)),
-        stop_pos, IF(use_stop, XMATCH(stopper, val_list, 0), NA()),
+        use_stop, IF(ISOMITTED(stopper), FALSE, NOT(OR(ISBLANK(stopper)))),
+        stop_pos, IF(use_stop, XMATCH(z_scalar(stopper), val_list, 0), NA()),
         keep_rows, IF(use_stop, IF(ISERROR(stop_pos), max_steps + 1, stop_pos), max_steps + 1),
         out_addrs, CHOOSEROWS(num_list, SEQUENCE(keep_rows)),
         out_vals, CHOOSEROWS(val_list, SEQUENCE(keep_rows)),
@@ -47,11 +47,17 @@ Walks from start_ad (numeric or A1) in a straight arrow direction (arrow glyph, 
 === DESCRIPTION ===
 Traces a straight path from a start cell in one arrow direction until the board edge or an optional stopping value.
 
+rng must be a real range reference - its position on the sheet is used. A computed array (the output of FILTER, TAKE, CHOOSEROWS, ...) has no position and gives #VALUE!.
+
 Arguments:
   rng       - the board range to travel across.
   start_ad  - starting cell as a numeric address or A1 string (coerced with num_ad).
   dir       - direction as a standard arrow (↑↓←→↖↗↙↘), its numeric equivalent (1, -1000000, ...), or a letter code (U D L R UL UR DL DR).
   [stopper] - a value that halts the trip when encountered (inclusive).
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   A 2-column array: NUMERIC addresses in column 1 and their values in column 2, starting at the start cell. Returns "X" if the start is outside rng, or "" if dir is not a recognized arrow.

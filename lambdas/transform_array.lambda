@@ -5,7 +5,8 @@ transform_array(arr, dir)
 Rotates 90 degrees or flips an array, once or twice, using one or two of ↺↻↕↔. For two operations pass them concatenated, e.g. "↕↔" or "↺↺".
 
 === CODE ===
-=LAMBDA(arr, dir, LET(
+=LAMBDA(arr, dir_in, LET(
+   dir, z_scalar(dir_in),
    base, arr,
    is_scalar, AND(ROWS(base) = 1, COLUMNS(base) = 1),
    op_count, LEN(dir),
@@ -71,6 +72,8 @@ Rotates or flips a 2D array.
 Arguments:
   arr - the array to transform.
   dir - one or two operation arrows: ↺ (rotate CCW), ↻ (rotate CW), ↕ (flip vertical), ↔ (flip horizontal). Concatenate two for a double operation ("↕↔", "↺↺").
+
+Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
 
 Returns:
   The transformed array, or #VALUE! if dir contains an unrecognized operation or more than two operations.

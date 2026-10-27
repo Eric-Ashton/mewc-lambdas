@@ -8,16 +8,17 @@ Convert any address or range to an A1 string address or an array of them. A nume
 =LAMBDA(ad_or_rng,
   LET(
     to_str_1, LAMBDA(one, IF(one = "", "",
-      IFERROR(LET(num, z_numval(one), ADDRESS(INT(num / 1000000), MOD(num, 1000000), 4)), one))),
+      IFERROR(LET(num, z_numval(z_num(one)), ADDRESS(INT(num / 1000000), MOD(num, 1000000), 4)), one))),
     IF(ROWS(ad_or_rng) * COLUMNS(ad_or_rng) > 1,
       MAP(ad_or_rng, to_str_1),
       LET(
-        has_colon, AND(ISTEXT(ad_or_rng), ISNUMBER(SEARCH(":", ad_or_rng))),
-        box, IFERROR(z_ad_box(ad_or_rng), 0),
+        one, z_scalar(ad_or_rng),
+        has_colon, AND(ISTEXT(one), ISNUMBER(SEARCH(":", one))),
+        box, IFERROR(z_ad_box(one), 0),
         IF(AND(has_colon, COUNT(box) = 4),
           LET(top, SUM(INDEX(box, 1)), lft, SUM(INDEX(box, 2)), bot, SUM(INDEX(box, 3)), rgt, SUM(INDEX(box, 4)),
               MAKEARRAY(bot - top + 1, rgt - lft + 1, LAMBDA(dr, dc, ADDRESS(top + dr - 1, lft + dc - 1, 4)))),
-          to_str_1(ad_or_rng))))
+          to_str_1(one))))
   )
 )
 
@@ -34,8 +35,12 @@ Behaviour by input:
 
 A single address returns a scalar. Ranges expand only when passed as a single value; inside an array they pass through, since expanding one element into many would need a ragged result Excel cannot make. Strings are produced with ADDRESS(..., 4) for relative style. Parsing is shared with num_ad and the rest of the library via z_numval / z_ad_box.
 
+A single value that arrives as a 1x1 array (TOCOL(x), {x}, a one-cell FILTER/INDEX result) is collapsed with z_scalar first, so the result is a true scalar exactly as for the plain value.
+
 Arguments:
   ad_or_rng - a numeric address, A1 string, A1 range, numeric range, or an array of these.
+
+A numeric address stored as text ("3000004") converts like the number.
 
 Returns:
   An A1 string for a single address, an array of A1 strings for a single range, "" for empty, the input unchanged otherwise; element-wise over an array.

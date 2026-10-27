@@ -1,0 +1,49 @@
+=== SIGNATURE ===
+z_opt(default, [val], [keep_text])
+
+=== COMMENT ===
+Helper for optional single-value arguments: returns default when val is omitted or a blank cell (or "" for non-text options); otherwise val collapsed to a true scalar (z_scalar), with a number stored as text converted to a number. keep_text = TRUE marks a genuinely-text option (a delimiter): "" is then a real value and numeric text stays text. Use as mode, z_opt(0, match_mode) in place of IF(ISOMITTED(...)).
+
+=== CODE ===
+=LAMBDA(default, [val], [keep_text],
+  IF(ISOMITTED(val), default,
+    LET(v, z_scalar(val),
+        keep, IF(ISOMITTED(keep_text), FALSE, keep_text),
+      IF(OR(ISBLANK(val)), default,
+      IF(AND(NOT(keep), ISTEXT(v), v = ""), default,
+      IF(OR(keep, NOT(ISTEXT(v))), v,
+         IFERROR(VALUE(v), v))))))
+)
+
+=== DESCRIPTION ===
+Private helper that gives every optional single-value argument the same, forgiving behaviour. Call it where a lambda used to write IF(ISOMITTED(x), default, x):
+
+  mode, z_opt(0, match_mode)
+  sep,  z_opt(";", delim, TRUE)
+
+Rules, in order:
+  1. argument omitted                     -> default
+  2. a blank cell (or an all-blank range)  -> default   (pointing an unused argument at an empty cell is the same as leaving it out)
+  3. empty text ""                         -> default   (e.g. a config cell whose formula returned "") - EXCEPT when keep_text is TRUE, because for a text option such as a delimiter "" is a real value (xtextjoin(arr, "") joins with nothing)
+  4. otherwise the value, collapsed to a true scalar by z_scalar (so TOCOL(x) / {x} behave like x), and
+  5. a number stored as text ("2", "-1") is converted to the number - unless keep_text is TRUE, which delimiters and other genuinely-text options pass so that "0" or "1" stay text.
+
+Because an omitted parameter stays omitted when it is passed on to another lambda, z_opt can test ISOMITTED on the caller's behalf. Arrays bigger than 1x1 pass through rules 4-5 unchanged (a blank range still hits rule 2), so it is safe on arguments that may legitimately be arrays, such as xfilter's masks.
+
+Do not use it on an argument that must stay a range reference (a board or boundary whose position matters) - z_scalar reads the cell's value and the reference is lost - nor on a value that is looked up in data, where "2" and 2 must stay distinct.
+
+Arguments:
+  default     - the value to use when val is omitted, blank or "".
+  [val]       - the caller's optional argument, passed straight through.
+  [keep_text] - TRUE for a genuinely-text option: "" is kept as a value and numeric text stays text (default FALSE).
+
+Returns:
+  default, or val normalised as above.
+
+Example:
+  z_opt(1, )            ->  1
+  z_opt(1, A1)          ->  1 when A1 is empty, otherwise A1's value
+  z_opt(0, "2")         ->  2
+  z_opt(";", "0", TRUE) ->  "0"
+  z_opt(";", "", TRUE)  ->  ""       (an explicit empty delimiter)
+  z_opt(0, "")          ->  0        (empty text means default for a flag)

@@ -7,9 +7,9 @@ Non-volatile pseudorandom integers: a vertical list of n values in lo..hi inclus
 === CODE ===
 =LAMBDA(seed, [lo], [hi], [n],
   LET(
-    low, IF(ISOMITTED(lo), 0, INT(lo)),
-    high, IF(ISOMITTED(hi), 100, INT(hi)),
-    n_out, IF(ISOMITTED(n), 1, INT(n)),
+    low, INT(z_opt(0, lo)),
+    high, INT(z_opt(100, hi)),
+    n_out, INT(z_opt(1, n)),
     start, MIN(low, high),
     span, ABS(high - low) + 1,
     modulus, 4294967296,
@@ -22,7 +22,7 @@ Non-volatile pseudorandom integers: a vertical list of n values in lo..hi inclus
       step_c, xorshift(step_b, 15),
       step_d, mulmod(step_c, 2221713035),
       xorshift(step_d, 16))),
-    seed_mix, mix(MOD(INT(seed), modulus)),
+    seed_mix, mix(MOD(INT(z_num(seed)), modulus)),
     draw_ix, IF(n_out = 1, 1, SEQUENCE(n_out)),
     keys, MOD(seed_mix + mulmod(draw_ix, 2654435761), modulus),
     start + MOD(mix(keys), span)
@@ -37,6 +37,10 @@ Arguments:
   [lo]  - lowest value, inclusive. Default 0.
   [hi]  - highest value, inclusive. Default 100. (If lo > hi they are swapped.)
   [n]   - how many numbers to return, 1 or more. Default 1.
+
+n may be a 1x1 array (TOCOL(x), {x}); it is collapsed to a scalar before SEQUENCE.
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
 
 Returns:
   A vertical array of n integers, each drawn independently and (near-)uniformly from lo..hi. With n = 1 the result is a true scalar (not a 1x1 array), so it is safe inside SEQUENCE, MAKEARRAY etc.

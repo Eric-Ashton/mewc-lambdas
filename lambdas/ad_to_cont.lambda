@@ -46,6 +46,8 @@ Behaviour by input:
 
 Empty cells come back as "" rather than 0 - fake coerced zeros corrupt later aggregates. The three string sentinels are distinct: "" = an in-bounds cell that is blank; "oob" = a valid address/range that landed entirely outside arr; "inv" = the input was not a usable single address (a non-address, or a range used as an array element). A range is a valid scalar input (clipped to its overlap), but a range inside an array is invalid because it would nest an array within the array. Address parsing is shared with the library via z_ad_box.
 
+arr must be a real range reference - its position on the sheet is used. A computed array (the output of FILTER, TAKE, CHOOSEROWS, ...) has no position and gives #VALUE!.
+
 Arguments:
   ad_or_rng - a numeric address, A1 string, A1 range, numeric range, or an array of single addresses.
   arr       - the source range to read from.

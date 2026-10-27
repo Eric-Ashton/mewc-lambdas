@@ -6,7 +6,8 @@ Restricts a number (or array) to be no lower than bottom and/or no higher than t
 
 === CODE ===
 =LAMBDA(num_or_arr, [bottom], [top], LET(
-   clamp_one, LAMBDA(x,
+   clamp_one, LAMBDA(x_in,
+      LET(x, z_num(x_in),
       IF(
          ISERROR(x),
          x,
@@ -14,12 +15,14 @@ Restricts a number (or array) to be no lower than bottom and/or no higher than t
             OR(x = "", ISTEXT(x)),
             "",
             LET(
-               hi, IF(ISOMITTED(top), x, MIN(top, x)),
-               lo, IF(ISOMITTED(bottom), hi, MAX(bottom, hi)),
+               top_v, z_opt("", top),
+               bot_v, z_opt("", bottom),
+               hi, IF(AND(ISTEXT(top_v), top_v = ""), x, MIN(top_v, x)),
+               lo, IF(AND(ISTEXT(bot_v), bot_v = ""), hi, MAX(bot_v, hi)),
                lo
             )
          )
-      )
+      ))
    ),
    IF(
       AND(ROWS(num_or_arr) = 1, COLUMNS(num_or_arr) = 1),
@@ -35,6 +38,10 @@ Arguments:
   num_or_arr - a number or an array to clamp.
   [bottom]   - lower bound (default: no lower limit).
   [top]      - upper bound (default: no upper limit).
+
+Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
+
+A number stored as text ("100") is clamped as the number (z_num); other text still returns "".
 
 Returns:
   The clamped value, or an array of the same shape. Text cells and "" are returned as "". Errors pass through unchanged.
