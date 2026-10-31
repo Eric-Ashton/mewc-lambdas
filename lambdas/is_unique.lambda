@@ -1,27 +1,43 @@
 === SIGNATURE ===
-is_unique(arr)
+is_unique(arr, [consec])
 
 === COMMENT ===
-Checks whether all values in the array are unique; returns TRUE/FALSE. Case-insensitive, so {"A","a"} is not unique. Combine with str_to_arr to test character by character.
+1 if every non-blank value in arr is distinct (case-insensitive), else 0. With consec = 1 the values must ALSO be integers that form one unbroken run in any order (7,5,6 -> 1; 1,2,4 -> 0; 1,2,2 -> 0); consec is 0 by default.
 
 === CODE ===
-=LAMBDA(Arr, LET(
+=LAMBDA(Arr, [consec], LET(
+   chk, z_opt(0, consec),
    flatArr, TOCOL(Arr, 1, 4),
    filtArr, FILTER(flatArr, flatArr <> ""),
    rowCount, ROWS(filtArr),
    matchMatrix, --(filtArr = TRANSPOSE(filtArr)),
    freq, MMULT(matchMatrix, SEQUENCE(rowCount, 1, 1, 0)),
-   IF(MAX(freq) > 1, 0, 1)
+   uniq, IF(MAX(freq) > 1, 0, 1),
+   IF(chk = 0, uniq,
+      LET(
+         all_num, AND(ISNUMBER(filtArr)),
+         all_int, IF(all_num, AND(filtArr = INT(filtArr)), FALSE),
+         span_ok, IF(all_int, MAX(filtArr) - MIN(filtArr) + 1 = rowCount, FALSE),
+         IF(AND(uniq = 1, all_int, span_ok), 1, 0)))
 ))
 
 === DESCRIPTION ===
-Tests whether every value in an array is distinct.
+Tests whether the values in an array are all different - and, optionally, whether they are a run of consecutive integers.
 
 Arguments:
-  arr - the array to test.
+  arr      - the values to test (any shape; blanks and "" are ignored). Text comparison is case-insensitive ("A" and "a" count as the same value).
+  [consec] - 0 (default): return 1 when all values are distinct, else 0.
+             1: return 1 only when the values are distinct AND all integers AND consecutive (max - min + 1 = count), in any order; otherwise 0. A single integer counts as consecutive.
+
+How consec works: once uniqueness is established, consecutive integers are exactly those whose range (max - min + 1) equals their count - {7;5;6} spans 5..7 with 3 values, so 1; {1;2;4} spans 1..4 with 3 values, so 0. Non-integers or text give 0 in consec mode.
 
 Returns:
-  TRUE if all values are unique, FALSE otherwise. Comparison is case-insensitive ({"A","a"} is not unique).
+  1 or 0.
 
-Notes:
-  Combine with str_to_arr to check a string character by character.
+Example:
+  is_unique({1;2;3})          ->  1
+  is_unique({1;2;2})          ->  0
+  is_unique({7;5;6}, 1)       ->  1     (consecutive in any order)
+  is_unique({1;2;4}, 1)       ->  0     (gap)
+  is_unique({1;2;2}, 1)       ->  0     (duplicate)
+  is_unique({"a";"b"}, 1)     ->  0     (not integers)

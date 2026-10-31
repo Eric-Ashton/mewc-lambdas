@@ -992,7 +992,7 @@ Private Sub classify_rows()
                 case_copy.Cells(i, 1).Value = "Level Code"
             Case Application.WorksheetFunction.CountA(Application.Index(rowValues, 1, 0)) = 0
                 case_copy.Cells(i, 1).Value = "Spacing Row"
-            Case IsHeaderRow(colDStr, colE)
+            Case IsHeaderRow(colB, colDStr, colE)
                 case_copy.Cells(i, 1).Value = "Header"
             Case IsNumeric(colD) And colD <> 0 And InStr(colB, "bonus") > 0
                 case_copy.Cells(i, 1).Value = "Bonus Question"
@@ -1057,93 +1057,108 @@ Private Sub classify_rows()
     Next i
     ReDim Preserve header_row_numbers(1 To header_count)
 
-    ' Detect whether a bonus section exists by scanning for any row already
-    ' classified as "Bonus Question" above.
-    Dim has_bonus As Boolean
-    has_bonus = False
-    For i = 1 To last_row_case
-        If case_copy.Cells(i, 1).Value = "Bonus Question" Then
-            has_bonus = True
-            Exit For
+    ' ---- Label each header from the rows BENEATH it, not from its position ----------
+    ' A header followed only by Bonus Question rows is the Bonus Header. Otherwise its
+    ' level number is read from the Level column (col C) of the Level Question rows
+    ' under it; if that column is not a clean ascending integer the header is numbered
+    ' "one more than the previous level". This replaces the old rule "if the case has
+    ' bonus questions, the FIRST header is the bonus header", which shifted every level
+    ' by one whenever the bonus table's header was not recognised (Case 11:
+    ' "Question # | Reference | Pontos | Answer").
+    Dim lvl As Long, level_index As Long
+    Dim hdr_level() As Long                 ' per header: 0 = bonus header, N = Level N
+    ReDim hdr_level(1 To IIf(header_count > 0, header_count, 1))
+    Dim h As Long, scan_end As Long, j2 As Long, cls As String
+    Dim n_bonus As Long, lvl_from_data As Long, cval As Variant, prev_level As Long
+    prev_level = 0
+    For h = 1 To header_count
+        If h < header_count Then scan_end = header_row_numbers(h + 1) - 1 Else scan_end = last_row_case
+        n_bonus = 0: lvl_from_data = 0
+        For j2 = header_row_numbers(h) + 1 To scan_end
+            cls = CStr(case_copy.Cells(j2, 1).Value)
+            If cls = "Bonus Question" Then n_bonus = n_bonus + 1
+            If cls = "Level Question" And lvl_from_data = 0 Then
+                cval = case_copy.Cells(j2, 3).Value
+                If Not IsEmpty(cval) Then
+                    If IsNumeric(cval) Then
+                        If CDbl(cval) >= 1 And CDbl(cval) = Int(CDbl(cval)) Then lvl_from_data = CLng(cval)
+                    End If
+                End If
+            End If
+        Next j2
+        If n_bonus > 0 And lvl_from_data = 0 Then
+            hdr_level(h) = 0
+        ElseIf lvl_from_data > prev_level Then
+            hdr_level(h) = lvl_from_data
+            prev_level = lvl_from_data
+        Else
+            hdr_level(h) = prev_level + 1
+            prev_level = hdr_level(h)
         End If
-    Next i
-
-    ' header_offset = how many of the leading headers are NOT level headers.
-    ' With a bonus section the first header is the Bonus Header (offset = 1).
-    ' Without a bonus section every header is a level header (offset = 0).
-    Dim header_offset As Long
-    If has_bonus Then
-        header_offset = 1
-    Else
-        header_offset = 0
+    Next h
+    ' Downstream code walks levels 1..number_of_levels, so the level numbers must be
+    ' exactly 1..k. If the data gave a gap (e.g. 1, 2, 4) fall back to numbering the
+    ' level headers in order.
+    Dim k_levels As Long, contiguous As Boolean
+    k_levels = 0
+    For h = 1 To header_count
+        If hdr_level(h) > 0 Then k_levels = k_levels + 1
+    Next h
+    contiguous = True
+    Dim seen_level As Long
+    seen_level = 0
+    For h = 1 To header_count
+        If hdr_level(h) > 0 Then
+            seen_level = seen_level + 1
+            If hdr_level(h) <> seen_level Then contiguous = False
+        End If
+    Next h
+    If Not contiguous Then
+        seen_level = 0
+        For h = 1 To header_count
+            If hdr_level(h) > 0 Then seen_level = seen_level + 1: hdr_level(h) = seen_level
+        Next h
+        Call LogError(0, "Level column values were not a clean 1..N sequence; level headers numbered in order of appearance instead.", "classify_rows")
     End If
-    number_of_levels = header_count - header_offset
+    number_of_levels = k_levels
+    For h = 1 To header_count
+        If hdr_level(h) = 0 Then
+            case_copy.Cells(header_row_numbers(h), 1).Value = "Bonus Header"
+        Else
+            case_copy.Cells(header_row_numbers(h), 1).Value = "Level " & hdr_level(h) & " Header"
+        End If
+    Next h
 
-    If has_bonus Then
-        If header_count >= 1 Then case_copy.Cells(header_row_numbers(1), 1).Value = "Bonus Header"
-        For i = 2 To header_count
-            case_copy.Cells(header_row_numbers(i), 1).Value = "Level " & (i - 1) & " Header"
-        Next i
-    Else
-        For i = 1 To header_count
-            case_copy.Cells(header_row_numbers(i), 1).Value = "Level " & i & " Header"
-        Next i
-    End If
-
-    Dim lvl As Long
+    ' Instructions belong to the NEXT header below them: text above the bonus header is
+    ' general, text above a level header introduces that level. Rows after the last
+    ' header keep the plain "Instructions" label (unchanged behaviour).
+    Dim next_h As Long
     For i = 1 To last_row_case
         If case_copy.Cells(i, 1).Value = "Instructions" Then
-            If has_bonus Then
-                ' With bonus: Instructions before header(1) = General; between
-                ' header(k-1) and header(k) (for k >= 2) = Level (k-1) Instructions.
-                For lvl = header_count To 2 Step -1
-                    If i > header_row_numbers(lvl - 1) And i < header_row_numbers(lvl) Then
-                        case_copy.Cells(i, 1).Value = "Level " & (lvl - 1) & " Instructions"
-                        Exit For
-                    End If
-                Next lvl
-                If i < header_row_numbers(1) Then
+            next_h = 0
+            For h = 1 To header_count
+                If header_row_numbers(h) > i Then next_h = h: Exit For
+            Next h
+            If next_h > 0 Then
+                If hdr_level(next_h) = 0 Then
                     case_copy.Cells(i, 1).Value = "General Instructions"
-                End If
-            Else
-                ' No bonus: Instructions before header(1) = Level 1 Instructions;
-                ' between header(k-1) and header(k) (for k >= 2) = Level k Instructions.
-                For lvl = header_count To 2 Step -1
-                    If i > header_row_numbers(lvl - 1) And i < header_row_numbers(lvl) Then
-                        case_copy.Cells(i, 1).Value = "Level " & lvl & " Instructions"
-                        Exit For
-                    End If
-                Next lvl
-                If header_count >= 1 Then
-                    If i < header_row_numbers(1) Then
-                        case_copy.Cells(i, 1).Value = "Level 1 Instructions"
-                    End If
+                Else
+                    case_copy.Cells(i, 1).Value = "Level " & hdr_level(next_h) & " Instructions"
                 End If
             End If
         End If
     Next i
 
-    Dim level_index As Long
+    ' Question rows take the level of the most recent header above them.
+    Dim cur_level As Long
+    cur_level = 0: h = 0
     For i = 1 To last_row_case
+        If h < header_count Then
+            If i = header_row_numbers(h + 1) Then h = h + 1: cur_level = hdr_level(h)
+        End If
         Select Case case_copy.Cells(i, 1).Value
             Case "Example Question", "Level Question"
-                If has_bonus Then
-                    ' With bonus: header(level_index) is the header for Level (level_index - 1).
-                    For level_index = header_count To 2 Step -1
-                        If i > header_row_numbers(level_index) Then
-                            case_copy.Cells(i, 1).Value = "Level " & (level_index - 1) & " " & case_copy.Cells(i, 1).Value
-                            Exit For
-                        End If
-                    Next level_index
-                Else
-                    ' No bonus: header(level_index) is the header for Level level_index.
-                    For level_index = header_count To 1 Step -1
-                        If i > header_row_numbers(level_index) Then
-                            case_copy.Cells(i, 1).Value = "Level " & level_index & " " & case_copy.Cells(i, 1).Value
-                            Exit For
-                        End If
-                    Next level_index
-                End If
+                If cur_level >= 1 Then case_copy.Cells(i, 1).Value = "Level " & cur_level & " " & case_copy.Cells(i, 1).Value
         End Select
     Next i
     
@@ -2469,15 +2484,19 @@ End Function
 '            when col D clearly indicates a scoring row, since a few authors
 '            put the "answer" label one column further right.
 ' Both arguments are expected to be LCased already by the caller.
-Private Function IsHeaderRow(colD As String, colE As String) As Boolean
-    Dim hasPoints As Boolean, hasAnswer As Boolean
+Private Function IsHeaderRow(colB As String, colD As String, colE As String) As Boolean
+    Dim hasPoints As Boolean, hasAnswer As Boolean, hasLabel As Boolean
     hasPoints = (InStr(colD, "point") > 0) Or _
                 (InStr(colD, "pts") > 0) Or _
                 (InStr(colD, "score") > 0) Or _
                 (InStr(colD, "marks") > 0)
     hasAnswer = (InStr(colE, "answer") > 0) Or _
                 (InStr(colE, "response") > 0)
-    IsHeaderRow = hasPoints And (hasAnswer Or Len(Trim$(colE)) = 0)
+    ' "Game #" / "Question #" in col B with "Answer" in col E is a table header even
+    ' when the points column is in another language ("Pontos") - Case 11's bonus table.
+    hasLabel = (InStr(colB, "game") > 0 Or InStr(colB, "question") > 0 Or InStr(colB, "q#") > 0) _
+               And Len(Trim$(colB)) <= 20
+    IsHeaderRow = (hasPoints And (hasAnswer Or Len(Trim$(colE)) = 0)) Or (hasLabel And hasAnswer)
 End Function
 
 ' === BackupExistingFile ===
