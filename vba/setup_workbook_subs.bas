@@ -12,6 +12,7 @@ Private Const ANSWER_WORDS As String = "answer|response|resp|repons|antwort|antw
 Private Const LABEL_WORDS As String = "game|question|q#|q #|jogo|pergunta|juego|pregunta|frage|spiel|partita|domanda|vraag|spel|#|no."
 Private Const EXAMPLE_WORDS As String = "exampl|exemp|ejemp|esemp|beispiel|voorbeeld|przyk"
 Private Const BONUS_WORDS As String = "bonus|bono|bonif"
+Private Const LEVEL_WORDS As String = "level|nivel|niveau|stufe|livello|poziom|lygis"
 
 ' Workbooks
 Public attempt_workbook As Workbook
@@ -989,8 +990,9 @@ Private Sub classify_rows()
     ' row_blank(i): the row holds nothing but empties / "" / whitespace. Such rows are
     ' labelled exactly as before (so level-sheet layouts do not change) but the header
     ' lookahead and the shape fallback below step over them.
-    Dim rowValues As Variant, row_blank() As Boolean
+    Dim rowValues As Variant, row_blank() As Boolean, ex_by_shape() As Boolean
     ReDim row_blank(1 To last_row_case)
+    ReDim ex_by_shape(1 To last_row_case)
     For i = 1 To last_row_case
         rowValues = case_copy.Range(case_copy.Cells(i, 1), case_copy.Cells(i, last_col_case)).Value
         row_blank(i) = RowIsBlank(rowValues)
@@ -1027,15 +1029,38 @@ Private Sub classify_rows()
             ' languages ("Exanple1" in Case 11, "Exemplo1").
             Case Len(Trim$(colDStr)) > 0 And IsNumeric(colD) And colD = 0 And bIsText And bLen <= 20 And eLen > 0
                 case_copy.Cells(i, 1).Value = "Example Question"
+                ex_by_shape(i) = True
             ' Example by wording with the 0 left out of Points, but with its answer shown.
             Case Len(Trim$(colDStr)) = 0 And HasAnyWord(fB, EXAMPLE_WORDS) And bLen <= 20 And eLen > 0
                 case_copy.Cells(i, 1).Value = "Example Question"
+                ex_by_shape(i) = True
             Case IsNumeric(rowValues(1, 2)) And rowValues(1, 2) <> 0 And IsNumeric(colD) And colD <> 0
                 case_copy.Cells(i, 1).Value = "Level Question"
             'instruction is default classificaiton if none of the other criteria are met
             Case Else
                 case_copy.Cells(i, 1).Value = "Instructions"
         End Select
+    Next i
+
+    ' --- Validate the Example rows found by shape ---
+    ' A real example sits at the TOP of its block: the next non-blank row below it is a
+    ' question (or another example). A "Level Total" row at the bottom of a block also
+    ' has 0 points, a short label and a value in E, so demote shape matches that are not
+    ' followed by a question row.
+    Dim nxt As Long, nxtClass As String
+    For i = 1 To last_row_case
+        If ex_by_shape(i) Then
+            nxt = i + 1
+            Do While nxt <= last_row_case
+                If Not row_blank(nxt) Then Exit Do
+                nxt = nxt + 1
+            Loop
+            nxtClass = ""
+            If nxt <= last_row_case Then nxtClass = CStr(case_copy.Cells(nxt, 1).Value)
+            If nxtClass <> "Level Question" And nxtClass <> "Example Question" And nxtClass <> "Bonus Question" Then
+                case_copy.Cells(i, 1).Value = "Instructions"
+            End If
+        End If
     Next i
 
     ' --- Cross-validate each Header row ---
@@ -1103,7 +1128,7 @@ Private Sub classify_rows()
                         probeClass = ""
                     Next probe
                     If probeClass <> "Header" Then
-                        If LooksLikeHeaderRow(case_copy, above) Then
+                        If LooksLikeHeaderRow(case_copy, above) And BlockIsLevelSized(case_copy, i, last_row_case, row_blank) Then
                             case_copy.Cells(above, 1).Value = "Header"
                             promoted = promoted + 1
                         End If
@@ -2576,8 +2601,38 @@ Private Function IsHeaderRow(fB As String, fD As String, fE As String) As Boolea
     hasPoints = HasAnyWord(fD, POINT_WORDS)
     hasAnswer = HasAnyWord(fE, ANSWER_WORDS)
     hasLabel = HasAnyWord(fB, LABEL_WORDS) And Len(Trim$(fB)) <= 20 And Not IsNumeric(fB)
-    shortE = (Len(Trim$(fE)) <= 20) And Not IsNumeric(fE)
+    ' E blank is the long-standing rule; E holding other short text additionally needs a
+    ' header-like label in B that is not itself a Level word ("Level | Easy | Points | x"
+    ' is a points legend, not a question table).
+    shortE = (Len(Trim$(fE)) = 0) Or _
+             ((Len(Trim$(fE)) <= 20) And Not IsNumeric(fE) And Len(Trim$(fB)) > 0 And Len(Trim$(fB)) <= 20 _
+              And Not IsNumeric(fB) And Not HasAnyWord(fB, LEVEL_WORDS))
     IsHeaderRow = (hasPoints And (hasAnswer Or shortE)) Or (hasLabel And hasAnswer)
+End Function
+
+' === BlockIsLevelSized ===
+' True when the run of question-class rows starting at row r (blank rows allowed inside)
+' is a level or bonus table rather than a short legend such as "Level | Difficulty |
+' Points": it contains an example row, or at least 8 questions, or consists of Bonus
+' Question rows only (bonus rows are recognised by their wording, so even 2 of them
+' are a real table).
+Private Function BlockIsLevelSized(ws As Worksheet, ByVal r As Long, ByVal lastRow As Long, row_blank() As Boolean) As Boolean
+    Dim n As Long, nb As Long, c As String
+    Do While r <= lastRow
+        If Not row_blank(r) Then
+            c = CStr(ws.Cells(r, 1).Value)
+            If c = "Example Question" Then BlockIsLevelSized = True: Exit Function
+            If c = "Level Question" Or c = "Bonus Question" Then
+                n = n + 1
+                If c = "Bonus Question" Then nb = nb + 1
+                If n >= 8 Then BlockIsLevelSized = True: Exit Function
+            Else
+                Exit Do
+            End If
+        End If
+        r = r + 1
+    Loop
+    BlockIsLevelSized = (nb > 0 And nb = n)
 End Function
 
 ' === LooksLikeHeaderRow ===
