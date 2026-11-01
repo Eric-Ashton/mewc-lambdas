@@ -1,17 +1,18 @@
 === SIGNATURE ===
-selections(arr, n, [order_matters], [repeats_allowed], [countdown_mode], [clean_inputs])
+selections(arr, n, [order_matters], [repeats_allowed], [countdown_mode], [clean_inputs], [delim])
 
 === COMMENT ===
-Permutations (order_matters=1) or combinations (=0) of size n from arr. countdown_mode stacks sizes n..1. clean_input (default 1) de-dupes/drops blanks; other flags default 0.
+All combinations (default) or permutations of n items drawn from arr, ONE PER CELL as a delimited string ("1;2;3"), in a vertical list. repeats_allowed 1 lets an item be reused; countdown_mode 1 also lists every size from n down to 1; clean_inputs 1 (default) de-duplicates arr and drops blanks; delim defaults to ";".
 
 === CODE ===
-=LAMBDA(arr, n_in, [order_matters], [repeats_allowed], [countdown_n], [clean_input],
+=LAMBDA(arr, n_in, [order_matters], [repeats_allowed], [countdown_n], [clean_input], [delim],
  LET(n, z_num(n_in),
  IF(
   n < 1,
   NA(),
   LET(
    ci_, z_opt(1, clean_input),
+   sep_, z_opt(";", delim, TRUE),
    flat_, IF(
     ci_ = 1,
     LET(r_, TOCOL(arr, 3), UNIQUE(FILTER(r_, r_ <> ""))),
@@ -50,50 +51,57 @@ Permutations (order_matters=1) or combinations (=0) of size n from arr. countdow
        )
       ),
       LET(_sel,
-       MAP(UNICODE(MID(built_, seq_, 1)) - 20000, LAMBDA(pos_, INDEX(flat_, pos_))),
+       MAP(built_, LAMBDA(s_, TEXTJOIN(sep_, TRUE, INDEX(flat_, UNICODE(MID(s_, seq_, 1)) - 20000)))),
        IF(ISERROR(_sel), NA(), _sel))
      )
     )
    ),
-   pad_, LAMBDA(x_, EXPAND(x_, ROWS(x_), n, "")),
    IF(
     cd_ = 0,
-    pad_(one_k_(n)),
+    one_k_(n),
     LET(
      max_k_, IF(rep_ = 1, n, MIN(n, m_)),
-     seed_, pad_(one_k_(max_k_)),
      IF(
       max_k_ = 1,
-      seed_,
+      one_k_(1),
       REDUCE(
-       seed_,
+       one_k_(max_k_),
        SEQUENCE(max_k_ - 1, 1, max_k_ - 1, -1),
-       LAMBDA(acc_, k_, VSTACK(acc_, pad_(one_k_(k_))))
+       LAMBDA(acc_, k_, VSTACK(acc_, one_k_(k_)))
       )
      )
     )
    )
   )
- )
-))
+ ))
+)
 
 === DESCRIPTION ===
-Generates permutations or combinations drawn from an array.
+Lists every way of choosing n items from arr. Each selection is ONE cell: its items joined with delim (";" by default), so selections({1;2;3}, 2) returns the three cells "1;2", "1;3", "2;3" - the form a competition answer usually wants, and easy to count, filter, split (TEXTSPLIT) or look up.
 
 Arguments:
-  arr               - the pool of items to choose from.
-  n                 - number of items per selection.
-  [order_matters]   - 1 = permutations, 0 = combinations (default 0).
-  [repeats_allowed] - 1 to allow an item to be reused within a selection (default 0).
-  [countdown_mode]  - 1 to also include selections of size n-1, n-2, ... 1 (default 0).
-  [clean_input]     - 1 to de-duplicate and drop blanks from arr first (default 1).
+  arr               - the items (any shape; read row by row). With clean_inputs 1 (default) blanks are dropped and duplicates removed first.
+  n                 - how many items per selection (1 or more).
+  [order_matters]   - 0 (default) combinations: "1;2" and "2;1" are the same selection and only "1;2" is listed. 1 permutations: both are listed.
+  [repeats_allowed] - 0 (default) an item appears at most once per selection. 1 an item may be reused ("1;1").
+  [countdown_mode]  - 0 (default) only size n. 1 lists size n, then n-1, ... down to 1, stacked in one column.
+  [clean_inputs]    - 1 (default) de-duplicate arr and drop blanks; 0 use arr as given.
+  [delim]           - text placed between the items (default ";"; "" joins with nothing, e.g. "abc").
 
-Single-value arguments (flags, counts, delimiters, a single lookup value) may arrive as 1x1 arrays (TOCOL(x), {x}, a one-cell FILTER/INDEX result); they are collapsed to true scalars with z_scalar, so they behave exactly like the plain value.
+Order of the list: items keep the order they have in arr; selections are generated lexicographically in that order (all those starting with the first item first). Within countdown mode the larger sizes come first.
 
-Optional arguments: a blank cell or "" behaves like omitting the argument (the default applies), and a number given as text ("2") is accepted as the number (z_opt).
+Sizes: combinations without repeats count C(m, n) and permutations P(m, n) (m = number of distinct items); with repeats m^n permutations. Excel's limits apply - a few hundred thousand selections is fine, millions is not.
+
+Edge cases: n < 1 returns #N/A; n larger than the number of distinct items (without repeats) returns #N/A for that size (in countdown mode the impossible sizes are skipped, so countdown over 3 items with n = 5 starts at size 3). Every result cell is text, including single-item selections.
+
+Single-value arguments (n, the flags, delim) may be given as 1x1 arrays, numbers as text, or pointed at blank cells - z_num / z_opt normalise them.
 
 Returns:
-  An array of the generated selections, one per row.
+  A vertical array of text, one selection per cell.
 
 Example:
-  selections(A1:A4, 2)
+  selections({1;2;3}, 2)            ->  {"1;2"; "1;3"; "2;3"}
+  selections({"a";"b";"c"}, 2, 1)   ->  {"a;b"; "a;c"; "b;a"; "b;c"; "c;a"; "c;b"}
+  selections({"a";"b"}, 2, 0, 1)    ->  {"a;a"; "a;b"; "b;b"}
+  selections({1;2;3}, 3, 0, , 1)    ->  {"1;2;3"; "1;2"; "1;3"; "2;3"; "1"; "2"; "3"}
+  selections({"a";"b";"c"}, 2, , , , , "")  ->  {"ab"; "ac"; "bc"}

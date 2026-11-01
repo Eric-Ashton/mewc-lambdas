@@ -32,7 +32,7 @@ Deliberately NOT transformed, because the change would legitimately alter meanin
   * textnum on values that are LOOKED UP in data or carried as data ("2" and 2 must
     stay distinct) - exists, xrank, xcountif, cont_to_ad, exlookup's lookup/if_not_found,
     neighbors_count's val, set_d/set_i/set_u operands, label_lookup labels,
-    update_arr's value, scan2/scan3 start values, shift_arr's fill, xfilter's arr,
+    update_arr's value, scan2/scan3 start values, shift_arr's fill, xfilter's arr, is_unique's arr,
     and a case whose point is that an invalid input passes through unchanged;
   * array on a range that contains an EMPTY cell (an array turns it into 0);
   * blank on exlookup's if_not_found (a blank there IS the fallback value).
@@ -76,7 +76,7 @@ DATA_ARGS = {("exists", 2), ("xrank", 1), ("xcountif", 2), ("cont_to_ad", 1), ("
              ("label_lookup", 2), ("label_lookup", 3), ("update_arr", 4), ("freq_table", 1), ("make_change", 1),
              ("biggest", 1), ("biggest", 2), ("smallest", 1), ("smallest", 2), ("textbetween", 2), ("textbetween", 3),
              ("count_substring", 1), ("count_substring", 2), ("scan2", 1), ("scan2", 2), ("scan3", 1), ("scan3", 2), ("scan3", 3),
-             ("shift_arr", 3), ("xfilter", 1)}
+             ("shift_arr", 3), ("xfilter", 1), ("is_unique", 1)}
 BLANK_SKIP = {("exlookup", 4)}
 # cases where the lambda PASSES AN INVALID INPUT THROUGH unchanged, so text in -> text out is correct
 TEXTNUM_SKIP_CASES = {("str_ad", "H10")}
