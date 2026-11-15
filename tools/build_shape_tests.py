@@ -69,7 +69,7 @@ EXTRA_SHEETS = {"round_trips"}               # hand-written chain tests: transfo
 LAMBDA_DIR = HERE.parent / "lambdas"
 
 # (lambda, 1-based argument index) -> arguments the families must leave alone
-POSITION_ARGS = {("ad_to_cont", 2), ("arrow_trip", 1), ("cont_to_ad", 2), ("route_cost", 1),
+POSITION_ARGS = {("ad_to_cont", 2), ("arrow_trip", 1), ("cont_to_ad", 2), ("route_cost", 1), ("contiguous", 1),
                  ("arrow_move", 4), ("neighbors_list", 3)}
 DATA_ARGS = {("exists", 2), ("xrank", 1), ("xcountif", 2), ("cont_to_ad", 1), ("exlookup", 1), ("exlookup", 4),
              ("neighbors_count", 2), ("set_d", 1), ("set_d", 2), ("set_i", 1), ("set_i", 2), ("set_u", 1), ("set_u", 2),

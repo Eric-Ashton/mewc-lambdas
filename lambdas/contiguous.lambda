@@ -1,0 +1,76 @@
+=== SIGNATURE ===
+contiguous(arr, start_ad, [diag_allowed])
+
+=== COMMENT ===
+Flood fill: the numeric addresses (row*1e6+col) of every cell of arr that holds the same value as start_ad and is joined to it by an unbroken path of that value. start_ad is an A1 string or a numeric address; diag_allowed 1 (default) lets the path step diagonally. Vertical list, row-major, start cell included.
+
+=== CODE ===
+=LAMBDA(arr, start_ad, [diag_allowed], LET(
+   nr, ROWS(arr),
+   nc, COLUMNS(arr),
+   dg, z_opt(1, diag_allowed),
+   n_, num_ad(start_ad),
+   r0, MIN(ROW(arr)),
+   c0, MIN(COLUMN(arr)),
+   sr, IF(ISNUMBER(n_), INT(n_ / 1000000) - r0 + 1, 0),
+   sc, IF(ISNUMBER(n_), MOD(n_, 1000000) - c0 + 1, 0),
+   IF(
+      OR(sr < 1, sr > nr, sc < 1, sc > nc),
+      NA(),
+      LET(
+         raw_, INDEX(arr, sr, sc),
+         val, IF(ISBLANK(raw_), "", raw_),
+         same, IFERROR(--(arr = val), 0),
+         seed, --((SEQUENCE(nr) = sr) * (SEQUENCE(1, nc) = sc)),
+         rows_, SEQUENCE(nr, 1, 2),
+         cols_, SEQUENCE(1, nc, 2),
+         zrow, SEQUENCE(1, nc + 2, 0, 0),
+         zcol, SEQUENCE(nr, 1, 0, 0),
+         grow, LAMBDA(v, LET(
+            p, VSTACK(zrow, HSTACK(zcol, v, zcol), zrow),
+            orth, INDEX(p, rows_ - 1, cols_) + INDEX(p, rows_ + 1, cols_)
+               + INDEX(p, rows_, cols_ - 1) + INDEX(p, rows_, cols_ + 1),
+            diag, IF(dg = 1,
+               INDEX(p, rows_ - 1, cols_ - 1) + INDEX(p, rows_ - 1, cols_ + 1)
+               + INDEX(p, rows_ + 1, cols_ - 1) + INDEX(p, rows_ + 1, cols_ + 1),
+               0),
+            --((orth + diag + v) > 0) * same
+         )),
+         hdr, LAMBDA(done, IF(SEQUENCE(1, nc) = 1, done, 0)),
+         steps, MAX(1, SUM(same)),
+         fin, REDUCE(VSTACK(hdr(0), seed), SEQUENCE(steps),
+            LAMBDA(acc, k_, IF(INDEX(acc, 1, 1) = 1, acc,
+               LET(v, DROP(acc, 1), nv, grow(v),
+                  VSTACK(hdr(--(SUM(nv) = SUM(v))), nv))))),
+         mask, DROP(fin, 1),
+         TOCOL(IF(mask = 1, ROW(arr) * 1000000 + COLUMN(arr), NA()), 2)
+      )
+   )
+))
+
+=== DESCRIPTION ===
+Flood fill from one cell: which cells of a map belong to the same connected region as the start cell? The region is every cell that holds the same value as the start cell and can be reached from it by stepping between cells of that value (orthogonally, or also diagonally when diag_allowed is 1).
+
+arr must be a real range reference - its position on the sheet is used both to locate start_ad inside it and to build the addresses returned. A computed array (the output of FILTER, TAKE, CHOOSEROWS, ...) has no position and gives #VALUE!.
+
+Arguments:
+  arr            - the map, usually a 2-D range of letters / numbers / blanks.
+  start_ad       - the start cell as A1 text ("D7") or a numeric address (7000004 = row 7, col 4); a one-cell range works too. It must lie inside arr.
+  [diag_allowed] - 1 (default): cells touching at a corner are connected. 0: only edge-to-edge neighbours are connected.
+
+Matching: Excel's = is used, so text comparison is case-insensitive ("x" and "X" are the same region). A blank start cell matches blank cells and "" cells. Error cells are never part of a region.
+
+Single-value arguments (start_ad, the flag) may arrive as 1x1 arrays or as numbers typed as text; they are normalised with num_ad / z_opt.
+
+Returns:
+  A vertical array of numeric addresses (row*1e6 + col, the same form num_ad returns), in row-major order, the start cell included. str_ad() turns them back into A1 text, and ROWS() of the result is the region's size. #N/A when start_ad is not inside arr.
+
+Example (map in B2:E4):
+      B C D E
+   2  X X . .
+   3  . X . X
+   4  . . X X
+  contiguous(B2:E4, "B2")      ->  {2000002; 2000003; 3000003; 4000004; 4000005; 3000005}  (one diagonal chain of X)
+  contiguous(B2:E4, "B2", 0)   ->  {2000002; 2000003; 3000003}                              (orthogonal only)
+  ROWS(contiguous(B2:E4, "D2"))  ->  4   (the four dots joined through C4/D3... whichever dots touch)
+  contiguous(B2:E4, "A1")      ->  #N/A (outside the map)
