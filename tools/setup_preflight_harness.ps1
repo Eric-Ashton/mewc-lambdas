@@ -76,6 +76,14 @@ $S = @(
     @{ n = 'valid';                   b3 = 'attempt.xlsm';         expect = 'built'; built = 'attempt.xlsm'; rerun = $true }
     @{ n = 'no extension + quotes';   b1 = '"{dir}\"'; b2 = '"' + $caseName + '"'; b3 = '  attempt2 '; expect = 'built'; built = 'attempt2.xlsm' }
     @{ n = 'dots in the name';        b3 = 'attempt 2026.11.18';   expect = 'built'; built = 'attempt 2026.11.18.xlsm' }
+    @{ n = 'unknown suffix';          b3 = 'attempt.final';        expect = 'built'; built = 'attempt.final.xlsm' }
+    # B1/B2 on the case file's REAL folder (e.g. under OneDrive) must be accepted: the run gets as far as the B3 check.
+    @{ n = 'real case folder';        b1 = (Split-Path -Parent $CaseFile); b3 = 'te?st.xlsm'; expect = 'blocked'; msg = 'does not allow' }
+    # A failure before the case sheet exists aborts; one after it is only logged and the build goes on (as it always has).
+    @{ n = 'early import error';      b3 = 'early.xlsm'; expect = 'aborted'; msg = 'could not import';
+       mutate = @('Call TimeMark("03 open case workbook")', 'Err.Raise 513, , "simulated early failure"') }
+    @{ n = 'late import error';       b3 = 'late.xlsm';  expect = 'built'; built = 'late.xlsm'; nomsg = 'could not import';
+       mutate = @('Call TimeMark("06 junk-sheet cleanup")', 'Err.Raise 513, , "simulated late failure"') }
 )
 
 $xl = New-Object -ComObject Excel.Application
@@ -101,7 +109,9 @@ try {
 
         $wb = $xl.Workbooks.Open($tplPath)
         $cm = $wb.VBProject.VBComponents.Item('setup_workbook_subs').CodeModule
-        $cm.DeleteLines(1, $cm.CountOfLines); $cm.AddFromString($code)
+        $src = $code
+        if ($sc.mutate) { $src = $code.Replace($sc.mutate[0], $sc.mutate[1]); if ($src -eq $code) { throw "mutation target not found: " + $sc.mutate[0] } }
+        $cm.DeleteLines(1, $cm.CountOfLines); $cm.AddFromString($src)
         $q = "'" + $wb.Name + "'!setup_workbook_subs."
         $b1 = if ($sc.ContainsKey('b1')) { $sc.b1.Replace('{dir}', $cdir) } else { $cdir }
         $b2 = if ($sc.ContainsKey('b2')) { $sc.b2.Replace('{dir}', $cdir) } else { $caseName }
@@ -130,6 +140,7 @@ try {
         if ($links -ne 0) { $why += "external links: $links" }
         if ($sc.msg -and -not $log.Contains($sc.msg)) { $why += "message lacks '" + $sc.msg + "'" }
         if ($sc.msg2 -and -not $log.Contains($sc.msg2)) { $why += "message lacks '" + $sc.msg2 + "'" }
+        if ($sc.nomsg -and $log.Contains($sc.nomsg)) { $why += "unexpected message '" + $sc.nomsg + "'" }
         $expectOpen = if ($sc.openOther) { 2 } else { 1 }
         if ($openCount -ne $expectOpen) { $why += "open workbooks: $openCount" }
         switch ($sc.expect) {

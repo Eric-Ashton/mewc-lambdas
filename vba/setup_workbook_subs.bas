@@ -123,14 +123,15 @@ Sub setup_workbook()
     ' The import is NOT best-effort: without the case sheet nothing below can
     ' work, and carrying on used to build a Hints sheet whose formulas pointed
     ' at a missing "Case" sheet - Excel then asked for a file ("Update Values:
-    ' Case") and left an external link in the workbook. Any failure in
-    ' import_case (model file could not be saved, case file could not be
-    ' opened, no case sheet found) stops the run here.
+    ' Case") and left an external link in the workbook. If import_case ends
+    ' without a case sheet (model file could not be saved, case file could not
+    ' be opened, no case sheet found) the run stops here. An error raised
+    ' AFTER the case sheet is in place is only logged, and the build goes on.
     Dim import_err As Long, import_desc As String
     Call import_case
     import_err = Err.Number: import_desc = Err.Description
     Err.Clear
-    If import_err <> 0 Or case_worksheet Is Nothing Then gSetupAborted = True
+    If case_worksheet Is Nothing Then gSetupAborted = True
     If gSetupAborted Then
         If import_err <> 0 Then Call ReportImportFailure(import_err, import_desc)
         GoTo Cleanup
@@ -342,10 +343,12 @@ Private Function setup_inputs_valid() As Boolean
                        WorkbooksInFolderNote(casePath, caseFile))
         Exit Function
     End If
+    ' Only a file type that is plainly not a workbook is refused; anything else
+    ' is left for Excel to open, as before.
     ext = FileExtension(caseFile)
-    If InStr("|xlsx|xlsm|xlsb|xls|xltx|xltm|", "|" & ext & "|") = 0 Then
+    If InStr("|pdf|doc|docx|ppt|pptx|txt|zip|png|jpg|jpeg|gif|", "|" & ext & "|") > 0 Then
         Call StopSetup("The case file (Prep!B2) is not an Excel workbook:" & vbLf & caseFile & vbLf & vbLf & _
-                       "It must be an .xlsx / .xlsm / .xlsb / .xls file.")
+                       "Enter the case workbook's name (usually an .xlsx file).")
         Exit Function
     End If
     If StrComp(caseFile, ThisWorkbook.Name, vbTextCompare) = 0 Then
@@ -377,9 +380,11 @@ Private Function setup_inputs_valid() As Boolean
             Exit Function
         End If
 
-        ' A real extension is 1-5 letters/digits with at least one letter, so a
-        ' name such as "attempt 2026.11.18" counts as having NO extension.
+        ' Only a recognised file type other than .xlsm is an error ("test.xlsx").
+        ' Any other text after a dot is part of the name - "attempt 2026.11.18",
+        ' "attempt.final" - and simply gets ".xlsm" added.
         ext = FileExtension(modelFile)
+        If ext <> "xlsm" And InStr("|xlsx|xls|xlsb|xltx|xltm|xlt|xlam|xla|csv|txt|ods|xml|pdf|doc|docx|", "|" & ext & "|") = 0 Then ext = ""
         If Len(ext) > 0 Then
             If ext <> "xlsm" Then
                 p = InStrRev(modelFile, ".")
@@ -486,21 +491,23 @@ Private Function FileExtension(ByVal fileName As String) As String
     FileExtension = e
 End Function
 
-' True when p names an existing folder. Never raises (Dir / GetAttr raise on
-' malformed paths and unavailable drives).
+' True when p names an existing folder. The test is the same Dir() call setup
+' has always used, so a folder it accepted before is accepted now. Never raises
+' (Dir raises on malformed paths and unavailable drives).
 Private Function FolderExists(ByVal p As String) As Boolean
     On Error Resume Next
     If Len(p) = 0 Then Exit Function
-    FolderExists = ((GetAttr(p) And vbDirectory) = vbDirectory)
+    FolderExists = (Len(Dir(p, vbDirectory)) > 0)
     If Err.Number <> 0 Then FolderExists = False
     Err.Clear
 End Function
 
-' True when p names an existing file (not a folder). Never raises.
+' True when p names an existing file. Same Dir() test as before (plus read-only
+' and hidden files, which plain Dir() skips). Never raises.
 Private Function FileExists(ByVal p As String) As Boolean
     On Error Resume Next
     If Len(p) = 0 Then Exit Function
-    FileExists = ((GetAttr(p) And vbDirectory) = 0)
+    FileExists = (Len(Dir(p, vbReadOnly Or vbHidden)) > 0)
     If Err.Number <> 0 Then FileExists = False
     Err.Clear
 End Function
@@ -552,6 +559,10 @@ Private Sub import_case()
     Dim full_case_path As String
     
     
+    ' Forget the case sheet of any earlier run in this Excel session: "is there
+    ' a case sheet?" is how a failed import is told apart from a usable one.
+    Set case_worksheet = Nothing
+
     ' The Prep inputs were checked and normalised by setup_inputs_valid (the
     ' only way in is through setup_workbook / safe_setup, which both call it).
     Set prep_worksheet = attempt_workbook.Sheets("Prep")
@@ -895,8 +906,10 @@ ErrorHandler:
     ' Calculation and Events. Silent Resume Next here would leave Excel frozen.
     Dim e_num As Long, e_desc As String
     e_num = Err.Number: e_desc = Err.Description
-    ' A failed import ends the run: every later stage needs the case sheet.
-    gSetupAborted = True
+    ' An error BEFORE the case sheet is in place ends the run: every later
+    ' stage needs it. An error after that point (font freeze, junk-sheet
+    ' cleanup, ...) is logged and the pipeline carries on, as it always has.
+    If case_worksheet Is Nothing Then gSetupAborted = True
     Application.DisplayAlerts = True
     ' Close the author's read-only copy before unwinding. Any failure between
     ' Workbooks.Open and the normal close above would otherwise strand it on
