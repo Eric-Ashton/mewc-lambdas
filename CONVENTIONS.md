@@ -149,6 +149,24 @@ Never treat a workbook's baked lambdas/VBA as the source — always edit the tex
 Personal config (`Directory`, case/model filenames) is **not** in the repo — set it
 per-machine at runtime.
 
+### Setup must fail before it changes anything
+`setup_workbook` / `safe_setup` read three cells on Prep: B1 (folder), B2 (case file), B3
+(model file name). `setup_inputs_valid` checks all three **before** anything is saved,
+opened or created, and every refusal is a message box that ends "Setup stopped - nothing
+was saved or created." Rules for that code:
+- **Forgive what is unambiguous** (spaces, quotes from *Copy as path*, a trailing slash, a
+  model name typed without an extension gets `.xlsm`); **stop on anything else** (missing
+  folder/file, a model name that is not `.xlsm` or has characters Windows forbids, a name
+  that would overwrite the case file, the template or an open workbook).
+- **The import is not best-effort.** If the model file cannot be saved or the case cannot
+  be imported, the run aborts; no later stage may run on the template. A stage that writes
+  formulas pointing at another sheet must first check that sheet exists - a formula naming
+  a missing sheet makes Excel open a file dialog ("Update Values: ...") and leaves an
+  external link behind.
+- **An aborted run leaves no trace**: no tab reorder, no ErrorLog/timing sheet, alerts back on.
+- After changing any of this, run `tools/setup_preflight_harness.ps1` (drives real Setup
+  runs in scratch copies of the template, one per user-error scenario).
+
 ## Address convention
 Addresses are packed as one number: **numeric address = `1e6*row + col`**.
 - `num_ad(x)` coerces an A1 string **or** a number to the numeric address

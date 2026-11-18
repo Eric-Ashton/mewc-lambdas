@@ -54,6 +54,14 @@ Private gCaseColWidths As Collection
 Private gSourceSheetNames As Collection   ' imported sheet names in the case file's own order (minus the case sheet) - drives order_worksheets
 Private gSetupAborted As Boolean    ' a stage bailed out - stop the pipeline cleanly
 
+' The Prep inputs after setup_inputs_valid has checked and normalised them
+' (trimmed, quotes and trailing slashes removed, ".xlsm" added to a model name
+' typed without an extension). import_case uses these, never the raw cells.
+Private gCasePath As String
+Private gCaseFile As String
+Private gAttemptFile As String
+Private Const STOP_NOTE As String = "Setup stopped - nothing was saved or created."
+
 ' Lightweight per-stage timing. TimeMark records the seconds elapsed since the
 ' previous mark; WriteTimingLog dumps the whole breakdown to the ErrorLog sheet
 ' (columns F:H) at the end of a run so a slow stage is easy to spot. Overhead is
@@ -78,14 +86,26 @@ Sub setup_workbook()
     ' folder used to sail straight through here: import_case SaveAs'd a new
     ' attempt file, then bailed on the missing case, and the best-effort
     ' pipeline below carried on building tabs on a half-set-up workbook.
-    If Not case_inputs_valid() Then GoTo Cleanup
+    ' setup_inputs_valid checks ALL THREE Prep inputs (folder, case file, model
+    ' file name) and tells the user exactly what is wrong; a failed check marks
+    ' the run aborted so Cleanup changes nothing either (no tab reorder, no
+    ' ErrorLog / timing sheet).
+    If Not setup_inputs_valid() Then
+        gSetupAborted = True
+        GoTo Cleanup
+    End If
 
     ' Save the original template with AUTOMATIC calculation so a setup run never
     ' leaves the template file in manual mode; only the build pipeline below
     ' runs manual (for speed). The recalc this triggers is on the small template
-    ' only and is negligible.
+    ' only and is negligible. Best-effort: a template that cannot be saved
+    ' (opened read-only, never saved, locked by sync) must not stop setup - the
+    ' SaveAs to the model file is what matters.
     Application.Calculation = xlCalculationAutomatic
-    ThisWorkbook.Save
+    On Error Resume Next
+    If Not ThisWorkbook.ReadOnly And Len(ThisWorkbook.Path) > 0 Then ThisWorkbook.Save
+    Err.Clear
+    On Error GoTo ErrorHandler
     Application.Calculation = xlCalculationManual
     Call TimeMark("01 validate + template Save")
 
@@ -100,9 +120,21 @@ Sub setup_workbook()
     ' ErrorLog is the real cause; the rest are cascades.
     On Error Resume Next
 
+    ' The import is NOT best-effort: without the case sheet nothing below can
+    ' work, and carrying on used to build a Hints sheet whose formulas pointed
+    ' at a missing "Case" sheet - Excel then asked for a file ("Update Values:
+    ' Case") and left an external link in the workbook. Any failure in
+    ' import_case (model file could not be saved, case file could not be
+    ' opened, no case sheet found) stops the run here.
+    Dim import_err As Long, import_desc As String
     Call import_case
+    import_err = Err.Number: import_desc = Err.Description
     Err.Clear
-    If gSetupAborted Then GoTo Cleanup
+    If import_err <> 0 Or case_worksheet Is Nothing Then gSetupAborted = True
+    If gSetupAborted Then
+        If import_err <> 0 Then Call ReportImportFailure(import_err, import_desc)
+        GoTo Cleanup
+    End If
     Call set_normal_style
     Err.Clear: Call TimeMark("07 set_normal_style")
     Call classify_rows
@@ -124,24 +156,28 @@ Sub setup_workbook()
     ' --- end best-effort pipeline --------------------------------------------
 
 Cleanup:
+    ' Nothing in the cleanup may raise: an error here used to Resume Cleanup and
+    ' could loop. Every step below is independent and best-effort.
+    On Error Resume Next
+
     ' Final safety net: no exit path from setup_workbook may leave the author's
     ' read-only case workbook open. import_case closes it itself on both the
     ' normal and error paths; this catches an abort raised anywhere else.
     Call CloseCaseWorkbook
 
-    ' Put the tabs in their final order (see order_worksheets). Best-effort and
-    ' skipped on an aborted run; it creates the ErrorLog sheet if needed so the
-    ' log lands in its slot rather than at the end.
+    ' import_case turns alerts off around SaveAs / sheet deletes; make sure no
+    ' exit path leaves Excel with its prompts switched off.
+    Application.DisplayAlerts = True
+
+    ' Put the tabs in their final order (see order_worksheets) and write the
+    ' per-stage timing breakdown to the ErrorLog sheet (columns F:H). Both are
+    ' skipped on an aborted run: they create the ErrorLog sheet, and an aborted
+    ' run must leave the workbook exactly as it found it.
     If Not gSetupAborted Then
-        On Error Resume Next
         Call order_worksheets
         Err.Clear: Call TimeMark("15 order_worksheets")
-        On Error GoTo ErrorHandler
+        Call WriteTimingLog
     End If
-
-    ' Write the per-stage timing breakdown to the ErrorLog sheet (columns F:H)
-    ' before it is hidden, so a slow run can be diagnosed after the fact.
-    Call WriteTimingLog
 
     ' Hide the ErrorLog sheet if it exists. Use SheetExists rather than
     ' exception-based lookup so the VBA debugger's "Break on All Errors"
@@ -154,10 +190,8 @@ Cleanup:
 
     ' Land on the Case sheet scrolled to its general instructions, so the
     ' operator can finish reading before moving to _L1. ScreenUpdating goes
-    ' back on right below, which paints this view. Guarded: must not abort
-    ' the application-state cleanup.
-    On Error Resume Next
-    Call show_case_instructions(False)
+    ' back on right below, which paints this view.
+    If Not gSetupAborted Then Call show_case_instructions(False)
     Err.Clear
 
     Application.ScreenUpdating = True
@@ -166,7 +200,11 @@ Cleanup:
     Exit Sub
 
 ErrorHandler:
-    Call LogError(Err.Number, Err.Description, "setup_workbook")
+    ' Only reachable from the code ABOVE the pipeline (the pipeline and the
+    ' cleanup both run under On Error Resume Next). Treat it as an abort.
+    gSetupAborted = True
+    MsgBox "Setup hit an unexpected error before it started building:" & vbLf & vbLf & _
+           Err.Description & vbLf & vbLf & STOP_NOTE, vbCritical, "Setup"
     Resume Cleanup
 
 End Sub
@@ -234,49 +272,277 @@ Private Sub RestoreCaseColumnWidths()
 End Sub
 
 
-' Validate the case folder/file named on Prep (B1/B2) before setup touches
-' anything. Returns False - after telling the user exactly what's missing - so
-' setup_workbook can stop without saving a new file or creating any tabs.
-Private Function case_inputs_valid() As Boolean
+' === setup_inputs_valid =====================================================
+' Checks everything setup reads from Prep - B1 (case folder), B2 (case file) and
+' B3 (model file name) - BEFORE setup saves, opens or creates anything. Returns
+' False after telling the user exactly what is wrong, so setup_workbook /
+' safe_setup can stop with the workbook untouched. On success the normalised
+' values are left in gCasePath / gCaseFile / gAttemptFile for import_case.
+'
+' Forgiven silently (normalised, not an error): leading/trailing spaces, quotes
+' around a value (Explorer's "Copy as path"), a trailing slash on the folder,
+' and a model name typed without an extension (".xlsm" is added).
+' Stopped with a message: anything that would make the run fail or damage a
+' file - a missing folder or case file, a model name that is not .xlsm or holds
+' characters Windows forbids, a model name that would overwrite the case file,
+' this template or another open workbook.
+Private Function setup_inputs_valid() As Boolean
     Dim ws As Worksheet
-    Dim casePath As String, caseFile As String, fullPath As String
+    Dim casePath As String, caseFile As String, modelFile As String
+    Dim ext As String, baseName As String, p As Long, k As Long
+    Dim already_built As Boolean
 
-    On Error GoTo Invalid
+    gCasePath = "": gCaseFile = "": gAttemptFile = ""
+
+    On Error GoTo Unreadable
     Set ws = attempt_workbook.Sheets("Prep")
-    casePath = Trim$(CStr(ws.Range("B1").Value))
-    caseFile = Trim$(CStr(ws.Range("B2").Value))
+    casePath = CleanPrepInput(ws.Range("B1").Value)
+    caseFile = CleanPrepInput(ws.Range("B2").Value)
+    modelFile = CleanPrepInput(ws.Range("B3").Value)
     On Error GoTo 0
 
-    If Len(casePath) = 0 Or Len(caseFile) = 0 Then
-        MsgBox "Set the case folder (Prep!B1) and the case file name (Prep!B2) " & _
-               "before running setup." & vbLf & vbLf & _
-               "Setup stopped - nothing was saved or created.", _
-               vbCritical, "setup_workbook"
+    Do While Len(casePath) > 3 And (Right$(casePath, 1) = "\" Or Right$(casePath, 1) = "/")
+        casePath = Left$(casePath, Len(casePath) - 1)
+    Loop
+
+    ' --- Setup pressed inside a workbook that has already been set up ---------
+    already_built = SheetExists(attempt_workbook, "case copy") Or SheetExists(attempt_workbook, "_L1")
+    If already_built Then
+        If MsgBox("This workbook has ALREADY been set up (it contains level sheets)." & vbLf & vbLf & _
+                  "Running Setup again rebuilds the Case and level sheets and can " & _
+                  "overwrite work you have done in them." & vbLf & vbLf & _
+                  "Run Setup again anyway?", _
+                  vbExclamation + vbYesNo + vbDefaultButton2, "Setup") <> vbYes Then Exit Function
+    End If
+
+    ' --- B1: case folder ------------------------------------------------------
+    If Len(casePath) = 0 Then
+        Call StopSetup("Prep!B1 (Directory) is empty." & vbLf & _
+                       "Enter the folder that holds the case file.")
+        Exit Function
+    End If
+    If Not FolderExists(casePath) Then
+        Call StopSetup("Case folder not found (Prep!B1):" & vbLf & casePath)
         Exit Function
     End If
 
-    If Len(Dir(casePath, vbDirectory)) = 0 Then
-        MsgBox "Case folder not found:" & vbLf & casePath & vbLf & vbLf & _
-               "Setup stopped - nothing was saved or created.", _
-               vbCritical, "setup_workbook"
+    ' --- B2: case file --------------------------------------------------------
+    If Len(caseFile) = 0 Then
+        Call StopSetup("Prep!B2 (Case Filename) is empty." & vbLf & _
+                       "Enter the case workbook's file name, e.g. ""Case 23.xlsx"".")
+        Exit Function
+    End If
+    If InStr(caseFile, "\") > 0 Or InStr(caseFile, "/") > 0 Then
+        Call StopSetup("Prep!B2 (Case Filename) should be just the file name:" & vbLf & caseFile & vbLf & vbLf & _
+                       "Put the folder in B1 and only the name (e.g. ""Case 23.xlsx"") in B2.")
+        Exit Function
+    End If
+    If Not FileExists(casePath & "\" & caseFile) Then
+        Call StopSetup("Case file not found (Prep!B2):" & vbLf & casePath & "\" & caseFile & _
+                       WorkbooksInFolderNote(casePath, caseFile))
+        Exit Function
+    End If
+    ext = FileExtension(caseFile)
+    If InStr("|xlsx|xlsm|xlsb|xls|xltx|xltm|", "|" & ext & "|") = 0 Then
+        Call StopSetup("The case file (Prep!B2) is not an Excel workbook:" & vbLf & caseFile & vbLf & vbLf & _
+                       "It must be an .xlsx / .xlsm / .xlsb / .xls file.")
+        Exit Function
+    End If
+    If StrComp(caseFile, ThisWorkbook.Name, vbTextCompare) = 0 Then
+        Call StopSetup("The case file (Prep!B2) has the same name as this workbook:" & vbLf & caseFile & vbLf & vbLf & _
+                       "Excel cannot open two workbooks with the same name. Enter the case " & _
+                       "workbook's name in B2.")
         Exit Function
     End If
 
-    fullPath = casePath & Application.PathSeparator & caseFile
-    If Len(Dir(fullPath)) = 0 Then
-        MsgBox "Case file not found:" & vbLf & fullPath & vbLf & vbLf & _
-               "Setup stopped - nothing was saved or created.", _
-               vbCritical, "setup_workbook"
-        Exit Function
+    ' --- B3: model (target) file name ----------------------------------------
+    If Len(modelFile) = 0 Then
+        If MsgBox("Prep!B3 (Model Filename) is empty." & vbLf & vbLf & _
+                  "Without a model file name Setup builds everything inside THIS workbook (" & _
+                  ThisWorkbook.Name & ") instead of a new file." & vbLf & vbLf & _
+                  "Build inside this workbook?", _
+                  vbExclamation + vbYesNo + vbDefaultButton2, "Setup") <> vbYes Then Exit Function
+    Else
+        For k = 1 To Len(modelFile)
+            If InStr("\/:*?""<>|", Mid$(modelFile, k, 1)) > 0 Or AscW(Mid$(modelFile, k, 1)) < 32 Then
+                Call StopSetup("The model file name (Prep!B3) contains a character Windows does not allow in file names:" & _
+                               vbLf & modelFile & vbLf & vbLf & _
+                               "Not allowed:  \ / : * ? "" < > |" & vbLf & _
+                               "(B3 is just a file name - the file is saved in the folder from B1.)")
+                Exit Function
+            End If
+        Next k
+        If Right$(modelFile, 1) = "." Then
+            Call StopSetup("The model file name (Prep!B3) cannot end with a dot:" & vbLf & modelFile)
+            Exit Function
+        End If
+
+        ' A real extension is 1-5 letters/digits with at least one letter, so a
+        ' name such as "attempt 2026.11.18" counts as having NO extension.
+        ext = FileExtension(modelFile)
+        If Len(ext) > 0 Then
+            If ext <> "xlsm" Then
+                p = InStrRev(modelFile, ".")
+                Call StopSetup("The model file name (Prep!B3) must end in .xlsm:" & vbLf & modelFile & vbLf & vbLf & _
+                               "The model holds macros and lambdas, which only a macro-enabled " & _
+                               "workbook (.xlsm) can store." & vbLf & _
+                               "Change B3 to:  " & Left$(modelFile, p - 1) & ".xlsm")
+                Exit Function
+            End If
+        Else
+            modelFile = modelFile & ".xlsm"
+        End If
+        p = InStrRev(modelFile, ".")
+        baseName = Trim$(Left$(modelFile, p - 1))
+        If Len(baseName) = 0 Then
+            Call StopSetup("The model file name (Prep!B3) needs a name before .xlsm:" & vbLf & modelFile)
+            Exit Function
+        End If
+        If InStr(baseName, ".") > 0 Then baseName = Left$(baseName, InStr(baseName, ".") - 1)
+        If InStr("|CON|PRN|AUX|NUL|COM1|COM2|COM3|COM4|COM5|COM6|COM7|COM8|COM9|" & _
+                 "LPT1|LPT2|LPT3|LPT4|LPT5|LPT6|LPT7|LPT8|LPT9|", "|" & UCase$(Trim$(baseName)) & "|") > 0 Then
+            Call StopSetup("The model file name (Prep!B3) is a name Windows reserves:" & vbLf & modelFile & vbLf & vbLf & _
+                           "Choose a different name.")
+            Exit Function
+        End If
+        If Len(casePath & "\" & modelFile) > 218 Then
+            Call StopSetup("The folder plus the model file name is too long for Excel (" & _
+                           Len(casePath & "\" & modelFile) & " characters; the limit is 218)." & vbLf & vbLf & _
+                           "Shorten the model file name in Prep!B3.")
+            Exit Function
+        End If
+        If StrComp(modelFile, caseFile, vbTextCompare) = 0 Then
+            Call StopSetup("The model file name (Prep!B3) is the same as the case file (B2):" & vbLf & modelFile & vbLf & vbLf & _
+                           "Setup would overwrite the case file. Choose a different model file name.")
+            Exit Function
+        End If
+        If StrComp(modelFile, ThisWorkbook.Name, vbTextCompare) = 0 Then
+            If Not already_built And FileExists(casePath & "\" & modelFile) Then
+                Call StopSetup("The model file name (Prep!B3) is this template's own name, and that file " & _
+                               "already exists in the case folder:" & vbLf & modelFile & vbLf & vbLf & _
+                               "Setup would overwrite the template. Choose a different model file name.")
+                Exit Function
+            End If
+        ElseIf OtherWorkbookIsOpen(modelFile) Then
+            Call StopSetup("A workbook named '" & modelFile & "' is already open in Excel." & vbLf & vbLf & _
+                           "Excel cannot save over an open workbook. Close it, or choose a " & _
+                           "different model file name in Prep!B3.")
+            Exit Function
+        End If
     End If
 
-    case_inputs_valid = True
+    gCasePath = casePath
+    gCaseFile = caseFile
+    gAttemptFile = modelFile
+    setup_inputs_valid = True
     Exit Function
 
-Invalid:
-    MsgBox "Could not read the case location from the Prep sheet (B1/B2)." & vbLf & vbLf & _
-           "Setup stopped - nothing was saved or created.", _
-           vbCritical, "setup_workbook"
+Unreadable:
+    Call StopSetup("Could not read the setup inputs from the Prep sheet (B1:B3).")
+End Function
+
+' One place for every "setup cannot start" message, so they all read alike and
+' all promise the same thing: nothing was changed.
+Private Sub StopSetup(ByVal msg As String)
+    MsgBox msg & vbLf & vbLf & STOP_NOTE, vbCritical, "Setup"
+End Sub
+
+' Told to the user when import_case fails after the inputs passed validation
+' (model file could not be written, case workbook could not be opened, ...).
+Private Sub ReportImportFailure(ByVal errNum As Long, ByVal errDesc As String)
+    MsgBox "Setup could not import the case workbook:" & vbLf & vbLf & _
+           errDesc & " (error " & errNum & ")" & vbLf & vbLf & _
+           "Setup stopped - no level sheets were built.", vbCritical, "Setup"
+End Sub
+
+' A Prep input as text: errors become "", line breaks / tabs / non-breaking
+' spaces become spaces, surrounding spaces and one pair of surrounding quotes
+' (Explorer's "Copy as path") are removed.
+Private Function CleanPrepInput(ByVal v As Variant) As String
+    Dim t As String
+    If IsError(v) Then Exit Function
+    If IsNull(v) Or IsEmpty(v) Then Exit Function
+    t = CStr(v)
+    t = Replace(t, vbCr, " "): t = Replace(t, vbLf, " "): t = Replace(t, vbTab, " ")
+    t = Replace(t, ChrW$(160), " ")
+    t = Trim$(t)
+    If Len(t) >= 2 Then
+        If Left$(t, 1) = """" And Right$(t, 1) = """" Then t = Trim$(Mid$(t, 2, Len(t) - 2))
+    End If
+    CleanPrepInput = t
+End Function
+
+' Lower-case extension of a file name, without the dot; "" when the text after
+' the last dot does not look like an extension (more than 5 characters, no
+' letter, or anything but letters and digits).
+Private Function FileExtension(ByVal fileName As String) As String
+    Dim p As Long, e As String
+    p = InStrRev(fileName, ".")
+    If p = 0 Or p = Len(fileName) Then Exit Function
+    e = LCase$(Mid$(fileName, p + 1))
+    If Len(e) > 5 Then Exit Function
+    If e Like "*[!a-z0-9]*" Then Exit Function
+    If Not e Like "*[a-z]*" Then Exit Function
+    FileExtension = e
+End Function
+
+' True when p names an existing folder. Never raises (Dir / GetAttr raise on
+' malformed paths and unavailable drives).
+Private Function FolderExists(ByVal p As String) As Boolean
+    On Error Resume Next
+    If Len(p) = 0 Then Exit Function
+    FolderExists = ((GetAttr(p) And vbDirectory) = vbDirectory)
+    If Err.Number <> 0 Then FolderExists = False
+    Err.Clear
+End Function
+
+' True when p names an existing file (not a folder). Never raises.
+Private Function FileExists(ByVal p As String) As Boolean
+    On Error Resume Next
+    If Len(p) = 0 Then Exit Function
+    FileExists = ((GetAttr(p) And vbDirectory) = 0)
+    If Err.Number <> 0 Then FileExists = False
+    Err.Clear
+End Function
+
+' True when a workbook other than this one is open under the given file name.
+Private Function OtherWorkbookIsOpen(ByVal fileName As String) As Boolean
+    Dim wb As Workbook
+    For Each wb In Application.Workbooks
+        If Not wb Is ThisWorkbook Then
+            If StrComp(wb.Name, fileName, vbTextCompare) = 0 Then OtherWorkbookIsOpen = True: Exit Function
+        End If
+    Next wb
+End Function
+
+' Help for a mistyped case file name: a "did you mean" when the same name with
+' an Excel extension exists, else the Excel files the folder does hold.
+Private Function WorkbooksInFolderNote(ByVal folder As String, ByVal wanted As String) As String
+    Dim f As String, n As Long, listing As String, e As Variant
+    On Error GoTo done
+    If Len(FileExtension(wanted)) = 0 Then
+        For Each e In Array(".xlsx", ".xlsm", ".xlsb", ".xls")
+            If FileExists(folder & "\" & wanted & e) Then
+                WorkbooksInFolderNote = vbLf & vbLf & "Did you mean:  " & wanted & e
+                Exit Function
+            End If
+        Next e
+    End If
+    f = Dir(folder & "\*.xls*")
+    Do While Len(f) > 0
+        If Left$(f, 2) <> "~$" Then
+            n = n + 1
+            If n <= 8 Then listing = listing & vbLf & "    " & f
+        End If
+        f = Dir()
+    Loop
+    If n = 0 Then
+        WorkbooksInFolderNote = vbLf & vbLf & "That folder holds no Excel files."
+    Else
+        WorkbooksInFolderNote = vbLf & vbLf & "Excel files in that folder:" & listing & _
+                                IIf(n > 8, vbLf & "    ... and " & (n - 8) & " more", "")
+    End If
+done:
 End Function
 
 ' === Import Case Subroutine ===
@@ -286,20 +552,22 @@ Private Sub import_case()
     Dim full_case_path As String
     
     
+    ' The Prep inputs were checked and normalised by setup_inputs_valid (the
+    ' only way in is through setup_workbook / safe_setup, which both call it).
     Set prep_worksheet = attempt_workbook.Sheets("Prep")
-    attempt_filename = prep_worksheet.Range("B3").Value
-    case_path = prep_worksheet.Range("B1").Value
-    case_filename = prep_worksheet.Range("B2").Value
-    
+    attempt_filename = gAttemptFile
+    case_path = gCasePath
+    case_filename = gCaseFile
+
     'saves workbook as new filename given in B3 of prep
-   If attempt_filename <> "" Then
+    If attempt_filename <> "" Then
         Dim full_attempt_path As String
         full_attempt_path = case_path & "\" & attempt_filename
 
         ' Check if file already exists
         If Dir(full_attempt_path) <> "" Then
-            overwrite = MsgBox("The target filename already exists." & vbCrLf & _
-                           "Do you want to overwrite it?", vbYesNo + vbQuestion)
+            overwrite = MsgBox("The target filename already exists:" & vbCrLf & attempt_filename & vbCrLf & vbCrLf & _
+                           "Do you want to overwrite it?", vbYesNo + vbQuestion, "Setup")
             If overwrite <> vbYes Then
                 gSetupAborted = True
                 Exit Sub
@@ -308,13 +576,29 @@ Private Sub import_case()
             ' mid-run-failed setup doesn't destroy a previously-good attempt.
             Call BackupExistingFile(full_attempt_path)
         End If
+
+        ' SaveAs with an explicit macro-enabled format, and treat a failure as
+        ' the end of the run. This used to raise into the best-effort pipeline,
+        ' which then built on the TEMPLATE itself (a ".xlsx" target did that).
+        Dim save_err As Long, save_desc As String
         Application.Calculation = xlCalculationAutomatic
         Application.DisplayAlerts = False
-       attempt_workbook.SaveAs filename:=full_attempt_path
-      Application.DisplayAlerts = True
-      Application.Calculation = xlCalculationManual
-   End If
-   Call TimeMark("02 SaveAs attempt file")
+        On Error Resume Next
+        attempt_workbook.SaveAs filename:=full_attempt_path, FileFormat:=xlOpenXMLWorkbookMacroEnabled
+        save_err = Err.Number: save_desc = Err.Description
+        Err.Clear
+        On Error GoTo ErrorHandler
+        Application.DisplayAlerts = True
+        Application.Calculation = xlCalculationManual
+        If save_err <> 0 Then
+            MsgBox "Could not save the model file:" & vbLf & full_attempt_path & vbLf & vbLf & _
+                   save_desc & vbLf & vbLf & _
+                   "Setup stopped - nothing was created.", vbCritical, "Setup"
+            gSetupAborted = True
+            Exit Sub
+        End If
+    End If
+    Call TimeMark("02 SaveAs attempt file")
 
 
     'opens case workbook and copies over worksheets
@@ -477,9 +761,12 @@ Private Sub import_case()
             On Error GoTo ErrorHandler
         End If
     Else
-        MsgBox "Error: none of " & Join(candidate_names, ", ") & _
-               " worksheets were found in the imported case.", vbCritical
+        MsgBox "No case sheet was identified (none of " & Join(candidate_names, ", ") & _
+               " was found in the case workbook)." & vbLf & vbLf & _
+               "Setup stopped - the case's sheets were copied in, but no level sheets were built.", _
+               vbCritical, "Setup"
         Call CloseCaseWorkbook
+        gSetupAborted = True
         Exit Sub
     End If
 
@@ -608,6 +895,9 @@ ErrorHandler:
     ' Calculation and Events. Silent Resume Next here would leave Excel frozen.
     Dim e_num As Long, e_desc As String
     e_num = Err.Number: e_desc = Err.Description
+    ' A failed import ends the run: every later stage needs the case sheet.
+    gSetupAborted = True
+    Application.DisplayAlerts = True
     ' Close the author's read-only copy before unwinding. Any failure between
     ' Workbooks.Open and the normal close above would otherwise strand it on
     ' screen, which is confusing and blocks a clean re-run.
@@ -2303,6 +2593,14 @@ Private Sub create_hints_sheet()
     Dim lastHintRow As Long
     Dim safe_last_row As Long
     
+    ' The Hints formulas point at the Case sheet. Without one, entering them
+    ' makes Excel ask for a FILE called "Case" and leaves an external link in
+    ' the workbook - so never build Hints unless the Case sheet is there.
+    If Not SheetExists(attempt_workbook, "Case") Then
+        Call LogError(0, "Skipped: there is no Case sheet for the Hints formulas to read.", "create_hints_sheet")
+        Exit Sub
+    End If
+
     ' Ensure we have a valid last row for the Case sheet lookup
     If last_row_case > 0 Then
         safe_last_row = last_row_case
@@ -2917,24 +3215,39 @@ Sub safe_setup()
     Set attempt_workbook = ThisWorkbook
     gSetupAborted = False
 
-    ' Same gate as setup_workbook: don't save or import against a bad location.
-    If Not case_inputs_valid() Then GoTo Cleanup
+    ' Same gate as setup_workbook: check every Prep input before anything is
+    ' saved, opened or created.
+    If Not setup_inputs_valid() Then
+        gSetupAborted = True
+        GoTo Cleanup
+    End If
 
     ' Save the template with AUTOMATIC calculation so the run never leaves the
-    ' original file in manual mode (matches setup_workbook).
+    ' original file in manual mode (matches setup_workbook). Best-effort.
     Application.Calculation = xlCalculationAutomatic
-    ThisWorkbook.Save
+    On Error Resume Next
+    If Not ThisWorkbook.ReadOnly And Len(ThisWorkbook.Path) > 0 Then ThisWorkbook.Save
+    Err.Clear
     Application.Calculation = xlCalculationManual
 
+    Dim import_err As Long, import_desc As String
     Call import_case
+    import_err = Err.Number: import_desc = Err.Description
+    Err.Clear
+    If import_err <> 0 Then Call ReportImportFailure(import_err, import_desc)
 Cleanup:
+    On Error Resume Next
+    Call CloseCaseWorkbook
+    Application.DisplayAlerts = True
     Application.ScreenUpdating = True
     Application.Calculation = xlCalculationAutomatic
     Application.EnableEvents = True
     Exit Sub
 
 ErrorHandler:
-    Call LogError(Err.Number, Err.Description, "safe_setup")
+    gSetupAborted = True
+    MsgBox "Safe Setup hit an unexpected error before it started:" & vbLf & vbLf & _
+           Err.Description & vbLf & vbLf & STOP_NOTE, vbCritical, "Safe Setup"
     Resume Cleanup
 
 End Sub
